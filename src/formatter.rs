@@ -47,7 +47,7 @@ pub fn format_csv(
         .from_writer(stdout);
 
     if print_header {
-        wtr.write_record(&[
+        wtr.write_record([
             "Server ID",
             "Sponsor",
             "Server Name",

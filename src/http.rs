@@ -45,14 +45,25 @@ pub fn build_timeout_duration(seconds: u64) -> std::time::Duration {
 }
 
 pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestError> {
-    let response = client
-        .get("https://www.speedtest.net/api/js/ip")
-        .send()
-        .await?
-        .text()
-        .await?;
+    // Try multiple endpoints in case one is unavailable
+    let endpoints = [
+        "https://www.speedtest.net/api/ip.php",
+        "https://www.speedtest.net/api/ios-config.php",
+    ];
 
-    Ok(response.trim().to_string())
+    for endpoint in &endpoints {
+        if let Ok(response) = client.get(*endpoint).send().await {
+            if let Ok(text) = response.text().await {
+                let trimmed = text.trim().to_string();
+                if !trimmed.is_empty() && !trimmed.contains("<html") {
+                    return Ok(trimmed);
+                }
+            }
+        }
+    }
+
+    // If all endpoints fail, return unknown
+    Ok("unknown".to_string())
 }
 
 #[allow(dead_code)]

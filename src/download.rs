@@ -33,14 +33,18 @@ pub fn build_test_url(server_url: &str, file_index: usize) -> String {
     format!("{}/random{}.jpg", base, size)
 }
 
+/// Result from a single download stream
+struct StreamResult {
+    bytes: u64,
+    elapsed_secs: f64,
+}
+
 pub async fn download_test(
     client: &Client,
     server: &Server,
     single: bool,
 ) -> Result<f64, SpeedtestError> {
     let concurrent_streams = determine_stream_count(single);
-    let mut total_bytes = 0u64;
-    let start = std::time::Instant::now();
 
     // Download multiple files simultaneously
     let mut handles = Vec::new();
@@ -48,6 +52,7 @@ pub async fn download_test(
     for _i in 0..concurrent_streams {
         let client = client.clone();
         let server_url = server.url.clone();
+        let stream_start = std::time::Instant::now();
 
         let handle = tokio::spawn(async move {
             let mut stream_bytes = 0u64;
@@ -66,23 +71,37 @@ pub async fn download_test(
                 }
             }
 
-            stream_bytes
+            StreamResult {
+                bytes: stream_bytes,
+                elapsed_secs: stream_start.elapsed().as_secs_f64(),
+            }
         });
 
         handles.push(handle);
     }
 
     // Collect results from all streams
+    let mut stream_results = Vec::new();
     for handle in handles {
-        if let Ok(bytes) = handle.await {
-            total_bytes += bytes;
+        if let Ok(result) = handle.await {
+            stream_results.push(result);
         }
     }
 
-    let elapsed = start.elapsed().as_secs_f64();
+    if stream_results.is_empty() {
+        return Ok(0.0);
+    }
 
-    // Calculate bits per second
-    Ok(calculate_bandwidth(total_bytes, elapsed))
+    // Calculate per-stream bandwidth and take the average
+    // This matches how official speedtest tools report results
+    let total_bandwidth: f64 = stream_results
+        .iter()
+        .map(|r| calculate_bandwidth(r.bytes, r.elapsed_secs))
+        .sum();
+
+    let avg_bandwidth = total_bandwidth / stream_results.len() as f64;
+
+    Ok(avg_bandwidth)
 }
 
 #[cfg(test)]

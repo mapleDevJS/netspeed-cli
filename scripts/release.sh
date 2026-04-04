@@ -157,6 +157,25 @@ create_release() {
     log_ok "GitHub release v${VERSION} created"
 }
 
+# Step 4b: Publish to crates.io
+publish_crates_io() {
+    log_info "Publishing to crates.io..."
+    
+    cd "$PROJECT_DIR"
+    
+    # Dry run first to check for issues
+    cargo publish --dry-run
+    if [[ $? -ne 0 ]]; then
+        log_warn "crates.io dry-run failed, skipping publish"
+        return 1
+    fi
+    
+    # Publish to crates.io
+    cargo publish
+    
+    log_ok "Published to crates.io"
+}
+
 # Step 5: Calculate SHA256
 calculate_sha256() {
     log_info "Calculating SHA256 for release tarball..."
@@ -259,6 +278,7 @@ main() {
     commit_and_push
     create_tag
     create_release
+    publish_crates_io || true
     calculate_sha256
     update_homebrew_formula
     print_summary
