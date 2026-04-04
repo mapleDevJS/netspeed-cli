@@ -5,6 +5,7 @@ pub mod download;
 pub mod error;
 pub mod formatter;
 pub mod http;
+pub mod mini;
 pub mod progress;
 pub mod servers;
 pub mod share;
@@ -17,6 +18,7 @@ use config::Config;
 use error::SpeedtestError;
 use formatter::{format_csv, format_json, format_list, format_simple};
 use http::create_client;
+use mini::detect_mini_server;
 use servers::{calculate_distances, fetch_client_config, fetch_servers, select_best_server};
 use types::TestResult;
 
@@ -32,49 +34,61 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let config = Config::from_args(&args);
     let client = create_client(&config)?;
 
-    // Fetch server list
-    let mut servers = fetch_servers(&client, &config).await?;
+    // Handle Mini server if specified
+    let server = if let Some(ref mini_url) = config.mini_url {
+        if !config.simple {
+            eprintln!("Detecting Mini server: {}", mini_url);
+        }
+        let mini_server = detect_mini_server(&client, mini_url).await?;
+        if !config.simple {
+            eprintln!("Mini server detected: {}", mini_server.name);
+        }
+        mini::mini_to_server(&mini_server)
+    } else {
+        // Fetch server list
+        let mut servers = fetch_servers(&client, &config).await?;
 
-    if servers.is_empty() {
-        return Err(SpeedtestError::ServerNotFound(
-            "No servers available for testing".to_string(),
-        ));
-    }
+        if servers.is_empty() {
+            return Err(SpeedtestError::ServerNotFound(
+                "No servers available for testing".to_string(),
+            ));
+        }
 
-    // Handle --list option
-    if config.list {
-        format_list(&servers)?;
-        return Ok(());
-    }
+        // Handle --list option
+        if config.list {
+            format_list(&servers)?;
+            return Ok(());
+        }
 
-    // Try to get client location for distance calculation
-    if let Ok(client_config) = fetch_client_config(&client).await {
-        if let Some(client_info) = client_config.client_info {
-            if let (Ok(lat), Ok(lon)) = (
-                client_info.lat.parse::<f64>(),
-                client_info.lon.parse::<f64>(),
-            ) {
-                calculate_distances(&mut servers, lat, lon);
+        // Try to get client location for distance calculation
+        if let Ok(client_config) = fetch_client_config(&client).await {
+            if let Some(client_info) = client_config.client_info {
+                if let (Ok(lat), Ok(lon)) = (
+                    client_info.lat.parse::<f64>(),
+                    client_info.lon.parse::<f64>(),
+                ) {
+                    calculate_distances(&mut servers, lat, lon);
+                }
             }
         }
-    }
 
-    // Filter servers based on --server and --exclude options
-    if !config.server_ids.is_empty() {
-        servers.retain(|s| config.server_ids.contains(&s.id));
-    }
-    if !config.exclude_ids.is_empty() {
-        servers.retain(|s| !config.exclude_ids.contains(&s.id));
-    }
+        // Filter servers based on --server and --exclude options
+        if !config.server_ids.is_empty() {
+            servers.retain(|s| config.server_ids.contains(&s.id));
+        }
+        if !config.exclude_ids.is_empty() {
+            servers.retain(|s| !config.exclude_ids.contains(&s.id));
+        }
 
-    if servers.is_empty() {
-        return Err(SpeedtestError::ServerNotFound(
-            "No servers available for testing".to_string(),
-        ));
-    }
+        if servers.is_empty() {
+            return Err(SpeedtestError::ServerNotFound(
+                "No servers available for testing".to_string(),
+            ));
+        }
 
-    // Select best server (closest with lowest latency)
-    let server = select_best_server(&servers)?;
+        // Select best server (closest with lowest latency)
+        select_best_server(&servers)?
+    };
 
     if !config.simple {
         eprintln!(
