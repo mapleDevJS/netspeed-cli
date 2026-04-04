@@ -1,0 +1,54 @@
+#compdef netspeed-cli
+
+autoload -U is-at-least
+
+_netspeed-cli() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'--csv-delimiter=[Single character delimiter for CSV output (default\: ",")]:CSV_DELIMITER:_default' \
+'*--server=[Specify a server ID to test against (can be supplied multiple times)]:SERVER:_default' \
+'*--exclude=[Exclude a server from selection (can be supplied multiple times)]:EXCLUDE:_default' \
+'--mini=[URL of the Speedtest Mini server]:MINI:_default' \
+'--source=[Source IP address to bind to]:SOURCE:_default' \
+'--timeout=[HTTP timeout in seconds (default\: 10)]:TIMEOUT:_default' \
+'--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish power-shell elvish)' \
+'--no-download[Do not perform download test]' \
+'--no-upload[Do not perform upload test]' \
+'--single[Only use a single connection instead of multiple]' \
+'--bytes[Display values in bytes instead of bits]' \
+'--share[Generate and provide a URL to the speedtest.net share results image]' \
+'--simple[Suppress verbose output, only show basic information]' \
+'--csv[Output in CSV format]' \
+'--csv-header[Print CSV headers]' \
+'--json[Output in JSON format]' \
+'--list[Display a list of speedtest.net servers sorted by distance]' \
+'--secure[Use HTTPS instead of HTTP]' \
+'--no-pre-allocate[Do not pre-allocate upload data]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+}
+
+(( $+functions[_netspeed-cli_commands] )) ||
+_netspeed-cli_commands() {
+    local commands; commands=()
+    _describe -t commands 'netspeed-cli commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_netspeed-cli" ]; then
+    _netspeed-cli "$@"
+else
+    compdef _netspeed-cli netspeed-cli
+fi

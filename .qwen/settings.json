@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init)",
+      "Bash(./target/debug/netspeed-cli *)",
+      "Bash(git add *)"
+    ]
+  },
+  "$version": 3
+}

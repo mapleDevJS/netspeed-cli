@@ -1,0 +1,91 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH netspeed-cli 1  "netspeed-cli 0.1.0" 
+.SH NAME
+netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
+.SH SYNOPSIS
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-share\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-mini\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-secure\fR] [\fB\-\-no\-pre\-allocate\fR] [\fB\-\-generate\-completion\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+.SH DESCRIPTION
+Command line interface for testing internet bandwidth using speedtest.net
+.SH OPTIONS
+.TP
+\fB\-\-no\-download\fR
+Do not perform download test
+.TP
+\fB\-\-no\-upload\fR
+Do not perform upload test
+.TP
+\fB\-\-single\fR
+Only use a single connection instead of multiple
+.TP
+\fB\-\-bytes\fR
+Display values in bytes instead of bits
+.TP
+\fB\-\-share\fR
+Generate and provide a URL to the speedtest.net share results image
+.TP
+\fB\-\-simple\fR
+Suppress verbose output, only show basic information
+.TP
+\fB\-\-csv\fR
+Output in CSV format
+.TP
+\fB\-\-csv\-delimiter\fR \fI<CSV_DELIMITER>\fR [default: ,]
+Single character delimiter for CSV output (default: ",")
+.TP
+\fB\-\-csv\-header\fR
+Print CSV headers
+.TP
+\fB\-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-list\fR
+Display a list of speedtest.net servers sorted by distance
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Specify a server ID to test against (can be supplied multiple times)
+.TP
+\fB\-\-exclude\fR \fI<EXCLUDE>\fR
+Exclude a server from selection (can be supplied multiple times)
+.TP
+\fB\-\-mini\fR \fI<MINI>\fR
+URL of the Speedtest Mini server
+.TP
+\fB\-\-source\fR \fI<SOURCE>\fR
+Source IP address to bind to
+.TP
+\fB\-\-timeout\fR \fI<TIMEOUT>\fR [default: 10]
+HTTP timeout in seconds (default: 10)
+.TP
+\fB\-\-secure\fR
+Use HTTPS instead of HTTP
+.TP
+\fB\-\-no\-pre\-allocate\fR
+Do not pre\-allocate upload data
+.TP
+\fB\-\-generate\-completion\fR \fI<GENERATE_COMPLETION>\fR
+Generate shell completion script
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+bash
+.IP \(bu 2
+zsh
+.IP \(bu 2
+fish
+.IP \(bu 2
+power\-shell
+.IP \(bu 2
+elvish
+.RE
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH VERSION
+v0.1.0
