@@ -14,6 +14,7 @@ pub struct Server {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 pub struct ServerConfig {
     pub servers: Vec<Server>,
 }

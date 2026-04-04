@@ -20,14 +20,27 @@ pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
 }
 
 pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestError> {
-    let response = client
-        .get("https://www.speedtest.net/api/js/ip")
-        .send()
-        .await?
-        .text()
-        .await?;
+    // Try multiple endpoints for reliability
+    let endpoints = vec![
+        "https://www.speedtest.net/api/js/ip",
+        "https://c.speedtest.net/api/js/ip",
+        "https://ifconfig.me/ip",
+    ];
 
-    Ok(response.trim().to_string())
+    for endpoint in endpoints {
+        if let Ok(response) = client.get(endpoint).send().await {
+            if let Ok(text) = response.text().await {
+                let ip = text.trim().to_string();
+                if !ip.is_empty() {
+                    return Ok(ip);
+                }
+            }
+        }
+    }
+
+    Err(SpeedtestError::NetworkError(
+        "Failed to discover client IP address".to_string(),
+    ))
 }
 
 #[allow(dead_code)]

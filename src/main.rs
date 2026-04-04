@@ -15,7 +15,7 @@ use config::Config;
 use error::SpeedtestError;
 use formatter::{format_csv, format_json, format_list, format_simple};
 use http::create_client;
-use servers::{fetch_servers, select_best_server};
+use servers::{calculate_distances, fetch_client_config, fetch_servers, select_best_server};
 use types::TestResult;
 
 async fn run_speedtest() -> Result<(), SpeedtestError> {
@@ -32,10 +32,28 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     // Fetch server list
     let mut servers = fetch_servers(&client, &config).await?;
 
+    if servers.is_empty() {
+        return Err(SpeedtestError::ServerNotFound(
+            "No servers available for testing".to_string(),
+        ));
+    }
+
     // Handle --list option
     if config.list {
         format_list(&servers)?;
         return Ok(());
+    }
+
+    // Try to get client location for distance calculation
+    if let Ok(client_config) = fetch_client_config(&client).await {
+        if let Some(client_info) = client_config.client_info {
+            if let (Ok(lat), Ok(lon)) = (
+                client_info.lat.parse::<f64>(),
+                client_info.lon.parse::<f64>(),
+            ) {
+                calculate_distances(&mut servers, lat, lon);
+            }
+        }
     }
 
     // Filter servers based on --server and --exclude options
@@ -56,12 +74,15 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let server = select_best_server(&servers)?;
 
     if !config.simple {
-        eprintln!("Testing against server: {} ({})", server.sponsor, server.name);
+        eprintln!(
+            "Testing against server: {} ({})",
+            server.sponsor, server.name
+        );
     }
 
     // Discover client IP
     let client_ip = http::discover_client_ip(&client).await.ok();
-    
+
     // Run ping test
     let ping = if !config.no_download || !config.no_upload {
         let ping_result = servers::ping_test(&client, &server).await?;
