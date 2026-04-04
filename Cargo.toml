@@ -12,6 +12,10 @@ rust-version = "1.70"
 name = "netspeed-cli"
 path = "src/main.rs"
 
+[lib]
+name = "netspeed_cli"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"

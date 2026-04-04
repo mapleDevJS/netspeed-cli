@@ -1,13 +1,13 @@
-mod cli;
-mod config;
-mod download;
-mod error;
-mod formatter;
-mod http;
-mod servers;
-mod share;
-mod types;
-mod upload;
+pub mod cli;
+pub mod config;
+pub mod download;
+pub mod error;
+pub mod formatter;
+pub mod http;
+pub mod servers;
+pub mod share;
+pub mod types;
+pub mod upload;
 
 use clap::Parser;
 use cli::CliArgs;
