@@ -5,7 +5,9 @@ use crate::error::SpeedtestError;
 pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
     let mut builder = Client::builder()
         .timeout(std::time::Duration::from_secs(config.timeout))
-        .gzip(true);
+        .http1_only()
+        .no_gzip()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
     if let Some(ref source_ip) = config.source {
         let addr: std::net::SocketAddr = source_ip.parse()

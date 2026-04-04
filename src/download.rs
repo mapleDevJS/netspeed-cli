@@ -1,5 +1,4 @@
 use reqwest::Client;
-use futures_util::StreamExt;
 use crate::error::SpeedtestError;
 use crate::types::Server;
 
@@ -17,9 +16,21 @@ pub fn determine_stream_count(single: bool) -> usize {
     if single { 1 } else { 4 }
 }
 
-/// Build test file URL
-pub fn build_test_url(server_url: &str, size_kb: usize) -> String {
-    format!("{}/random{}.random", server_url, size_kb)
+/// Extract base URL from server URL (strip /upload.php suffix)
+/// e.g., "http://host:8080/speedtest/upload.php" -> "http://host:8080/speedtest"
+pub fn extract_base_url(url: &str) -> &str {
+    url.strip_suffix("/upload.php")
+        .or_else(|| url.strip_suffix("/upload.asp"))
+        .unwrap_or(url)
+}
+
+/// Build test file URL using Speedtest.net standard naming
+pub fn build_test_url(server_url: &str, file_index: usize) -> String {
+    let base = extract_base_url(server_url);
+    // Standard Speedtest.net test file sizes (in bytes dimension naming)
+    let sizes = ["2000x2000", "3000x3000", "3500x3500", "4000x4000"];
+    let size = sizes[file_index % sizes.len()];
+    format!("{}/random{}.jpg", base, size)
 }
 
 pub async fn download_test(
@@ -41,17 +52,14 @@ pub async fn download_test(
         let handle = tokio::spawn(async move {
             let mut stream_bytes = 0u64;
 
-            // Download test files
+            // Download test files with increasing sizes
             for j in 0..4 {
-                let test_url = build_test_url(&server_url, 350_000 * (j + 1) / 1000);
+                let test_url = build_test_url(&server_url, j);
 
                 match client.get(&test_url).send().await {
                     Ok(response) => {
-                        let mut stream = response.bytes_stream();
-                        while let Some(chunk) = stream.next().await {
-                            if let Ok(bytes) = chunk {
-                                stream_bytes += bytes.len() as u64;
-                            }
+                        if let Ok(body) = response.bytes().await {
+                            stream_bytes += body.len() as u64;
                         }
                     }
                     Err(_) => continue,
@@ -116,28 +124,66 @@ mod tests {
     #[test]
     fn test_download_url_generation() {
         use super::build_test_url;
-        
+
         // Test URL generation for test files
-        let server_url = "http://server.example.com";
-        let test_url = build_test_url(server_url, 350);
-        
-        assert!(test_url.contains("350"));
-        assert!(test_url.ends_with(".random"));
-        assert!(test_url.contains("random"));
+        let server_url = "http://server.example.com/speedtest/upload.php";
+        let test_url = build_test_url(server_url, 0);
+
+        assert_eq!(test_url, "http://server.example.com/speedtest/random2000x2000.jpg");
     }
 
     #[test]
     fn test_download_url_generation_various_sizes() {
         use super::build_test_url;
-        
-        let server_url = "http://server.example.com";
-        let sizes = vec![350, 700, 1050, 1400];
-        
-        for size in sizes {
-            let test_url = build_test_url(server_url, size);
-            assert!(test_url.contains(&size.to_string()));
-            assert!(test_url.ends_with(".random"));
+
+        let server_url = "http://server.example.com/speedtest/upload.php";
+        let expected = vec![
+            "http://server.example.com/speedtest/random2000x2000.jpg",
+            "http://server.example.com/speedtest/random3000x3000.jpg",
+            "http://server.example.com/speedtest/random3500x3500.jpg",
+            "http://server.example.com/speedtest/random4000x4000.jpg",
+        ];
+
+        for (i, exp) in expected.iter().enumerate() {
+            let test_url = build_test_url(server_url, i);
+            assert_eq!(test_url, *exp);
         }
+    }
+
+    #[test]
+    fn test_extract_base_url_upload_php() {
+        use super::extract_base_url;
+
+        let url = "http://server.example.com:8080/speedtest/upload.php";
+        assert_eq!(extract_base_url(url), "http://server.example.com:8080/speedtest");
+    }
+
+    #[test]
+    fn test_extract_base_url_upload_asp() {
+        use super::extract_base_url;
+
+        let url = "http://server.example.com/speedtest/upload.asp";
+        assert_eq!(extract_base_url(url), "http://server.example.com/speedtest");
+    }
+
+    #[test]
+    fn test_extract_base_url_no_suffix() {
+        use super::extract_base_url;
+
+        let url = "http://server.example.com/speedtest";
+        assert_eq!(extract_base_url(url), "http://server.example.com/speedtest");
+    }
+
+    #[test]
+    fn test_download_url_generation_cycles() {
+        use super::build_test_url;
+
+        // After 4 files, it should cycle back to the first
+        let server_url = "http://server.example.com/speedtest/upload.php";
+        let url_0 = build_test_url(server_url, 0);
+        let url_4 = build_test_url(server_url, 4);
+
+        assert_eq!(url_0, url_4);
     }
 
     #[test]
