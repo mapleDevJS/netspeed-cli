@@ -51,7 +51,8 @@
       "Bash(./scripts/release.sh *)",
       "Bash(mkdir *)",
       "Bash(base64 *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "WebFetch(github.com)"
     ]
   },
   "$version": 3

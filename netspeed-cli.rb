@@ -1,15 +1,15 @@
 class NetspeedCli < Formula
   desc "Command-line interface for testing internet bandwidth using speedtest.net"
   homepage "https://github.com/mapleDevJS/netspeed-cli"
-  url "https://github.com/mapleDevJS/netspeed-cli/archive/refs/tags/v0.1.3.tar.gz"
-  sha256 "c82acf8a478fcc1a31000a2f408d952b24be4898fcc0362a0782e38ca88fde36"
+  url "https://github.com/mapleDevJS/netspeed-cli/archive/refs/tags/v0.2.0.tar.gz"
+  sha256 "82e9949bbc67d0b9d73e049f2f3369c7d4285f74c4af04fac37cc0d932b4108c"
 
   license "MIT"
 
   depends_on "rust" => :build
 
   def install
-    system "cargo", "install", "--root", prefix, "--path", "."
+    system "cargo", "install", *std_cargo_args
 
     # Install shell completions
     bash_completion.install "completions/netspeed-cli.bash" => "netspeed-cli"
