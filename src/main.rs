@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod completions;
 pub mod config;
 pub mod download;
 pub mod error;
@@ -10,7 +11,7 @@ pub mod types;
 pub mod upload;
 
 use clap::Parser;
-use cli::CliArgs;
+use cli::{CliArgs, ShellType};
 use config::Config;
 use error::SpeedtestError;
 use formatter::{format_csv, format_json, format_list, format_simple};
@@ -22,7 +23,8 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let args = CliArgs::parse();
 
     // Handle shell completion generation
-    if let Some(_shell) = args.generate_completion {
+    if let Some(shell) = args.generate_completion {
+        completions::generate_shell_completion(shell);
         return Ok(());
     }
 
