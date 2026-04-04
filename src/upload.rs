@@ -1,6 +1,8 @@
 use reqwest::Client;
 use crate::error::SpeedtestError;
+use crate::progress::ProgressTracker;
 use crate::types::Server;
+use std::sync::Arc;
 
 pub async fn upload_test(
     client: &Client,
@@ -8,7 +10,12 @@ pub async fn upload_test(
     single: bool,
 ) -> Result<f64, SpeedtestError> {
     let concurrent_uploads = if single { 1 } else { 4 };
-    let mut total_bytes = 0u64;
+    let uploads_per_stream = 4;
+    let total_uploads = concurrent_uploads * uploads_per_stream;
+
+    // Create progress tracker
+    let tracker = Arc::new(ProgressTracker::new(total_uploads, true));
+
     let start = std::time::Instant::now();
 
     // Generate upload data
@@ -21,12 +28,13 @@ pub async fn upload_test(
         let client = client.clone();
         let server_url = server.url.clone();
         let data = upload_data.clone();
+        let tracker = tracker.clone();
 
         let handle = tokio::spawn(async move {
             let mut uploaded_bytes = 0u64;
 
             // Perform multiple uploads
-            for _ in 0..4 {
+            for _ in 0..uploads_per_stream {
                 let upload_url = format!("{}/upload", server_url);
 
                 match client
@@ -36,7 +44,9 @@ pub async fn upload_test(
                     .await
                 {
                     Ok(_) => {
-                        uploaded_bytes += data.len() as u64;
+                        let chunk_bytes = data.len() as u64;
+                        uploaded_bytes += chunk_bytes;
+                        tracker.add_chunk(chunk_bytes);
                     }
                     Err(_) => continue,
                 }
@@ -51,11 +61,14 @@ pub async fn upload_test(
     // Collect results from all uploads
     for handle in handles {
         if let Ok(bytes) = handle.await {
-            total_bytes += bytes;
+            let _ = bytes; // Already tracked via progress
         }
     }
 
+    tracker.finish();
+
     let elapsed = start.elapsed().as_secs_f64();
+    let total_bytes = tracker.total_bytes();
 
     // Calculate bits per second
     let bits_per_sec = if elapsed > 0.0 {

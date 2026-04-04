@@ -5,13 +5,14 @@ pub mod download;
 pub mod error;
 pub mod formatter;
 pub mod http;
+pub mod progress;
 pub mod servers;
 pub mod share;
 pub mod types;
 pub mod upload;
 
 use clap::Parser;
-use cli::{CliArgs, ShellType};
+use cli::CliArgs;
 use config::Config;
 use error::SpeedtestError;
 use formatter::{format_csv, format_json, format_list, format_simple};
