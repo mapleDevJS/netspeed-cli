@@ -1,6 +1,10 @@
 use clap::{Parser, ValueEnum};
 
-#[derive(Parser, Debug)]
+/// Test internet bandwidth using speedtest.net servers.
+///
+/// Supports both standard speedtest.net servers and Speedtest Mini installations.
+/// Results can be displayed in simple text, JSON, or CSV format.
+#[derive(Parser, Debug, Default)]
 #[command(name = "netspeed-cli")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Command line interface for testing internet bandwidth using speedtest.net")]
@@ -29,20 +33,24 @@ pub struct CliArgs {
     #[arg(long)]
     pub simple: bool,
 
+    /// Enable verbose/debug logging
+    #[arg(short, long)]
+    pub verbose: bool,
+
     /// Output in CSV format
-    #[arg(long)]
+    #[arg(long, conflicts_with = "json")]
     pub csv: bool,
 
     /// Single character delimiter for CSV output (default: ",")
-    #[arg(long, default_value = ",")]
+    #[arg(long, default_value = ",", requires = "csv")]
     pub csv_delimiter: char,
 
     /// Print CSV headers
-    #[arg(long)]
+    #[arg(long, requires = "csv")]
     pub csv_header: bool,
 
     /// Output in JSON format
-    #[arg(long)]
+    #[arg(long, conflicts_with = "csv")]
     pub json: bool,
 
     /// Display a list of speedtest.net servers sorted by distance
@@ -82,6 +90,7 @@ pub struct CliArgs {
     pub generate_completion: Option<ShellType>,
 }
 
+/// Supported shell types for completion generation.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum ShellType {
     Bash,
