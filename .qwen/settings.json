@@ -45,7 +45,10 @@
       "Bash(total_bytes *)",
       "Bash(err)",
       "Bash(elapsed *)",
-      "Bash(eof)"
+      "Bash(eof)",
+      "Bash(tar *)",
+      "Bash(chmod *)",
+      "Bash(./scripts/release.sh *)"
     ]
   },
   "$version": 3
