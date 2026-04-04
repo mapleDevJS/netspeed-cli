@@ -3,6 +3,11 @@ use clap_complete::{generate_to, Shell};
 use std::fs;
 use std::path::Path;
 
+// NOTE: This include!() is safe because src/cli.rs has zero intra-crate
+// dependencies — it only imports from clap (available as a build-dep).
+// If cli.rs ever imports from other crate modules, this build script
+// must be refactored (e.g., by running the compiled binary to generate
+// completions via `cargo run -- --generate-completion`).
 include!("src/cli.rs");
 
 fn main() -> std::io::Result<()> {
@@ -30,6 +35,7 @@ fn main() -> std::io::Result<()> {
     fs::write(man_dir.join("netspeed-cli.1"), buffer)?;
 
     println!("cargo:rerun-if-changed=src/cli.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
 
     Ok(())
 }

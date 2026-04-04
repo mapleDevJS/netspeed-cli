@@ -1,4 +1,25 @@
 /target
 **/*.rs.bk
 *.pdb
-Cargo.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Environment
+.env
+.env.*
+
+# Benchmark output
+target/criterion/
+
+# Rust
+*.rlib
+*.d
+Cargo.lock.bak
