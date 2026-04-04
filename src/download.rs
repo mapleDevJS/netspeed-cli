@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use crate::error::SpeedtestError;
 use crate::progress::ProgressTracker;
 use crate::types::Server;
+use crate::utils::calculate_bps;
 use std::sync::Arc;
 
 pub async fn download_test(
@@ -68,12 +69,5 @@ pub async fn download_test(
     let elapsed = start.elapsed().as_secs_f64();
     let total_bytes = tracker.total_bytes();
 
-    // Calculate bits per second
-    let bits_per_sec = if elapsed > 0.0 {
-        (total_bytes as f64 * 8.0) / elapsed
-    } else {
-        0.0
-    };
-
-    Ok(bits_per_sec)
+    Ok(calculate_bps(total_bytes, elapsed))
 }

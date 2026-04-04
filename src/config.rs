@@ -16,15 +16,11 @@ pub struct Config {
     pub exclude_ids: Vec<String>,
     #[allow(dead_code)]
     pub mini_url: Option<String>,
-    #[allow(dead_code)]
     pub source: Option<String>,
     pub timeout: u64,
-    #[allow(dead_code)]
     pub secure: bool,
     #[allow(dead_code)]
     pub no_pre_allocate: bool,
-    #[allow(dead_code)]
-    pub client_ip: Option<String>,
 }
 
 impl Config {
@@ -48,7 +44,6 @@ impl Config {
             timeout: args.timeout,
             secure: args.secure,
             no_pre_allocate: args.no_pre_allocate,
-            client_ip: None,
         }
     }
 }

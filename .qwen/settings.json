@@ -4,7 +4,8 @@
       "Bash(git init)",
       "Bash(./target/debug/netspeed-cli *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(grepe *)"
     ]
   },
   "$version": 3

@@ -1,26 +1,29 @@
 pub mod cli;
 pub mod completions;
 pub mod config;
+pub mod discovery;
 pub mod download;
 pub mod error;
 pub mod formatter;
 pub mod http;
 pub mod mini;
+pub mod presenter;
 pub mod progress;
+pub mod runner;
 pub mod servers;
 pub mod share;
 pub mod types;
 pub mod upload;
+pub mod utils;
 
 use clap::Parser;
 use cli::CliArgs;
 use config::Config;
+use discovery::ServerDiscovery;
 use error::SpeedtestError;
-use formatter::{format_csv, format_json, format_list, format_simple};
 use http::create_client;
-use mini::detect_mini_server;
-use servers::{calculate_distances, fetch_client_config, fetch_servers, select_best_server};
-use types::TestResult;
+use presenter::ResultPresenter;
+use runner::TestRunner;
 
 async fn run_speedtest() -> Result<(), SpeedtestError> {
     let args = CliArgs::parse();
@@ -34,61 +37,16 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let config = Config::from_args(&args);
     let client = create_client(&config)?;
 
-    // Handle Mini server if specified
-    let server = if let Some(ref mini_url) = config.mini_url {
-        if !config.simple {
-            eprintln!("Detecting Mini server: {}", mini_url);
-        }
-        let mini_server = detect_mini_server(&client, mini_url).await?;
-        if !config.simple {
-            eprintln!("Mini server detected: {}", mini_server.name);
-        }
-        mini::mini_to_server(&mini_server)
-    } else {
-        // Fetch server list
-        let mut servers = fetch_servers(&client, &config).await?;
+    // Handle --list option
+    if ServerDiscovery::handle_list(&client, &config).await? {
+        return Ok(());
+    }
 
-        if servers.is_empty() {
-            return Err(SpeedtestError::ServerNotFound(
-                "No servers available for testing".to_string(),
-            ));
-        }
-
-        // Handle --list option
-        if config.list {
-            format_list(&servers)?;
-            return Ok(());
-        }
-
-        // Try to get client location for distance calculation
-        if let Ok(client_config) = fetch_client_config(&client).await {
-            if let Some(client_info) = client_config.client_info {
-                if let (Ok(lat), Ok(lon)) = (
-                    client_info.lat.parse::<f64>(),
-                    client_info.lon.parse::<f64>(),
-                ) {
-                    calculate_distances(&mut servers, lat, lon);
-                }
-            }
-        }
-
-        // Filter servers based on --server and --exclude options
-        if !config.server_ids.is_empty() {
-            servers.retain(|s| config.server_ids.contains(&s.id));
-        }
-        if !config.exclude_ids.is_empty() {
-            servers.retain(|s| !config.exclude_ids.contains(&s.id));
-        }
-
-        if servers.is_empty() {
-            return Err(SpeedtestError::ServerNotFound(
-                "No servers available for testing".to_string(),
-            ));
-        }
-
-        // Select best server (closest with lowest latency)
-        select_best_server(&servers)?
-    };
+    // Discover server
+    if !config.simple {
+        eprintln!("Discovering servers...");
+    }
+    let server = ServerDiscovery::discover(&client, &config).await?;
 
     if !config.simple {
         eprintln!(
@@ -97,73 +55,12 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
         );
     }
 
-    // Discover client IP
-    let client_ip = http::discover_client_ip(&client).await.ok();
+    // Run tests
+    let result = TestRunner::run(&client, &server, &config).await?;
 
-    // Run ping test
-    let ping = if !config.no_download || !config.no_upload {
-        let ping_result = servers::ping_test(&client, &server).await?;
-        if !config.simple {
-            eprintln!("Ping: {:.3} ms", ping_result);
-        }
-        Some(ping_result)
-    } else {
-        None
-    };
-
-    // Run download test
-    let download = if !config.no_download {
-        let dl_result = download::download_test(&client, &server, config.single).await?;
-        if !config.simple {
-            eprintln!("Download: {:.2} Mbit/s", dl_result / 1_000_000.0);
-        }
-        Some(dl_result)
-    } else {
-        None
-    };
-
-    // Run upload test
-    let upload = if !config.no_upload {
-        let ul_result = upload::upload_test(&client, &server, config.single).await?;
-        if !config.simple {
-            eprintln!("Upload: {:.2} Mbit/s", ul_result / 1_000_000.0);
-        }
-        Some(ul_result)
-    } else {
-        None
-    };
-
-    // Build result
-    let result = TestResult {
-        server: types::ServerInfo {
-            id: server.id.clone(),
-            name: server.name.clone(),
-            sponsor: server.sponsor.clone(),
-            country: server.country.clone(),
-            distance: server.distance,
-        },
-        ping,
-        download,
-        upload,
-        share_url: None,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        client_ip,
-    };
-
-    // Handle output formatting
-    if config.json {
-        format_json(&result, config.simple)?;
-    } else if config.csv {
-        format_csv(&result, config.csv_delimiter, config.csv_header)?;
-    } else if config.simple {
-        format_simple(&result, config.bytes)?;
-    }
-
-    // Handle share URL generation
-    if config.share {
-        let share_url = share::generate_share_url(&client, &result).await?;
-        eprintln!("Share results: {}", share_url);
-    }
+    // Present results
+    ResultPresenter::present(&result, &config)?;
+    ResultPresenter::handle_share(&client, &result, config.share).await?;
 
     Ok(())
 }

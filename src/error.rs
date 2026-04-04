@@ -5,8 +5,6 @@ pub enum SpeedtestError {
     NetworkError(String),
     ParseError(String),
     ServerNotFound(String),
-    #[allow(dead_code)]
-    TimeoutError(String),
     IoError(String),
     Custom(String),
 }
@@ -17,7 +15,6 @@ impl fmt::Display for SpeedtestError {
             SpeedtestError::NetworkError(msg) => write!(f, "Network error: {}", msg),
             SpeedtestError::ParseError(msg) => write!(f, "Parse error: {}", msg),
             SpeedtestError::ServerNotFound(msg) => write!(f, "Server not found: {}", msg),
-            SpeedtestError::TimeoutError(msg) => write!(f, "Timeout: {}", msg),
             SpeedtestError::IoError(msg) => write!(f, "I/O error: {}", msg),
             SpeedtestError::Custom(msg) => write!(f, "{}", msg),
         }

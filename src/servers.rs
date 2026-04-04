@@ -3,10 +3,11 @@ use serde::Deserialize;
 use quick_xml::de::from_str;
 use crate::config::Config;
 use crate::error::SpeedtestError;
+use crate::http::build_base_url;
 use crate::types::Server;
 
-const SPEEDTEST_SERVERS_URL: &str = "https://www.speedtest.net/speedtest-servers-static.php";
-const SPEEDTEST_CONFIG_URL: &str = "https://www.speedtest.net/speedtest-config.php";
+const SPEEDTEST_SERVERS_PATH: &str = "/speedtest-servers-static.php";
+const SPEEDTEST_CONFIG_PATH: &str = "/speedtest-config.php";
 
 #[derive(Debug, Deserialize)]
 struct SpeedtestServers {
@@ -21,7 +22,6 @@ struct ServersList {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct RawServer {
     #[serde(rename = "id")]
     id: String,
@@ -35,29 +35,17 @@ struct RawServer {
     name: String,
     #[serde(rename = "country")]
     country: String,
-    #[serde(rename = "cc")]
-    cc: String,
     #[serde(rename = "sponsor")]
     sponsor: String,
-    #[serde(rename = "host")]
-    host: String,
-    #[serde(rename = "url2", default)]
-    #[allow(dead_code)]
-    url2: String,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct SpeedtestConfig {
     #[serde(rename = "client")]
     pub client_info: Option<ClientConfig>,
-    #[serde(rename = "times")]
-    #[allow(dead_code)]
-    pub times: Option<TimesConfig>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ClientConfig {
     #[serde(rename = "ip")]
     pub ip: String,
@@ -65,23 +53,15 @@ pub struct ClientConfig {
     pub lat: String,
     #[serde(rename = "lon")]
     pub lon: String,
-    #[serde(rename = "isp")]
-    #[allow(dead_code)]
-    pub isp: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-pub struct TimesConfig {
-    #[serde(rename = "dl1")]
-    #[allow(dead_code)]
-    pub dl1: Option<String>,
-}
+pub async fn fetch_servers(client: &Client, config: &Config) -> Result<Vec<Server>, SpeedtestError> {
+    let base_url = build_base_url(config.secure);
+    let servers_url = format!("{}{}", base_url, SPEEDTEST_SERVERS_PATH);
 
-pub async fn fetch_servers(client: &Client, _config: &Config) -> Result<Vec<Server>, SpeedtestError> {
     // Fetch servers list
     let response = client
-        .get(SPEEDTEST_SERVERS_URL)
+        .get(&servers_url)
         .send()
         .await?
         .text()
@@ -116,8 +96,11 @@ pub async fn fetch_servers(client: &Client, _config: &Config) -> Result<Vec<Serv
 }
 
 pub async fn fetch_client_config(client: &Client) -> Result<SpeedtestConfig, SpeedtestError> {
+    let base_url = build_base_url(true); // Config always HTTPS
+    let config_url = format!("{}{}", base_url, SPEEDTEST_CONFIG_PATH);
+
     let response = client
-        .get(SPEEDTEST_CONFIG_URL)
+        .get(&config_url)
         .send()
         .await?
         .text()
@@ -163,18 +146,11 @@ pub fn select_best_server(servers: &[Server]) -> Result<Server, SpeedtestError> 
         ));
     }
 
-    // Select server with lowest distance (closest)
-    let best = servers
-        .iter()
-        .min_by(|a, b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
+    // Servers are already sorted by distance in calculate_distances
+    servers
+        .first()
         .cloned()
-        .ok_or_else(|| SpeedtestError::ServerNotFound("No servers available".to_string()))?;
-
-    Ok(best)
+        .ok_or_else(|| SpeedtestError::ServerNotFound("No servers available".to_string()))
 }
 
 pub async fn ping_test(client: &Client, server: &Server) -> Result<f64, SpeedtestError> {

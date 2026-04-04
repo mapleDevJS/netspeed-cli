@@ -13,12 +13,6 @@ pub struct Server {
     pub latency: f64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[allow(dead_code)]
-pub struct ServerConfig {
-    pub servers: Vec<Server>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct TestResult {
     pub server: ServerInfo,
@@ -32,22 +26,6 @@ pub struct TestResult {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ServerInfo {
-    pub id: String,
-    pub name: String,
-    pub sponsor: String,
-    pub country: String,
-    pub distance: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
-pub struct ServerListOutput {
-    pub servers: Vec<ServerListItem>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
-pub struct ServerListItem {
     pub id: String,
     pub name: String,
     pub sponsor: String,

@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
 
 /// Progress tracker for download/upload operations
 pub struct ProgressTracker {
@@ -52,12 +51,4 @@ impl ProgressTracker {
             eprintln!();
         }
     }
-}
-
-/// Create an Arc-wrapped progress tracker for sharing across threads
-pub fn create_progress_tracker(
-    total_chunks: usize,
-    show_dots: bool,
-) -> Arc<ProgressTracker> {
-    Arc::new(ProgressTracker::new(total_chunks, show_dots))
 }

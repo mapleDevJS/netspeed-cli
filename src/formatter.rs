@@ -22,7 +22,7 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
     Ok(())
 }
 
-pub fn format_json(result: &TestResult, _simple: bool) -> Result<(), SpeedtestError> {
+pub fn format_json(result: &TestResult) -> Result<(), SpeedtestError> {
     let is_tty = atty::is(atty::Stream::Stdout);
 
     let output = if is_tty {
