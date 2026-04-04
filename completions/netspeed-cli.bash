@@ -23,7 +23,7 @@ _netspeed-cli() {
 
     case "${cmd}" in
         netspeed__cli)
-            opts="-h -V --no-download --no-upload --single --bytes --share --simple --csv --csv-delimiter --csv-header --json --list --server --exclude --mini --source --timeout --secure --no-pre-allocate --generate-completion --help --version"
+            opts="-v -h -V --no-download --no-upload --single --bytes --share --simple --verbose --csv --csv-delimiter --csv-header --json --list --server --exclude --mini --source --timeout --secure --no-pre-allocate --generate-completion --help --version"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

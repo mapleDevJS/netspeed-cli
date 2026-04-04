@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use netspeed_cli::servers::{select_best_server, calculate_distance, calculate_distances};
-    use netspeed_cli::types::Server;
     use netspeed_cli::error::SpeedtestError;
+    use netspeed_cli::servers::{calculate_distance, calculate_distances, select_best_server};
+    use netspeed_cli::types::Server;
 
     fn create_test_server(id: &str, lat: f64, lon: f64) -> Server {
         Server {
@@ -26,7 +26,7 @@ mod tests {
         let result = select_best_server(&servers);
         assert!(result.is_err());
         match result {
-            Err(SpeedtestError::ServerNotFound(_)) => {},
+            Err(SpeedtestError::ServerNotFound(_)) => {}
             _ => panic!("Expected ServerNotFound error"),
         }
     }
@@ -42,7 +42,7 @@ mod tests {
     #[test]
     fn test_select_best_server_closest() {
         let mut servers = vec![
-            create_test_server("1", 40.7128, -74.0060), // NYC
+            create_test_server("1", 40.7128, -74.0060),  // NYC
             create_test_server("2", 34.0522, -118.2437), // LA
             create_test_server("3", 41.8781, -87.6298),  // Chicago
         ];

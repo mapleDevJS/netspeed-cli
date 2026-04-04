@@ -4,9 +4,11 @@
 .SH NAME
 netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-share\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-mini\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-secure\fR] [\fB\-\-no\-pre\-allocate\fR] [\fB\-\-generate\-completion\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-share\fR] [\fB\-\-simple\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-mini\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-secure\fR] [\fB\-\-no\-pre\-allocate\fR] [\fB\-\-generate\-completion\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
-Command line interface for testing internet bandwidth using speedtest.net
+Test internet bandwidth using speedtest.net servers.
+.PP
+Supports both standard speedtest.net servers and Speedtest Mini installations. Results can be displayed in simple text, JSON, or CSV format.
 .SH OPTIONS
 .TP
 \fB\-\-no\-download\fR
@@ -26,6 +28,9 @@ Generate and provide a URL to the speedtest.net share results image
 .TP
 \fB\-\-simple\fR
 Suppress verbose output, only show basic information
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Enable verbose/debug logging
 .TP
 \fB\-\-csv\fR
 Output in CSV format
@@ -83,7 +88,7 @@ elvish
 .RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Print version
