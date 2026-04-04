@@ -10,10 +10,17 @@ netspeed-cli is a Rust-based command line tool for testing your internet bandwid
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew tap mapleDevJS/netspeed-cli
+brew install netspeed-cli
+```
+
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/netspeed-cli.git
+git clone https://github.com/mapleDevJS/netspeed-cli.git
 cd netspeed-cli
 cargo build --release
 ./target/release/netspeed-cli

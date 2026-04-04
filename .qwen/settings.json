@@ -3,7 +3,26 @@
     "allow": [
       "Bash(git init)",
       "Bash(./target/debug/netspeed-cli *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(cargo test)",
+      "Bash(cargo run *)",
+      "Bash(cargo *)",
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(gh *)",
+      "Bash(git tag *)",
+      "Bash(curl *)",
+      "Bash(shasum *)",
+      "Bash(git clone *)",
+      "Bash(cp *)",
+      "Bash(git commit *)",
+      "Bash(brew *)",
+      "Bash(sleep *)",
+      "Bash(netspeed-cli *)",
+      "WebFetch(www.speedtest.net)",
+      "Bash(./target/release/netspeed-cli *)"
     ]
   },
   "$version": 3

@@ -10,7 +10,7 @@ mod types;
 mod upload;
 
 use clap::Parser;
-use cli::CliArgs;
+use cli::{CliArgs, ShellType};
 use config::Config;
 use error::SpeedtestError;
 use formatter::{format_csv, format_json, format_list, format_simple};
@@ -18,11 +18,30 @@ use http::create_client;
 use servers::{fetch_servers, select_best_server};
 use types::TestResult;
 
+fn generate_shell_completion(shell: ShellType) {
+    use clap_complete::{generate, Shell as CompleteShell};
+    use clap::CommandFactory;
+    use std::io;
+
+    let shell_type = match shell {
+        ShellType::Bash => CompleteShell::Bash,
+        ShellType::Zsh => CompleteShell::Zsh,
+        ShellType::Fish => CompleteShell::Fish,
+        ShellType::PowerShell => CompleteShell::PowerShell,
+        ShellType::Elvish => CompleteShell::Elvish,
+    };
+
+    let mut cmd = CliArgs::command();
+    let bin_name = "netspeed-cli";
+    generate(shell_type, &mut cmd, bin_name, &mut io::stdout());
+}
+
 async fn run_speedtest() -> Result<(), SpeedtestError> {
     let args = CliArgs::parse();
 
     // Handle shell completion generation
     if let Some(shell) = args.generate_completion {
+        generate_shell_completion(shell);
         return Ok(());
     }
 
@@ -61,7 +80,7 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
 
     // Discover client IP
     let client_ip = http::discover_client_ip(&client).await.ok();
-    
+
     // Run ping test
     let ping = if !config.no_download || !config.no_upload {
         let ping_result = servers::ping_test(&client, &server).await?;
@@ -128,6 +147,128 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     }
 
     Ok(())
+}
+
+/// Filter servers based on provided include/exclude lists
+#[allow(dead_code)]
+pub fn filter_servers(servers: &mut Vec<types::Server>, server_ids: &[String], exclude_ids: &[String]) {
+    if !server_ids.is_empty() {
+        servers.retain(|s| server_ids.contains(&s.id));
+    }
+    if !exclude_ids.is_empty() {
+        servers.retain(|s| !exclude_ids.contains(&s.id));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Server;
+
+    #[test]
+    fn test_filter_servers_by_include_list() {
+        let mut servers = vec![
+            Server {
+                id: "1".to_string(),
+                url: "http://server1.com".to_string(),
+                name: "Server 1".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 40.0,
+                lon: -74.0,
+                distance: 100.0,
+                latency: 15.0,
+            },
+            Server {
+                id: "2".to_string(),
+                url: "http://server2.com".to_string(),
+                name: "Server 2".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 41.0,
+                lon: -73.0,
+                distance: 200.0,
+                latency: 25.0,
+            },
+        ];
+
+        filter_servers(&mut servers, &["1".to_string()], &[]);
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].id, "1");
+    }
+
+    #[test]
+    fn test_filter_servers_by_exclude_list() {
+        let mut servers = vec![
+            Server {
+                id: "1".to_string(),
+                url: "http://server1.com".to_string(),
+                name: "Server 1".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 40.0,
+                lon: -74.0,
+                distance: 100.0,
+                latency: 15.0,
+            },
+            Server {
+                id: "2".to_string(),
+                url: "http://server2.com".to_string(),
+                name: "Server 2".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 41.0,
+                lon: -73.0,
+                distance: 200.0,
+                latency: 25.0,
+            },
+        ];
+
+        filter_servers(&mut servers, &[], &["2".to_string()]);
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].id, "1");
+    }
+
+    #[test]
+    fn test_filter_servers_empty_lists() {
+        let mut servers = vec![
+            Server {
+                id: "1".to_string(),
+                url: "http://server1.com".to_string(),
+                name: "Server 1".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 40.0,
+                lon: -74.0,
+                distance: 100.0,
+                latency: 15.0,
+            },
+        ];
+
+        let original_len = servers.len();
+        filter_servers(&mut servers, &[], &[]);
+        assert_eq!(servers.len(), original_len);
+    }
+
+    #[test]
+    fn test_filter_servers_no_matches() {
+        let mut servers = vec![
+            Server {
+                id: "1".to_string(),
+                url: "http://server1.com".to_string(),
+                name: "Server 1".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 40.0,
+                lon: -74.0,
+                distance: 100.0,
+                latency: 15.0,
+            },
+        ];
+
+        filter_servers(&mut servers, &["999".to_string()], &[]);
+        assert!(servers.is_empty());
+    }
 }
 
 #[tokio::main]

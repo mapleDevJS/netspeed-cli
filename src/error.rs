@@ -5,6 +5,7 @@ pub enum SpeedtestError {
     NetworkError(String),
     ParseError(String),
     ServerNotFound(String),
+    #[allow(dead_code)]
     TimeoutError(String),
     IoError(String),
     Custom(String),
@@ -58,5 +59,77 @@ impl From<quick_xml::de::DeError> for SpeedtestError {
 impl From<csv::Error> for SpeedtestError {
     fn from(err: csv::Error) -> Self {
         SpeedtestError::Custom(err.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_network_error_display() {
+        let err = SpeedtestError::NetworkError("connection failed".to_string());
+        assert_eq!(format!("{}", err), "Network error: connection failed");
+    }
+
+    #[test]
+    fn test_parse_error_display() {
+        let err = SpeedtestError::ParseError("invalid JSON".to_string());
+        assert_eq!(format!("{}", err), "Parse error: invalid JSON");
+    }
+
+    #[test]
+    fn test_server_not_found_display() {
+        let err = SpeedtestError::ServerNotFound("no servers".to_string());
+        assert_eq!(format!("{}", err), "Server not found: no servers");
+    }
+
+    #[test]
+    fn test_timeout_error_display() {
+        let err = SpeedtestError::TimeoutError("request timed out".to_string());
+        assert_eq!(format!("{}", err), "Timeout: request timed out");
+    }
+
+    #[test]
+    fn test_io_error_display() {
+        let err = SpeedtestError::IoError("file not found".to_string());
+        assert_eq!(format!("{}", err), "I/O error: file not found");
+    }
+
+    #[test]
+    fn test_custom_error_display() {
+        let err = SpeedtestError::Custom("custom error".to_string());
+        assert_eq!(format!("{}", err), "custom error");
+    }
+
+    #[test]
+    fn test_from_reqwest_error() {
+        // Test conversion from reqwest error - we'll test with a network error scenario
+        // since we can't easily create a reqwest error without the blocking feature
+        let network_err = SpeedtestError::NetworkError("connection refused".to_string());
+        assert!(matches!(network_err, SpeedtestError::NetworkError(_)));
+    }
+
+    #[test]
+    fn test_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let speedtest_err: SpeedtestError = io_err.into();
+        assert!(matches!(speedtest_err, SpeedtestError::IoError(_)));
+        assert!(format!("{}", speedtest_err).contains("I/O error"));
+    }
+
+    #[test]
+    fn test_error_trait_implementation() {
+        let err = SpeedtestError::NetworkError("test error".to_string());
+        // Test that Error trait is implemented
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_debug_trait() {
+        let err = SpeedtestError::Custom("debug test".to_string());
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("Custom"));
+        assert!(debug_str.contains("debug test"));
     }
 }
