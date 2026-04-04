@@ -4,7 +4,6 @@ use crate::config::Config;
 use crate::error::SpeedtestError;
 use crate::types::{Server, ServerConfig};
 
-const SPEEDTEST_CONFIG_URL: &str = "https://www.speedtest.net/speedtest-config.php";
 const SPEEDTEST_SERVERS_URL: &str = "https://www.speedtest.net/speedtest-servers-static.php";
 
 pub async fn fetch_servers(client: &Client, _config: &Config) -> Result<Vec<Server>, SpeedtestError> {

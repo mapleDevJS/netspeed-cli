@@ -14,11 +14,16 @@ pub struct Config {
     pub list: bool,
     pub server_ids: Vec<String>,
     pub exclude_ids: Vec<String>,
+    #[allow(dead_code)]
     pub mini_url: Option<String>,
+    #[allow(dead_code)]
     pub source: Option<String>,
     pub timeout: u64,
+    #[allow(dead_code)]
     pub secure: bool,
+    #[allow(dead_code)]
     pub no_pre_allocate: bool,
+    #[allow(dead_code)]
     pub client_ip: Option<String>,
 }
 

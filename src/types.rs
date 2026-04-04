@@ -39,11 +39,13 @@ pub struct ServerInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct ServerListOutput {
     pub servers: Vec<ServerListItem>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct ServerListItem {
     pub id: String,
     pub name: String,

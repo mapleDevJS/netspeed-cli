@@ -5,6 +5,7 @@ pub enum SpeedtestError {
     NetworkError(String),
     ParseError(String),
     ServerNotFound(String),
+    #[allow(dead_code)]
     TimeoutError(String),
     IoError(String),
     Custom(String),

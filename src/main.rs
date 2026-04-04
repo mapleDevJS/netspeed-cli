@@ -22,7 +22,7 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let args = CliArgs::parse();
 
     // Handle shell completion generation
-    if let Some(shell) = args.generate_completion {
+    if let Some(_shell) = args.generate_completion {
         return Ok(());
     }
 

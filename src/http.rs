@@ -30,6 +30,7 @@ pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestErro
     Ok(response.trim().to_string())
 }
 
+#[allow(dead_code)]
 pub fn build_base_url(secure: bool) -> String {
     if secure {
         "https://www.speedtest.net".to_string()
