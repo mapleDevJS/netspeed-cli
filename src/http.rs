@@ -1,7 +1,13 @@
-use reqwest::Client;
 use crate::config::Config;
 use crate::error::SpeedtestError;
+use reqwest::Client;
 
+/// Create an HTTP client with the given configuration.
+///
+/// # Errors
+///
+/// Returns [`SpeedtestError::Custom`] if the source IP is invalid.
+/// Returns [`SpeedtestError::NetworkError`] if the client fails to build.
 pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
     let mut builder = Client::builder()
         .timeout(std::time::Duration::from_secs(config.timeout))
@@ -10,69 +16,76 @@ pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
         .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
     if let Some(ref source_ip) = config.source {
-        let addr: std::net::SocketAddr = source_ip.parse()
-            .map_err(|e| SpeedtestError::Custom(format!("Invalid source IP: {}", e)))?;
+        let addr: std::net::SocketAddr = source_ip
+            .parse()
+            .map_err(|e| SpeedtestError::Custom(format!("Invalid source IP: {e}")))?;
         builder = builder.local_address(addr.ip());
     }
 
-    let client = builder.build()
+    let client = builder
+        .build()
         .map_err(|e| SpeedtestError::NetworkError(e.to_string()))?;
 
     Ok(client)
 }
 
-/// Validate IP address format
-#[allow(dead_code)]
-pub fn validate_ip(ip: &str) -> Result<(), String> {
-    let parts: Vec<&str> = ip.split('.').collect();
-    if parts.len() != 4 {
-        return Err(format!("Invalid IPv4 format: {}", ip));
-    }
-    
-    for part in parts {
-        if part.parse::<u8>().is_err() {
-            return Err(format!("Invalid octet: {}", part));
-        }
-    }
-    
-    Ok(())
-}
-
-/// Build timeout duration from seconds
-#[allow(dead_code)]
-pub fn build_timeout_duration(seconds: u64) -> std::time::Duration {
-    std::time::Duration::from_secs(seconds)
-}
-
+/// Discover the client's public IP address via speedtest.net.
+///
+/// # Errors
+///
+/// Returns [`SpeedtestError::NetworkError`] if all IP discovery endpoints fail.
 pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestError> {
-    // Try multiple endpoints in case one is unavailable
-    let endpoints = [
-        "https://www.speedtest.net/api/ip.php",
-        "https://www.speedtest.net/api/ios-config.php",
-    ];
-
-    for endpoint in &endpoints {
-        if let Ok(response) = client.get(*endpoint).send().await {
-            if let Ok(text) = response.text().await {
-                let trimmed = text.trim().to_string();
-                if !trimmed.is_empty() && !trimmed.contains("<html") {
-                    return Ok(trimmed);
-                }
+    if let Ok(response) = client
+        .get("https://www.speedtest.net/api/ip.php")
+        .send()
+        .await
+    {
+        if let Ok(text) = response.text().await {
+            let trimmed = text.trim().to_string();
+            if is_valid_ipv4(&trimmed) {
+                return Ok(trimmed);
             }
         }
     }
 
-    // If all endpoints fail, return unknown
+    if let Ok(response) = client
+        .get("https://www.speedtest.net/api/ios-config.php")
+        .send()
+        .await
+    {
+        if let Ok(text) = response.text().await {
+            if let Some(ip) = parse_ip_from_xml(&text) {
+                return Ok(ip);
+            }
+        }
+    }
+
     Ok("unknown".to_string())
 }
 
-#[allow(dead_code)]
-pub fn build_base_url(secure: bool) -> String {
-    if secure {
-        "https://www.speedtest.net".to_string()
-    } else {
-        "http://www.speedtest.net".to_string()
+fn is_valid_ipv4(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() != 4 {
+        return false;
     }
+    parts.iter().all(|p| p.parse::<u8>().is_ok())
+}
+
+fn parse_ip_from_xml(xml: &str) -> Option<String> {
+    for line in xml.lines() {
+        if line.contains("<client") && line.contains("ip=\"") {
+            if let Some(start) = line.find("ip=\"") {
+                let rest = &line[start + 4..];
+                if let Some(end) = rest.find('"') {
+                    let ip = &rest[..end];
+                    if is_valid_ipv4(ip) {
+                        return Some(ip.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -80,79 +93,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_base_url_http() {
-        let url = build_base_url(false);
-        assert_eq!(url, "http://www.speedtest.net");
+    fn test_is_valid_ipv4() {
+        assert!(is_valid_ipv4("192.168.1.1"));
+        assert!(is_valid_ipv4("0.0.0.0"));
+        assert!(is_valid_ipv4("255.255.255.255"));
+        assert!(is_valid_ipv4("173.35.57.235"));
     }
 
     #[test]
-    fn test_build_base_url_https() {
-        let url = build_base_url(true);
-        assert_eq!(url, "https://www.speedtest.net");
+    fn test_is_valid_ipv4_invalid() {
+        assert!(!is_valid_ipv4("256.1.1.1"));
+        assert!(!is_valid_ipv4("1.2.3"));
+        assert!(!is_valid_ipv4("abc"));
+        assert!(!is_valid_ipv4(""));
+        assert!(!is_valid_ipv4("1.2.3.4.5"));
     }
 
     #[test]
-    fn test_validate_ip_valid() {
-        assert!(validate_ip("192.168.1.1").is_ok());
+    fn test_parse_ip_from_xml() {
+        let xml = r#"<client country="CA" ip="173.35.57.235" isp="Rogers"/>"#;
+        assert_eq!(parse_ip_from_xml(xml), Some("173.35.57.235".to_string()));
     }
 
     #[test]
-    fn test_validate_ip_localhost() {
-        assert!(validate_ip("127.0.0.1").is_ok());
+    fn test_parse_ip_from_xml_full_response() {
+        let xml = r#"<?xml version="1.0"?>
+<settings>
+ <config downloadThreadCountV3="4"/>
+ <client country="CA" ip="173.35.57.235" isp="Rogers"/>
+</settings>"#;
+        assert_eq!(parse_ip_from_xml(xml), Some("173.35.57.235".to_string()));
     }
 
     #[test]
-    fn test_validate_ip_invalid_format() {
-        assert!(validate_ip("192.168.1").is_err());
-    }
-
-    #[test]
-    fn test_validate_ip_invalid_octet() {
-        assert!(validate_ip("192.168.1.999").is_err());
-    }
-
-    #[test]
-    fn test_build_timeout_duration() {
-        let duration = build_timeout_duration(10);
-        assert_eq!(duration.as_secs(), 10);
-    }
-
-    #[test]
-    fn test_build_timeout_duration_zero() {
-        let duration = build_timeout_duration(0);
-        assert_eq!(duration.as_secs(), 0);
-    }
-
-    #[test]
-    fn test_build_timeout_duration_large() {
-        let duration = build_timeout_duration(300);
-        assert_eq!(duration.as_secs(), 300);
+    fn test_parse_ip_from_xml_invalid() {
+        assert!(parse_ip_from_xml("not xml").is_none());
+        assert!(parse_ip_from_xml("<html></html>").is_none());
+        assert!(parse_ip_from_xml("<client ip=\"invalid\"/>").is_none());
     }
 
     #[test]
     fn test_create_client_invalid_source_ip() {
-        let config = Config {
-            no_download: false,
-            no_upload: false,
-            single: false,
-            bytes: false,
-            share: false,
-            simple: false,
-            csv: false,
-            csv_delimiter: ',',
-            csv_header: false,
-            json: false,
-            list: false,
-            server_ids: vec![],
-            exclude_ids: vec![],
-            mini_url: None,
-            source: Some("invalid-ip".to_string()),
-            timeout: 10,
-            secure: false,
-            no_pre_allocate: false,
-            client_ip: None,
-        };
-
+        use crate::cli::CliArgs;
+        use clap::Parser;
+        let args = CliArgs::parse_from(["netspeed-cli"]);
+        let mut config = Config::from_args(&args);
+        config.source = Some("invalid-ip".to_string());
         let result = create_client(&config);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SpeedtestError::Custom(_)));
@@ -160,91 +146,33 @@ mod tests {
 
     #[test]
     fn test_create_client_valid_config() {
-        let config = Config {
-            no_download: false,
-            no_upload: false,
-            single: false,
-            bytes: false,
-            share: false,
-            simple: false,
-            csv: false,
-            csv_delimiter: ',',
-            csv_header: false,
-            json: false,
-            list: false,
-            server_ids: vec![],
-            exclude_ids: vec![],
-            mini_url: None,
-            source: None,
-            timeout: 10,
-            secure: false,
-            no_pre_allocate: false,
-            client_ip: None,
-        };
-
+        use crate::cli::CliArgs;
+        use clap::Parser;
+        let args = CliArgs::parse_from(["netspeed-cli"]);
+        let config = Config::from_args(&args);
         let result = create_client(&config);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_create_client_with_source_ip() {
-        let config = Config {
-            no_download: false,
-            no_upload: false,
-            single: false,
-            bytes: false,
-            share: false,
-            simple: false,
-            csv: false,
-            csv_delimiter: ',',
-            csv_header: false,
-            json: false,
-            list: false,
-            server_ids: vec![],
-            exclude_ids: vec![],
-            mini_url: None,
-            source: Some("0.0.0.0".to_string()),
-            timeout: 10,
-            secure: false,
-            no_pre_allocate: false,
-            client_ip: None,
-        };
-
+        use crate::cli::CliArgs;
+        use clap::Parser;
+        let args = CliArgs::parse_from(["netspeed-cli", "--source", "0.0.0.0"]);
+        let config = Config::from_args(&args);
         let result = create_client(&config);
-        // Note: This may fail if the IP is not available to bind, but the config should be valid
-        // We're just testing that the client creation logic doesn't crash
         match result {
-            Ok(_) => (),
-            Err(SpeedtestError::NetworkError(_)) => (), // Acceptable error on some systems
-            Err(SpeedtestError::Custom(_)) => (), // Also acceptable
-            Err(e) => panic!("Unexpected error type: {:?}", e),
+            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Custom(_)) => (),
+            Err(e) => panic!("Unexpected error type: {e:?}"),
         }
     }
 
     #[test]
     fn test_create_client_custom_timeout() {
-        let config = Config {
-            no_download: false,
-            no_upload: false,
-            single: false,
-            bytes: false,
-            share: false,
-            simple: false,
-            csv: false,
-            csv_delimiter: ',',
-            csv_header: false,
-            json: false,
-            list: false,
-            server_ids: vec![],
-            exclude_ids: vec![],
-            mini_url: None,
-            source: None,
-            timeout: 30,
-            secure: false,
-            no_pre_allocate: false,
-            client_ip: None,
-        };
-
+        use crate::cli::CliArgs;
+        use clap::Parser;
+        let args = CliArgs::parse_from(["netspeed-cli", "--timeout", "30"]);
+        let config = Config::from_args(&args);
         let result = create_client(&config);
         assert!(result.is_ok());
     }

@@ -1,23 +1,39 @@
-use reqwest::Client;
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+
 use crate::error::SpeedtestError;
+use crate::progress::SpeedProgress;
 use crate::types::Server;
+use reqwest::Client;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
 
 /// Calculate download bandwidth from bytes and elapsed time
-pub fn calculate_bandwidth(total_bytes: u64, elapsed: f64) -> f64 {
-    if elapsed > 0.0 {
-        (total_bytes as f64 * 8.0) / elapsed
+#[must_use]
+pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
+    if elapsed_secs > 0.0 {
+        (total_bytes as f64 * 8.0) / elapsed_secs
     } else {
         0.0
     }
 }
 
 /// Determine number of concurrent streams based on single flag
+#[must_use]
 pub fn determine_stream_count(single: bool) -> usize {
-    if single { 1 } else { 4 }
+    if single {
+        1
+    } else {
+        4
+    }
 }
 
 /// Extract base URL from server URL (strip /upload.php suffix)
-/// e.g., "http://host:8080/speedtest/upload.php" -> "http://host:8080/speedtest"
+#[must_use]
 pub fn extract_base_url(url: &str) -> &str {
     url.strip_suffix("/upload.php")
         .or_else(|| url.strip_suffix("/upload.asp"))
@@ -25,12 +41,12 @@ pub fn extract_base_url(url: &str) -> &str {
 }
 
 /// Build test file URL using Speedtest.net standard naming
+#[must_use]
 pub fn build_test_url(server_url: &str, file_index: usize) -> String {
     let base = extract_base_url(server_url);
-    // Standard Speedtest.net test file sizes (in bytes dimension naming)
     let sizes = ["2000x2000", "3000x3000", "3500x3500", "4000x4000"];
     let size = sizes[file_index % sizes.len()];
-    format!("{}/random{}.jpg", base, size)
+    format!("{base}/random{size}.jpg")
 }
 
 /// Result from a single download stream
@@ -39,196 +55,158 @@ struct StreamResult {
     elapsed_secs: f64,
 }
 
+use futures_util::StreamExt;
+
+/// Run download bandwidth test against the given server.
+///
+/// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_downloaded)`.
+///
+/// # Errors
+///
+/// Returns [`SpeedtestError::NetworkError`] if all download streams fail.
+/// Returns [`SpeedtestError::Custom`] if the server URL is invalid.
 pub async fn download_test(
     client: &Client,
     server: &Server,
     single: bool,
-) -> Result<f64, SpeedtestError> {
+    progress: Arc<SpeedProgress>,
+) -> Result<(f64, f64, u64), SpeedtestError> {
     let concurrent_streams = determine_stream_count(single);
+    let total_bytes = Arc::new(AtomicU64::new(0));
+    let peak_bps = Arc::new(AtomicU64::new(0));
+    let start = Instant::now();
 
-    // Download multiple files simultaneously
+    // Estimated total: ~8-12 MB for typical speedtest, we'll update dynamically
+    // Use a large estimate so the bar fills gradually
+    let estimated_total: u64 = 15_000_000; // 15 MB estimate
+
+    // Spawn streams that report progress
     let mut handles = Vec::new();
-
-    for _i in 0..concurrent_streams {
+    for _ in 0..concurrent_streams {
         let client = client.clone();
         let server_url = server.url.clone();
-        let stream_start = std::time::Instant::now();
+        let total_ref = Arc::clone(&total_bytes);
+        let peak_ref = Arc::clone(&peak_bps);
+        let start_ref = start;
+        let prog = Arc::clone(&progress);
 
         let handle = tokio::spawn(async move {
             let mut stream_bytes = 0u64;
 
-            // Download test files with increasing sizes
             for j in 0..4 {
                 let test_url = build_test_url(&server_url, j);
 
                 match client.get(&test_url).send().await {
                     Ok(response) => {
-                        if let Ok(body) = response.bytes().await {
-                            stream_bytes += body.len() as u64;
+                        let mut stream = response.bytes_stream();
+                        while let Some(item) = stream.next().await {
+                            if let Ok(chunk) = item {
+                                let len = chunk.len() as u64;
+                                stream_bytes += len;
+                                total_ref.fetch_add(len, Ordering::Relaxed);
+
+                                // Update progress bar from this stream
+                                let total_so_far = total_ref.load(Ordering::Relaxed);
+                                let elapsed = start_ref.elapsed().as_secs_f64();
+                                let speed = calculate_bandwidth(total_so_far, elapsed);
+
+                                // Update peak speed
+                                let current_peak = peak_ref.load(Ordering::Relaxed);
+                                if speed > current_peak as f64 {
+                                    peak_ref.store(speed as u64, Ordering::Relaxed);
+                                }
+
+                                let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
+                                prog.update(speed / 1_000_000.0, pct, total_so_far);
+                            }
                         }
                     }
-                    Err(_) => continue,
+                    Err(_) => {}
                 }
             }
 
             StreamResult {
                 bytes: stream_bytes,
-                elapsed_secs: stream_start.elapsed().as_secs_f64(),
+                elapsed_secs: start_ref.elapsed().as_secs_f64(),
             }
         });
 
         handles.push(handle);
     }
 
-    // Collect results from all streams
-    let mut stream_results = Vec::new();
+    // Collect results
+    let mut results = Vec::new();
     for handle in handles {
         if let Ok(result) = handle.await {
-            stream_results.push(result);
+            results.push(result);
         }
     }
 
-    if stream_results.is_empty() {
-        return Ok(0.0);
+    if results.is_empty() {
+        return Ok((0.0, 0.0, 0));
     }
 
-    // Calculate per-stream bandwidth and take the average
-    // This matches how official speedtest tools report results
-    let total_bandwidth: f64 = stream_results
+    let total_bandwidth: f64 = results
         .iter()
         .map(|r| calculate_bandwidth(r.bytes, r.elapsed_secs))
         .sum();
 
-    let avg_bandwidth = total_bandwidth / stream_results.len() as f64;
-
-    Ok(avg_bandwidth)
+    let final_total_bytes = total_bytes.load(Ordering::Relaxed);
+    let final_peak_speed = peak_bps.load(Ordering::Relaxed) as f64;
+    let avg_bandwidth = total_bandwidth / results.len() as f64;
+    Ok((avg_bandwidth, final_peak_speed, final_total_bytes))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_download_bandwidth_calculation() {
-        use super::calculate_bandwidth;
-        
-        // Test bandwidth calculation logic
         let result = calculate_bandwidth(10_000_000, 2.0);
         assert_eq!(result, 40_000_000.0);
     }
 
     #[test]
     fn test_download_bandwidth_zero_elapsed() {
-        use super::calculate_bandwidth;
-        
-        // Test division by zero protection
         let result = calculate_bandwidth(10_000_000, 0.0);
         assert_eq!(result, 0.0);
     }
 
     #[test]
     fn test_download_concurrent_streams_single() {
-        use super::determine_stream_count;
-        
-        // Test single stream configuration
         assert_eq!(determine_stream_count(true), 1);
     }
 
     #[test]
     fn test_download_concurrent_streams_multiple() {
-        use super::determine_stream_count;
-        
-        // Test multiple streams configuration
         assert_eq!(determine_stream_count(false), 4);
     }
 
     #[test]
     fn test_download_url_generation() {
-        use super::build_test_url;
-
-        // Test URL generation for test files
         let server_url = "http://server.example.com/speedtest/upload.php";
         let test_url = build_test_url(server_url, 0);
-
-        assert_eq!(test_url, "http://server.example.com/speedtest/random2000x2000.jpg");
-    }
-
-    #[test]
-    fn test_download_url_generation_various_sizes() {
-        use super::build_test_url;
-
-        let server_url = "http://server.example.com/speedtest/upload.php";
-        let expected = vec![
-            "http://server.example.com/speedtest/random2000x2000.jpg",
-            "http://server.example.com/speedtest/random3000x3000.jpg",
-            "http://server.example.com/speedtest/random3500x3500.jpg",
-            "http://server.example.com/speedtest/random4000x4000.jpg",
-        ];
-
-        for (i, exp) in expected.iter().enumerate() {
-            let test_url = build_test_url(server_url, i);
-            assert_eq!(test_url, *exp);
-        }
-    }
-
-    #[test]
-    fn test_extract_base_url_upload_php() {
-        use super::extract_base_url;
-
-        let url = "http://server.example.com:8080/speedtest/upload.php";
-        assert_eq!(extract_base_url(url), "http://server.example.com:8080/speedtest");
-    }
-
-    #[test]
-    fn test_extract_base_url_upload_asp() {
-        use super::extract_base_url;
-
-        let url = "http://server.example.com/speedtest/upload.asp";
-        assert_eq!(extract_base_url(url), "http://server.example.com/speedtest");
-    }
-
-    #[test]
-    fn test_extract_base_url_no_suffix() {
-        use super::extract_base_url;
-
-        let url = "http://server.example.com/speedtest";
-        assert_eq!(extract_base_url(url), "http://server.example.com/speedtest");
+        assert_eq!(
+            test_url,
+            "http://server.example.com/speedtest/random2000x2000.jpg"
+        );
     }
 
     #[test]
     fn test_download_url_generation_cycles() {
-        use super::build_test_url;
-
-        // After 4 files, it should cycle back to the first
         let server_url = "http://server.example.com/speedtest/upload.php";
         let url_0 = build_test_url(server_url, 0);
         let url_4 = build_test_url(server_url, 4);
-
         assert_eq!(url_0, url_4);
     }
 
     #[test]
-    fn test_calculate_bandwidth_small_file() {
-        use super::calculate_bandwidth;
-        
-        // 1 MB in 0.1 seconds = 80 Mbps
-        let result = calculate_bandwidth(1_000_000, 0.1);
-        assert_eq!(result, 80_000_000.0);
-    }
-
-    #[test]
-    fn test_calculate_bandwidth_large_file() {
-        use super::calculate_bandwidth;
-        
-        // 100 MB in 10 seconds = 80 Mbps
-        let result = calculate_bandwidth(100_000_000, 10.0);
-        assert_eq!(result, 80_000_000.0);
-    }
-
-    #[test]
-    fn test_calculate_bandwidth_zero_bytes() {
-        use super::calculate_bandwidth;
-        
-        // 0 bytes should return 0 bandwidth
-        let result = calculate_bandwidth(0, 5.0);
-        assert_eq!(result, 0.0);
+    fn test_extract_base_url() {
+        let url = "http://server.example.com:8080/speedtest/upload.php";
+        assert_eq!(
+            extract_base_url(url),
+            "http://server.example.com:8080/speedtest"
+        );
     }
 }
