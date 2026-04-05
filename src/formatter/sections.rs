@@ -16,7 +16,7 @@ use super::ratings::{
     format_speed_colored, format_speed_plain, ping_rating, speed_rating_mbps,
 };
 
-fn format_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) {
+fn build_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) -> String {
     let speed = if nc {
         format_speed_plain(speed_bps, bytes)
     } else {
@@ -24,64 +24,66 @@ fn format_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) {
     };
     let rating = colorize_rating(speed_rating_mbps(speed_bps / 1_000_000.0), nc);
     if nc {
-        eprintln!("  {label:>14}:   {speed}");
+        format!("  {label:>14}:   {speed}")
     } else {
-        eprintln!("  {:>14}:   {speed}  {rating}", label.dimmed());
+        format!("  {:>14}:   {speed}  {rating}", label.dimmed())
     }
 }
 
-fn format_peak_line(peak_bps: f64, bytes: bool, nc: bool) {
+fn build_peak_line(peak_bps: f64, bytes: bool, nc: bool) -> String {
     let peak = if nc {
         format_speed_plain(peak_bps, bytes)
     } else {
         format_speed_colored(peak_bps, bytes)
     };
     if nc {
-        eprintln!("  {:>14}:   {peak}", "Peak (1s avg)");
+        format!("  {:>14}:   {peak}", "Peak (1s avg)")
     } else {
-        eprintln!("  {:>14}:   {peak}", "Peak (1s avg)".dimmed());
+        format!("  {:>14}:   {peak}", "Peak (1s avg)".dimmed())
     }
 }
 
-fn format_latency_load_line(lat_load: f64, idle_ping: Option<f64>, nc: bool) {
+fn build_latency_load_line(lat_load: f64, idle_ping: Option<f64>, nc: bool) -> String {
     let degradation = degradation_str(lat_load, idle_ping, nc);
     if nc {
-        eprintln!(
+        format!(
             "  {:>14}:   {:>8.1} ms{degradation}",
             "Latency (load)", lat_load
-        );
+        )
     } else {
-        eprintln!(
+        format!(
             "  {:>14}:   {}{degradation}",
             "Latency (load)".dimmed(),
             format!("{lat_load:.1} ms").yellow(),
-        );
+        )
     }
 }
 
-pub fn format_latency_section(result: &TestResult, nc: bool) {
-    let Some(ping) = result.ping else { return };
+pub fn build_latency_section(result: &TestResult, nc: bool) -> String {
+    let Some(ping) = result.ping else { return String::new() };
+
+    let mut lines = Vec::new();
 
     let rating_str = colorize_rating(ping_rating(ping), nc);
     if nc {
-        eprintln!("  {:>14}:   {:>8.1} ms  ({rating_str})", "Latency", ping);
+        lines.push(format!("  {:>14}:   {:>8.1} ms  ({rating_str})", "Latency", ping));
     } else {
-        eprintln!(
+        lines.push(format!(
             "  {:>14}:   {}  {rating_str}",
             "Latency".dimmed(),
             format!("{ping:.1} ms").cyan().bold(),
-        );
+        ));
     }
 
     if let Some(jitter) = result.jitter {
         if nc {
-            eprintln!("  {:>14}:   {:>8.1} ms", "Jitter", jitter);
+            lines.push(format!("  {:>14}:   {:>8.1} ms", "Jitter", jitter));
         } else {
-            eprintln!(
+            lines.push(format!(
                 "  {:>14}:   {}",
                 "Jitter".dimmed(),
                 format!("{jitter:.1} ms").cyan()
-            );
+            ));
         }
     }
 
@@ -93,11 +95,10 @@ pub fn format_latency_section(result: &TestResult, nc: bool) {
         } else {
             "red"
         };
+        let loss_str = format!("{loss:.1}%");
         if nc {
-            let loss_str = format!("{loss:.1}%");
-            eprintln!("  {:>14}:   {:>8}", "Packet Loss", loss_str);
+            lines.push(format!("  {:>14}:   {:>8}", "Packet Loss", loss_str));
         } else {
-            let loss_str = format!("{loss:.1}%");
             let display = if loss == 0.0 {
                 format!("{} {}", loss_str.green(), "✓".green())
             } else {
@@ -108,7 +109,7 @@ pub fn format_latency_section(result: &TestResult, nc: bool) {
                     _ => loss_str.dimmed().to_string(),
                 }
             };
-            eprintln!("  {:>14}:   {display}", "Packet Loss".dimmed());
+            lines.push(format!("  {:>14}:   {display}", "Packet Loss".dimmed()));
         }
     }
 
@@ -118,38 +119,58 @@ pub fn format_latency_section(result: &TestResult, nc: bool) {
         let (grade, added) = bufferbloat_grade(max_load, result.ping.unwrap_or(0.0));
         let display = bufferbloat_colorized(grade, added, nc);
         if nc {
-            eprintln!("  {:>14}:   {:>12}", "Bufferbloat", display);
+            lines.push(format!("  {:>14}:   {:>12}", "Bufferbloat", display));
         } else {
-            eprintln!("  {:>14}:   {display}", "Bufferbloat".dimmed());
+            lines.push(format!("  {:>14}:   {display}", "Bufferbloat".dimmed()));
         }
+    }
+
+    lines.join("\n")
+}
+
+pub fn format_latency_section(result: &TestResult, nc: bool) {
+    let output = build_latency_section(result, nc);
+    if !output.is_empty() {
+        eprintln!("{output}");
     }
 }
 
-pub fn format_download_section(result: &TestResult, bytes: bool, nc: bool) {
-    let Some(dl) = result.download else { return };
+pub fn build_download_section(result: &TestResult, bytes: bool, nc: bool) -> String {
+    let Some(dl) = result.download else { return String::new() };
 
-    format_speed_section("Download", dl, bytes, nc);
+    let mut lines = Vec::new();
+    lines.push(build_speed_section("Download", dl, bytes, nc));
 
     if let Some(peak) = result.download_peak {
-        format_peak_line(peak, bytes, nc);
+        lines.push(build_peak_line(peak, bytes, nc));
     }
 
     if let Some(lat_dl) = result.latency_download {
-        format_latency_load_line(lat_dl, result.ping, nc);
+        lines.push(build_latency_load_line(lat_dl, result.ping, nc));
+    }
+
+    lines.join("\n")
+}
+
+pub fn format_download_section(result: &TestResult, bytes: bool, nc: bool) {
+    let output = build_download_section(result, bytes, nc);
+    if !output.is_empty() {
+        eprintln!("{output}");
     }
 }
 
-pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool) {
-    let Some(ul) = result.upload else { return };
+pub fn build_upload_section(result: &TestResult, bytes: bool, nc: bool) -> String {
+    let Some(ul) = result.upload else { return String::new() };
 
-    format_speed_section("Upload", ul, bytes, nc);
+    let mut lines = Vec::new();
+    lines.push(build_speed_section("Upload", ul, bytes, nc));
 
     if let Some(peak) = result.upload_peak {
-        format_peak_line(peak, bytes, nc);
+        lines.push(build_peak_line(peak, bytes, nc));
     }
 
     if let Some(lat_ul) = result.latency_upload {
-        format_latency_load_line(lat_ul, result.ping, nc);
+        lines.push(build_latency_load_line(lat_ul, result.ping, nc));
     }
 
     // Show UL/DL ratio if both are available
@@ -173,45 +194,117 @@ pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool) {
             }
         };
         if nc {
-            eprintln!("  {:>14}:   {ratio_str}", "UL/DL Ratio");
+            lines.push(format!("  {:>14}:   {ratio_str}", "UL/DL Ratio"));
         } else {
-            eprintln!("  {:>14}:   {ratio_str}", "UL/DL Ratio".dimmed());
+            lines.push(format!("  {:>14}:   {ratio_str}", "UL/DL Ratio".dimmed()));
         }
+    }
+
+    lines.join("\n")
+}
+
+pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool) {
+    let output = build_upload_section(result, bytes, nc);
+    if !output.is_empty() {
+        eprintln!("{output}");
     }
 }
 
-pub fn format_connection_info(result: &TestResult, nc: bool) {
+pub fn build_connection_info(result: &TestResult, nc: bool) -> String {
     let dist = common::format_distance(result.server.distance);
+    let mut lines = Vec::new();
+
     if nc {
-        eprintln!("\n  CONNECTION INFO");
-        eprintln!(
+        lines.push(String::from("\n  CONNECTION INFO"));
+    } else {
+        lines.push(format!("\n  {}", "CONNECTION INFO".bold().underline()));
+    }
+
+    if nc {
+        lines.push(format!(
             "  {:>16}:   {} ({})",
             "Server", result.server.sponsor, result.server.name
-        );
-        eprintln!(
-            "  {:>16}:   {}  ({dist})",
-            "Location", result.server.country
-        );
-        if let Some(ip) = &result.client_ip {
-            eprintln!("  {:>16}:   {ip}", "Client IP");
-        }
+        ));
     } else {
-        eprintln!("\n  {}", "CONNECTION INFO".bold().underline());
-        eprintln!(
+        lines.push(format!(
             "  {:>16}:   {} ({})",
             "Server".dimmed(),
             result.server.sponsor.white().bold(),
             result.server.name
-        );
-        eprintln!(
+        ));
+    }
+
+    if nc {
+        lines.push(format!(
+            "  {:>16}:   {}  ({dist})",
+            "Location", result.server.country
+        ));
+    } else {
+        lines.push(format!(
             "  {:>16}:   {}  ({dist})",
             "Location".dimmed(),
             result.server.country,
-        );
-        if let Some(ip) = &result.client_ip {
-            eprintln!("  {:>16}:   {ip}", "Client IP".dimmed());
+        ));
+    }
+
+    if let Some(ip) = &result.client_ip {
+        if nc {
+            lines.push(format!("  {:>16}:   {ip}", "Client IP"));
+        } else {
+            lines.push(format!("  {:>16}:   {ip}", "Client IP".dimmed()));
         }
     }
+
+    lines.join("\n")
+}
+
+pub fn format_connection_info(result: &TestResult, nc: bool) {
+    eprintln!("{}", build_connection_info(result, nc));
+}
+
+pub fn build_test_summary(
+    dl_bytes: u64,
+    ul_bytes: u64,
+    dl_duration: f64,
+    ul_duration: f64,
+    nc: bool,
+) -> String {
+    let mut lines = Vec::new();
+
+    if nc {
+        lines.push(String::from("\n  TEST SUMMARY"));
+    } else {
+        lines.push(format!("\n  {}", "TEST SUMMARY".bold().underline()));
+    }
+
+    if dl_bytes > 0 {
+        lines.push(format!(
+            "  {:>14}:   {} in {}",
+            "Download",
+            common::format_data_size(dl_bytes),
+            format_duration(dl_duration)
+        ));
+    }
+    if ul_bytes > 0 {
+        lines.push(format!(
+            "  {:>14}:   {} in {}",
+            "Upload",
+            common::format_data_size(ul_bytes),
+            format_duration(ul_duration)
+        ));
+    }
+    let total = dl_bytes + ul_bytes;
+    let total_dur = dl_duration + ul_duration;
+    if total > 0 {
+        lines.push(format!(
+            "  {:>14}:   {} in {}",
+            "Total",
+            common::format_data_size(total),
+            format_duration(total_dur)
+        ));
+    }
+
+    lines.join("\n")
 }
 
 pub fn format_test_summary(
@@ -221,50 +314,102 @@ pub fn format_test_summary(
     ul_duration: f64,
     nc: bool,
 ) {
-    if nc {
-        eprintln!("\n  TEST SUMMARY");
-    } else {
-        eprintln!("\n  {}", "TEST SUMMARY".bold().underline());
-    }
+    eprintln!("{}", build_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc));
+}
 
-    if dl_bytes > 0 {
-        eprintln!(
-            "  {:>14}:   {} in {}",
-            "Download",
-            common::format_data_size(dl_bytes),
-            format_duration(dl_duration)
-        );
-    }
-    if ul_bytes > 0 {
-        eprintln!(
-            "  {:>14}:   {} in {}",
-            "Upload",
-            common::format_data_size(ul_bytes),
-            format_duration(ul_duration)
-        );
-    }
-    let total = dl_bytes + ul_bytes;
-    let total_dur = dl_duration + ul_duration;
-    if total > 0 {
-        eprintln!(
-            "  {:>14}:   {} in {}",
-            "Total",
-            common::format_data_size(total),
-            format_duration(total_dur)
-        );
+pub fn build_footer(timestamp: &str, nc: bool) -> String {
+    if nc {
+        format!("\n  Completed at: {timestamp}")
+    } else {
+        format!(
+            "\n  {} {}",
+            "Completed at:".dimmed(),
+            timestamp.bright_black()
+        )
     }
 }
 
 pub fn format_footer(timestamp: &str, nc: bool) {
+    eprintln!("{}", build_footer(timestamp, nc));
+}
+
+/// Format a list of available servers.
+pub fn build_list(servers: &[Server]) -> String {
+    let nc = no_color();
+
+    let (max_id_len, max_sponsor_len, max_name_len) = servers.iter().fold(
+        (3, 7, 24),
+        |(max_id, max_sponsor, max_name), s| {
+            let name_len = s.name.len() + s.country.len() + 3;
+            (
+                max_id.max(s.id.len()),
+                max_sponsor.max(s.sponsor.len()),
+                max_name.max(name_len),
+            )
+        },
+    );
+
+    let idw = max_id_len.max(3);
+    let sw = max_sponsor_len.max(7);
+    let nw = max_name_len.max(24);
+
+    let mut lines = Vec::new();
+
     if nc {
-        eprintln!("\n  Completed at: {timestamp}");
+        lines.push(String::from("\n  AVAILABLE SERVERS"));
     } else {
-        eprintln!(
-            "\n  {} {}",
-            "Completed at:".dimmed(),
-            timestamp.bright_black()
-        );
+        lines.push(format!("\n  {}", "AVAILABLE SERVERS".bold().underline()));
     }
+
+    if nc {
+        lines.push(format!(
+            "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
+            "ID", "Sponsor", "Name (Country)", "Distance"
+        ));
+    } else {
+        lines.push(format!(
+            "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
+            "ID".dimmed(),
+            "Sponsor".dimmed(),
+            "Name (Country)".dimmed(),
+            "Distance".dimmed()
+        ));
+    }
+
+    if nc {
+        lines.push(format!("  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}", "", "", "", ""));
+    } else {
+        lines.push(format!(
+            "  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}",
+            "",
+            "",
+            "",
+            "".dimmed()
+        ));
+    }
+
+    for server in servers {
+        let dist = common::format_distance(server.distance);
+        if nc {
+            lines.push(format!(
+                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
+                server.id,
+                server.sponsor,
+                format!("{} ({})", server.name, server.country),
+                dist,
+            ));
+        } else {
+            lines.push(format!(
+                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
+                server.id,
+                server.sponsor.white().bold(),
+                format!("{} ({})", server.name, server.country),
+                dist.bright_black(),
+            ));
+        }
+    }
+
+    lines.join("\n")
 }
 
 /// Format a list of available servers.
@@ -274,71 +419,6 @@ pub fn format_footer(timestamp: &str, nc: bool) {
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
 pub fn format_list(servers: &[Server]) -> Result<(), std::io::Error> {
-    let nc = no_color();
-
-    let max_id_len = servers.iter().map(|s| s.id.len()).max().unwrap_or(3);
-    let max_sponsor_len = servers.iter().map(|s| s.sponsor.len()).max().unwrap_or(7);
-    let max_name_len = servers
-        .iter()
-        .map(|s| s.name.len() + s.country.len() + 3)
-        .max()
-        .unwrap_or(24);
-
-    let idw = max_id_len.max(3);
-    let sw = max_sponsor_len.max(7);
-    let nw = max_name_len.max(24);
-
-    if nc {
-        eprintln!("\n  AVAILABLE SERVERS");
-    } else {
-        eprintln!("\n  {}", "AVAILABLE SERVERS".bold().underline());
-    }
-    if nc {
-        eprintln!(
-            "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
-            "ID", "Sponsor", "Name (Country)", "Distance"
-        );
-    } else {
-        eprintln!(
-            "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
-            "ID".dimmed(),
-            "Sponsor".dimmed(),
-            "Name (Country)".dimmed(),
-            "Distance".dimmed()
-        );
-    }
-    if nc {
-        eprintln!("  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}", "", "", "", "");
-    } else {
-        eprintln!(
-            "  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}",
-            "",
-            "",
-            "",
-            "".dimmed()
-        );
-    }
-
-    for server in servers {
-        let dist = common::format_distance(server.distance);
-        if nc {
-            eprintln!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
-                server.id,
-                server.sponsor,
-                format!("{} ({})", server.name, server.country),
-                dist,
-            );
-        } else {
-            eprintln!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
-                server.id,
-                server.sponsor.white().bold(),
-                format!("{} ({})", server.name, server.country),
-                dist.bright_black(),
-            );
-        }
-    }
-
+    eprintln!("{}", build_list(servers));
     Ok(())
 }

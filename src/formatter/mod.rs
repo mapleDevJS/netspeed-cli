@@ -76,7 +76,7 @@ pub use estimates::{format_estimates, format_targets};
 pub use ratings::{
     bufferbloat_colorized, bufferbloat_grade, colorize_rating, connection_rating, degradation_str,
     format_duration, format_overall_rating, format_speed_colored, format_speed_plain, ping_rating,
-    speed_rating_mbps,
+    speed_rating_mbps, BufferbloatGrade,
 };
 pub use sections::{
     format_connection_info, format_download_section, format_footer, format_latency_section,
@@ -234,10 +234,16 @@ pub fn format_verbose_sections(result: &TestResult) {
     let nc = no_color();
 
     // Usage check targets
-    format_targets(result.download, nc);
+    let targets = estimates::build_targets(result.download, nc);
+    if !targets.is_empty() {
+        eprintln!("{targets}");
+    }
 
     // Download time estimates
-    format_estimates(result.download, nc);
+    let estimates = estimates::build_estimates(result.download, nc);
+    if !estimates.is_empty() {
+        eprintln!("{estimates}");
+    }
 
     // Speed stability (DL + UL)
     if let (Some(dl_s), Some(ul_s)) = (&result.download_samples, &result.upload_samples) {

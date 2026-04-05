@@ -39,15 +39,17 @@ const TARGETS: &[Target] = &[
     },
 ];
 
-/// Format target usage check against download speed.
-pub fn format_targets(download_bps: Option<f64>, nc: bool) {
-    let Some(dl) = download_bps else { return };
+/// Build target usage check output as a string.
+pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
+    let Some(dl) = download_bps else { return String::new() };
     let dl_mbps = dl / 1_000_000.0;
 
+    let mut lines = Vec::new();
+
     if nc {
-        eprintln!("\n  USAGE CHECK");
+        lines.push("\n  USAGE CHECK".to_string());
     } else {
-        eprintln!("\n  {}", "USAGE CHECK".bold().underline());
+        lines.push(format!("\n  {}", "USAGE CHECK".bold().underline()));
     }
 
     for target in TARGETS {
@@ -61,19 +63,29 @@ pub fn format_targets(download_bps: Option<f64>, nc: bool) {
         if met {
             let line = format!("{:<26} ✅ {} above", target.name, suffix);
             if nc {
-                eprintln!("  {line}");
+                lines.push(format!("  {line}"));
             } else {
-                eprintln!("  {}", line.green());
+                lines.push(format!("  {}", line.green()));
             }
         } else {
             let shortfall = target.required_mbps - dl_mbps;
             let line = format!("{:<26} ❌ {:.1} Mb/s short", target.name, shortfall);
             if nc {
-                eprintln!("  {line}");
+                lines.push(format!("  {line}"));
             } else {
-                eprintln!("  {}", line.red());
+                lines.push(format!("  {}", line.red()));
             }
         }
+    }
+
+    lines.join("\n")
+}
+
+/// Format target usage check against download speed.
+pub fn format_targets(download_bps: Option<f64>, nc: bool) {
+    let output = build_targets(download_bps, nc);
+    if !output.is_empty() {
+        eprintln!("{}", output);
     }
 }
 
@@ -127,15 +139,17 @@ fn format_time_estimate(secs: f64, _nc: bool) -> String {
     }
 }
 
-/// Format real-world download time estimates.
-pub fn format_estimates(download_bps: Option<f64>, nc: bool) {
-    let Some(dl) = download_bps else { return };
+/// Build real-world download time estimates as a string.
+pub fn build_estimates(download_bps: Option<f64>, nc: bool) -> String {
+    let Some(dl) = download_bps else { return String::new() };
     let dl_bytes_per_sec = dl / 8.0;
 
+    let mut lines = Vec::new();
+
     if nc {
-        eprintln!("\n  ESTIMATES");
+        lines.push("\n  ESTIMATES".to_string());
     } else {
-        eprintln!("\n  {}", "ESTIMATES".bold().underline());
+        lines.push(format!("\n  {}", "ESTIMATES".bold().underline()));
     }
 
     for file in ESTIMATES {
@@ -150,10 +164,20 @@ pub fn format_estimates(download_bps: Option<f64>, nc: bool) {
             )
         );
         if nc {
-            eprintln!("  {label}");
+            lines.push(format!("  {label}"));
         } else {
-            eprintln!("  {}", label.green());
+            lines.push(format!("  {}", label.green()));
         }
+    }
+
+    lines.join("\n")
+}
+
+/// Format real-world download time estimates.
+pub fn format_estimates(download_bps: Option<f64>, nc: bool) {
+    let output = build_estimates(download_bps, nc);
+    if !output.is_empty() {
+        eprintln!("{}", output);
     }
 }
 
