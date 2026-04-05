@@ -87,7 +87,7 @@ jobs:
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" dist/
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.artifact_name }}
@@ -109,10 +109,12 @@ jobs:
           sha256sum */* > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Generate SBOM
-        uses: CycloneDX/gh-node-module-generate_sbom@v1
+        uses: anchore/sbom-action@v0
         with:
           path: .
-          output: sbom.json
+          artifact-name: sbom.json
+          output-file: sbom.json
+          format: spdx-json
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
