@@ -18,7 +18,6 @@ _netspeed-cli() {
 '--csv-delimiter=[Single character delimiter for CSV output (default\: ",")]:CSV_DELIMITER:_default' \
 '*--server=[Specify a server ID to test against (can be supplied multiple times)]:SERVER:_default' \
 '*--exclude=[Exclude a server from selection (can be supplied multiple times)]:EXCLUDE:_default' \
-'--mini=[URL of the Speedtest Mini server]:MINI:_default' \
 '--source=[Source IP address to bind to]:SOURCE:_default' \
 '--timeout=[HTTP timeout in seconds (default\: 10)]:TIMEOUT:_default' \
 '--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish power-shell elvish)' \
@@ -26,14 +25,12 @@ _netspeed-cli() {
 '--no-upload[Do not perform upload test]' \
 '--single[Only use a single connection instead of multiple]' \
 '--bytes[Display values in bytes instead of bits]' \
-'--share[Generate and provide a URL to the speedtest.net share results image]' \
 '--simple[Suppress verbose output, only show basic information]' \
 '--csv[Output in CSV format]' \
 '--csv-header[Print CSV headers]' \
 '--json[Output in JSON format]' \
 '--list[Display a list of speedtest.net servers sorted by distance]' \
-'--secure[Use HTTPS instead of HTTP]' \
-'--no-pre-allocate[Do not pre-allocate upload data]' \
+'--history[Display test history]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \

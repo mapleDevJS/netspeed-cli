@@ -49,3 +49,20 @@ jobs:
           components: rustfmt
       - name: Check formatting
         run: cargo fmt -- --check
+
+  brew-audit:
+    name: Homebrew Audit
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit formula
+        run: |
+          TAP_DIR="$(brew --repository)/Library/Taps/mapledevjs/homebrew-netspeed-cli"
+          mkdir -p "$TAP_DIR"
+          cp netspeed-cli.rb "$TAP_DIR/"
+          cd "$TAP_DIR"
+          git init
+          git add netspeed-cli.rb
+          git commit -m "audit"
+          brew install --build-from-source mapledevjs/netspeed-cli/netspeed-cli
+          brew audit --strict --online mapledevjs/netspeed-cli/netspeed-cli

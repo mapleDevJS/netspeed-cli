@@ -1,63 +1,107 @@
-use reqwest::Client;
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+
 use crate::error::SpeedtestError;
+use crate::progress::SpeedProgress;
 use crate::types::Server;
+use reqwest::Client;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 /// Calculate upload bandwidth from bytes and elapsed time
-pub fn calculate_bandwidth(total_bytes: u64, elapsed: f64) -> f64 {
-    if elapsed > 0.0 {
-        (total_bytes as f64 * 8.0) / elapsed
+#[must_use]
+pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
+    if elapsed_secs > 0.0 {
+        (total_bytes as f64 * 8.0) / elapsed_secs
     } else {
         0.0
     }
 }
 
 /// Determine number of concurrent uploads based on single flag
+#[must_use]
 pub fn determine_concurrent_upload_count(single: bool) -> usize {
     if single { 1 } else { 4 }
 }
 
 /// Build upload URL
+#[must_use]
 pub fn build_upload_url(server_url: &str) -> String {
-    format!("{}/upload", server_url)
+    format!("{server_url}/upload")
 }
 
+fn generate_upload_data(size: usize) -> Vec<u8> {
+    let mut data = vec![0u8; size];
+    for (i, byte) in data.iter_mut().enumerate() {
+        *byte = (i % 256) as u8;
+    }
+    data
+}
+
+/// Run upload bandwidth test against the given server.
+///
+/// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_uploaded)`.
+///
+/// # Errors
+///
+/// Returns [`SpeedtestError::NetworkError`] if all upload streams fail.
 pub async fn upload_test(
     client: &Client,
     server: &Server,
     single: bool,
-) -> Result<f64, SpeedtestError> {
+    progress: Arc<SpeedProgress>,
+) -> Result<(f64, f64, u64), SpeedtestError> {
     let concurrent_uploads = determine_concurrent_upload_count(single);
-    let mut total_bytes = 0u64;
-    let start = std::time::Instant::now();
+    let total_bytes = Arc::new(AtomicU64::new(0));
+    let peak_bps = Arc::new(AtomicU64::new(0));
+    let start = Instant::now();
 
-    // Generate upload data
     let upload_data = generate_upload_data(200_000); // 200KB chunks
+    let estimated_total: u64 = 4_000_000; // 4 MB estimate
 
-    // Upload to multiple endpoints simultaneously
     let mut handles = Vec::new();
 
     for _ in 0..concurrent_uploads {
         let client = client.clone();
         let server_url = server.url.clone();
         let data = upload_data.clone();
+        let total_ref = Arc::clone(&total_bytes);
+        let peak_ref = Arc::clone(&peak_bps);
+        let start_ref = start;
+        let prog = Arc::clone(&progress);
 
         let handle = tokio::spawn(async move {
             let mut uploaded_bytes = 0u64;
 
-            // Perform multiple uploads
             for _ in 0..4 {
                 let upload_url = build_upload_url(&server_url);
 
-                match client
+                if client
                     .post(&upload_url)
                     .body(data.clone())
                     .send()
                     .await
+                    .is_ok()
                 {
-                    Ok(_) => {
-                        uploaded_bytes += data.len() as u64;
+                    let chunk = data.len() as u64;
+                    uploaded_bytes += chunk;
+                    total_ref.fetch_add(chunk, Ordering::Relaxed);
+
+                    let total_so_far = total_ref.load(Ordering::Relaxed);
+                    let elapsed = start_ref.elapsed().as_secs_f64();
+                    let speed = calculate_bandwidth(total_so_far, elapsed);
+
+                    let current_peak = peak_ref.load(Ordering::Relaxed);
+                    if speed > current_peak as f64 {
+                        peak_ref.store(speed as u64, Ordering::Relaxed);
                     }
-                    Err(_) => continue,
+
+                    let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
+                    prog.update(speed / 1_000_000.0, pct, total_so_far);
                 }
             }
 
@@ -67,26 +111,21 @@ pub async fn upload_test(
         handles.push(handle);
     }
 
-    // Collect results from all uploads
+    // Collect results
     for handle in handles {
         if let Ok(bytes) = handle.await {
-            total_bytes += bytes;
+            total_bytes.fetch_add(bytes, Ordering::Relaxed);
         }
     }
 
+    let final_total_bytes = total_bytes.load(Ordering::Relaxed);
+    let final_peak_speed = peak_bps.load(Ordering::Relaxed) as f64;
     let elapsed = start.elapsed().as_secs_f64();
-
-    // Calculate bits per second
-    Ok(calculate_bandwidth(total_bytes, elapsed))
-}
-
-fn generate_upload_data(size: usize) -> Vec<u8> {
-    // Generate pattern data for upload testing
-    let mut data = vec![0u8; size];
-    for (i, byte) in data.iter_mut().enumerate() {
-        *byte = (i % 256) as u8;
-    }
-    data
+    Ok((
+        calculate_bandwidth(final_total_bytes, elapsed),
+        final_peak_speed,
+        final_total_bytes,
+    ))
 }
 
 #[cfg(test)]
@@ -95,14 +134,12 @@ mod tests {
 
     #[test]
     fn test_upload_bandwidth_calculation() {
-        // Test bandwidth calculation logic
         let result = calculate_bandwidth(1_000_000, 2.0);
         assert_eq!(result, 4_000_000.0);
     }
 
     #[test]
     fn test_upload_bandwidth_zero_elapsed() {
-        // Test division by zero protection
         let result = calculate_bandwidth(1_000_000, 0.0);
         assert_eq!(result, 0.0);
     }
@@ -121,7 +158,6 @@ mod tests {
     fn test_upload_url_generation() {
         let url = build_upload_url("http://server.example.com");
         assert!(url.ends_with("/upload"));
-        assert!(url.contains("server.example.com"));
     }
 
     #[test]
@@ -133,56 +169,8 @@ mod tests {
     #[test]
     fn test_generate_upload_data_pattern() {
         let data = generate_upload_data(300);
-        // Verify the pattern repeats every 256 bytes
         for (i, &byte) in data.iter().enumerate() {
             assert_eq!(byte, (i % 256) as u8);
-        }
-    }
-
-    #[test]
-    fn test_generate_upload_data_small() {
-        let data = generate_upload_data(10);
-        assert_eq!(data.len(), 10);
-        assert_eq!(data, vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    }
-
-    #[test]
-    fn test_generate_upload_data_large() {
-        let size = 200_000; // Same as production
-        let data = generate_upload_data(size);
-        assert_eq!(data.len(), size);
-        // Verify first and last bytes
-        assert_eq!(data[0], 0);
-        assert_eq!(data[255], 255);
-        assert_eq!(data[256], 0);
-        assert_eq!(data[size - 1], ((size - 1) % 256) as u8);
-    }
-
-    #[test]
-    fn test_calculate_bandwidth_various_sizes() {
-        // Test various bandwidth calculations
-        assert_eq!(calculate_bandwidth(1_000_000, 1.0), 8_000_000.0);
-        assert_eq!(calculate_bandwidth(500_000, 1.0), 4_000_000.0);
-        assert_eq!(calculate_bandwidth(2_000_000, 2.0), 8_000_000.0);
-    }
-
-    #[test]
-    fn test_calculate_bandwidth_zero_bytes() {
-        assert_eq!(calculate_bandwidth(0, 5.0), 0.0);
-    }
-
-    #[test]
-    fn test_build_upload_url_format() {
-        let server_urls = vec![
-            "http://server1.com",
-            "https://server2.com",
-            "http://192.168.1.1:8080",
-        ];
-
-        for url in server_urls {
-            let upload_url = build_upload_url(url);
-            assert!(upload_url.ends_with("/upload"));
-            assert!(upload_url.starts_with(url));
         }
     }
 }

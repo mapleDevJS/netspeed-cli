@@ -24,7 +24,7 @@ fn test_cli_version() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("0.2."));
+    assert!(stdout.contains("0.3."));
 }
 
 /// Test shell completion generation for bash
@@ -103,19 +103,6 @@ fn test_invalid_csv_delimiter() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success());
     assert!(stderr.contains("CSV delimiter") || stderr.contains("error"));
-}
-
-/// Test invalid URL validation
-#[test]
-fn test_invalid_mini_url() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--mini", "invalid-url"])
-        .output()
-        .expect("Failed to execute command");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success());
-    assert!(stderr.contains("URL") || stderr.contains("error"));
 }
 
 /// Test invalid IP address validation

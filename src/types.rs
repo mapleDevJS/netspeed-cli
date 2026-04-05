@@ -42,31 +42,19 @@ pub struct Server {
 pub struct TestResult {
     pub server: ServerInfo,
     pub ping: Option<f64>,
+    pub jitter: Option<f64>,
     pub download: Option<f64>,
+    pub download_peak: Option<f64>,
     pub upload: Option<f64>,
-    pub share_url: Option<String>,
+    pub upload_peak: Option<f64>,
+    pub latency_download: Option<f64>,
+    pub latency_upload: Option<f64>,
     pub timestamp: String,
     pub client_ip: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ServerInfo {
-    pub id: String,
-    pub name: String,
-    pub sponsor: String,
-    pub country: String,
-    pub distance: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
-pub struct ServerListOutput {
-    pub servers: Vec<ServerListItem>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
-pub struct ServerListItem {
     pub id: String,
     pub name: String,
     pub sponsor: String,
@@ -82,9 +70,11 @@ pub struct CsvOutput {
     pub timestamp: String,
     pub distance: f64,
     pub ping: f64,
+    pub jitter: f64,
     pub download: f64,
+    pub download_peak: f64,
     pub upload: f64,
-    pub share: String,
+    pub upload_peak: f64,
     pub ip_address: String,
 }
 
@@ -123,15 +113,20 @@ mod tests {
                 distance: 100.5,
             },
             ping: Some(15.234),
+            jitter: Some(1.2),
             download: Some(150_000_000.0),
+            download_peak: Some(180_000_000.0),
             upload: Some(50_000_000.0),
-            share_url: None,
+            upload_peak: Some(60_000_000.0),
+            latency_download: Some(25.0),
+            latency_upload: Some(30.0),
             timestamp: "2026-04-04T12:00:00Z".to_string(),
             client_ip: Some("192.168.1.1".to_string()),
         };
 
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"ping\":15.234"));
+        assert!(json.contains("\"jitter\":1.2"));
         assert!(json.contains("\"download\":150000000.0"));
     }
 
@@ -144,15 +139,18 @@ mod tests {
             timestamp: "2026-04-04T12:00:00Z".to_string(),
             distance: 100.5,
             ping: 15.234,
+            jitter: 1.2,
             download: 150_000_000.0,
+            download_peak: 180_000_000.0,
             upload: 50_000_000.0,
-            share: "http://example.com/share".to_string(),
+            upload_peak: 60_000_000.0,
             ip_address: "192.168.1.1".to_string(),
         };
 
         let json = serde_json::to_string(&csv).unwrap();
         assert!(json.contains("\"server_id\":\"1234\""));
         assert!(json.contains("\"ping\":15.234"));
+        assert!(json.contains("\"jitter\":1.2"));
     }
 
     #[test]

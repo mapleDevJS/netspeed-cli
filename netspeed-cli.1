@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH netspeed-cli 1  "netspeed-cli 0.2.2" 
+.TH netspeed-cli 1  "netspeed-cli 0.3.0" 
 .SH NAME
 netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-share\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-mini\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-secure\fR] [\fB\-\-no\-pre\-allocate\fR] [\fB\-\-generate\-completion\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Command line interface for testing internet bandwidth using speedtest.net
 .SH OPTIONS
@@ -20,9 +20,6 @@ Only use a single connection instead of multiple
 .TP
 \fB\-\-bytes\fR
 Display values in bytes instead of bits
-.TP
-\fB\-\-share\fR
-Generate and provide a URL to the speedtest.net share results image
 .TP
 \fB\-\-simple\fR
 Suppress verbose output, only show basic information
@@ -48,20 +45,11 @@ Specify a server ID to test against (can be supplied multiple times)
 \fB\-\-exclude\fR \fI<EXCLUDE>\fR
 Exclude a server from selection (can be supplied multiple times)
 .TP
-\fB\-\-mini\fR \fI<MINI>\fR
-URL of the Speedtest Mini server
-.TP
 \fB\-\-source\fR \fI<SOURCE>\fR
 Source IP address to bind to
 .TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR [default: 10]
 HTTP timeout in seconds (default: 10)
-.TP
-\fB\-\-secure\fR
-Use HTTPS instead of HTTP
-.TP
-\fB\-\-no\-pre\-allocate\fR
-Do not pre\-allocate upload data
 .TP
 \fB\-\-generate\-completion\fR \fI<GENERATE_COMPLETION>\fR
 Generate shell completion script
@@ -82,10 +70,25 @@ power\-shell
 elvish
 .RE
 .TP
+\fB\-\-history\fR
+Display test history
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Print version
+.SH EXTRA
+Examples:
+  netspeed\-cli                          Run a full speed test
+  netspeed\-cli \-\-simple                 Run with minimal output
+  netspeed\-cli \-\-json                   Output results as JSON
+  netspeed\-cli \-\-list                   List available servers
+  netspeed\-cli \-\-server 1234            Test against a specific server
+  netspeed\-cli \-\-no\-upload              Skip upload test
+  netspeed\-cli \-\-bytes                  Show results in MB/s instead of Mbit/s
+  netspeed\-cli \-\-single                 Use a single connection (debugging)
+  netspeed\-cli \-\-generate\-completion zsh > ~/.zsh/functions/_netspeed\-cli
+                                        Generate Zsh shell completions
 .SH VERSION
-v0.2.2
+v0.3.0

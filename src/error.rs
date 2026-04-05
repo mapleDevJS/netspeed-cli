@@ -5,8 +5,6 @@ pub enum SpeedtestError {
     NetworkError(String),
     ParseError(String),
     ServerNotFound(String),
-    #[allow(dead_code)]
-    TimeoutError(String),
     IoError(String),
     Custom(String),
 }
@@ -14,12 +12,21 @@ pub enum SpeedtestError {
 impl fmt::Display for SpeedtestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SpeedtestError::NetworkError(msg) => write!(f, "Network error: {}", msg),
-            SpeedtestError::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            SpeedtestError::ServerNotFound(msg) => write!(f, "Server not found: {}", msg),
-            SpeedtestError::TimeoutError(msg) => write!(f, "Timeout: {}", msg),
-            SpeedtestError::IoError(msg) => write!(f, "I/O error: {}", msg),
-            SpeedtestError::Custom(msg) => write!(f, "{}", msg),
+            SpeedtestError::NetworkError(msg) => {
+                write!(f, "Network error: {msg}")
+            }
+            SpeedtestError::ParseError(msg) => {
+                write!(f, "Parse error: {msg}")
+            }
+            SpeedtestError::ServerNotFound(msg) => {
+                write!(f, "Server not found: {msg}")
+            }
+            SpeedtestError::IoError(msg) => {
+                write!(f, "I/O error: {msg}")
+            }
+            SpeedtestError::Custom(msg) => {
+                write!(f, "{msg}")
+            }
         }
     }
 }
@@ -69,37 +76,31 @@ mod tests {
     #[test]
     fn test_network_error_display() {
         let err = SpeedtestError::NetworkError("connection failed".to_string());
-        assert_eq!(format!("{}", err), "Network error: connection failed");
+        assert_eq!(format!("{err}"), "Network error: connection failed");
     }
 
     #[test]
     fn test_parse_error_display() {
         let err = SpeedtestError::ParseError("invalid JSON".to_string());
-        assert_eq!(format!("{}", err), "Parse error: invalid JSON");
+        assert_eq!(format!("{err}"), "Parse error: invalid JSON");
     }
 
     #[test]
     fn test_server_not_found_display() {
         let err = SpeedtestError::ServerNotFound("no servers".to_string());
-        assert_eq!(format!("{}", err), "Server not found: no servers");
-    }
-
-    #[test]
-    fn test_timeout_error_display() {
-        let err = SpeedtestError::TimeoutError("request timed out".to_string());
-        assert_eq!(format!("{}", err), "Timeout: request timed out");
+        assert_eq!(format!("{err}"), "Server not found: no servers");
     }
 
     #[test]
     fn test_io_error_display() {
         let err = SpeedtestError::IoError("file not found".to_string());
-        assert_eq!(format!("{}", err), "I/O error: file not found");
+        assert_eq!(format!("{err}"), "I/O error: file not found");
     }
 
     #[test]
     fn test_custom_error_display() {
         let err = SpeedtestError::Custom("custom error".to_string());
-        assert_eq!(format!("{}", err), "custom error");
+        assert_eq!(format!("{err}"), "custom error");
     }
 
     #[test]
@@ -115,7 +116,7 @@ mod tests {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let speedtest_err: SpeedtestError = io_err.into();
         assert!(matches!(speedtest_err, SpeedtestError::IoError(_)));
-        assert!(format!("{}", speedtest_err).contains("I/O error"));
+        assert!(format!("{speedtest_err}").contains("I/O error"));
     }
 
     #[test]
@@ -128,7 +129,7 @@ mod tests {
     #[test]
     fn test_debug_trait() {
         let err = SpeedtestError::Custom("debug test".to_string());
-        let debug_str = format!("{:?}", err);
+        let debug_str = format!("{err:?}");
         assert!(debug_str.contains("Custom"));
         assert!(debug_str.contains("debug test"));
     }

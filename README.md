@@ -6,7 +6,7 @@ Command line interface for testing internet bandwidth using speedtest.net
 
 ## Overview
 
-netspeed-cli is a Rust-based command line tool for testing your internet bandwidth using speedtest.net servers. It provides fast, accurate speed testing with a simple command-line interface.
+netspeed-cli is a Rust-based command line tool for testing your internet bandwidth using speedtest.net servers. It provides fast, accurate speed testing with detailed metrics including latency under load, peak speeds, jitter, and an overall connection quality rating.
 
 ## Installation
 
@@ -14,7 +14,7 @@ netspeed-cli is a Rust-based command line tool for testing your internet bandwid
 
 ```bash
 # Add the tap (one-time)
-brew tap mapleDevJS/netspeed-cli
+brew tap mapleDevJS/homebrew-netspeed-cli
 
 # Install netspeed-cli
 brew install netspeed-cli
@@ -69,10 +69,10 @@ Test download speed only:
 netspeed-cli --no-upload
 ```
 
-Share results with a URL:
+View test history:
 
 ```bash
-netspeed-cli --share
+netspeed-cli --history
 ```
 
 ## Options
@@ -83,48 +83,118 @@ netspeed-cli --share
 | `--no-upload` | Skip upload test |
 | `--single` | Use single connection |
 | `--bytes` | Display values in bytes instead of bits |
-| `--share` | Generate shareable results URL |
 | `--simple` | Show minimal output |
 | `--csv` | Output in CSV format |
+| `--csv-delimiter CHAR` | CSV delimiter character (default: `,`) |
+| `--csv-header` | Include CSV header row |
 | `--json` | Output in JSON format |
 | `--list` | List available servers |
-| `--server ID` | Test against specific server |
-| `--exclude ID` | Exclude server from selection |
+| `--server ID` | Test against specific server (can be used multiple times) |
+| `--exclude ID` | Exclude server from selection (can be used multiple times) |
 | `--source IP` | Bind to source IP address |
-| `--timeout SEC` | HTTP timeout in seconds |
+| `--timeout SEC` | HTTP timeout in seconds (default: 10) |
+| `--history` | Show test history |
+| `--generate-completion SHELL` | Generate shell completion script |
 | `--version` | Show version |
 
 ## Output Formats
 
+### Detailed (default)
+
+```
+  TEST RESULTS
+  Overall: ⚡ Excellent
+
+  Latency:        5.2 ms  (⚡ Excellent)
+  Jitter:         1.3 ms
+  ──────────────────────────────
+  Download:     450.23 Mb/s  (⚡ Excellent)
+  Peak:         520.10 Mb/s
+  Latency (load): 12.4 ms  +138% (significant)
+  Upload:       120.45 Mb/s  (🟢 Good)
+  Peak:         145.80 Mb/s
+  Latency (load):  8.1 ms  +56% (significant)
+  ──────────────────────────────
+  Connection Info
+  Server:       Rogers (Toronto)
+  Location:     CA  (12 km)
+  Client IP:    192.168.1.1
+  ──────────────────────────────
+  Test Summary
+  Download:     12.4 MB in 3.2s
+  Upload:       4.1 MB in 2.1s
+  Total:        16.5 MB in 5.3s
+
+  Completed at: 2026-04-04T12:00:00Z
+```
+
 ### Simple
 
 ```
-Ping: 15.234 ms
-Download: 150.45 Mbit/s
-Upload: 50.12 Mbit/s
+5.2 ms | Download: 450.23 Mb/s | Upload: 120.45 Mb/s
 ```
 
 ### JSON
 
 ```json
 {
-  "ping": 15.234,
-  "download": 150450000,
-  "upload": 50120000,
   "server": {
     "id": "1234",
-    "name": "Server Name",
-    "sponsor": "ISP"
-  }
+    "name": "Toronto",
+    "sponsor": "Rogers",
+    "country": "CA",
+    "distance": 12.0
+  },
+  "ping": 5.2,
+  "jitter": 1.3,
+  "download": 450230000.0,
+  "download_peak": 520100000.0,
+  "upload": 120450000.0,
+  "upload_peak": 145800000.0,
+  "latency_download": 12.4,
+  "latency_upload": 8.1,
+  "timestamp": "2026-04-04T12:00:00Z",
+  "client_ip": "192.168.1.1"
 }
 ```
 
 ### CSV
 
 ```
-Server ID,Sponsor,Server Name,Timestamp,Ping,Download,Upload
-1234,ISP,Server Name,2026-04-04T12:00:00Z,15.234,150450000,50120000
+Server ID,Sponsor,Server Name,Timestamp,Distance,Ping,Jitter,Download,Download Peak,Upload,Upload Peak,IP Address
+1234,Rogers,Toronto,2026-04-04T12:00:00Z,12.0,5.2,1.3,450230000.0,520100000.0,120450000.0,145800000.0,192.168.1.1
 ```
+
+## Features
+
+### Connection Quality Rating
+
+An overall rating combining all metrics:
+
+| Rating | Score | Description |
+|--------|-------|-------------|
+| Excellent | 90+ | Fiber-grade connection |
+| Great | 75-89 | Very good performance |
+| Good | 55-74 | Solid everyday connection |
+| Fair | 40-54 | Acceptable, some limitations |
+| Moderate | 25-39 | Noticeable performance issues |
+| Poor | <25 | Significant problems |
+
+### Latency Under Load
+
+Measures ping latency during download and upload tests to show how your connection degrades under bandwidth saturation. The degradation percentage shows how much worse latency gets compared to idle:
+
+- **< 25%** (green): Minimal impact — great for gaming/calls while downloading
+- **25-50%** (yellow): Moderate impact — noticeable but manageable
+- **> 50%** (red): Significant impact — connection struggles under load
+
+### Peak Speeds
+
+Shows the maximum burst speed observed during each test phase, helping you understand your connection's capacity beyond just the average.
+
+### Test History
+
+Results are automatically saved and can be viewed with `--history`.
 
 ## Building from Source
 

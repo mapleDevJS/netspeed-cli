@@ -61,7 +61,22 @@
       "Bash(then)",
       "Bash(break)",
       "Bash(fi)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(diff *)",
+      "mcp__github__search_code",
+      "Bash(rm *)",
+      "Bash(/tmp/test-build/bin/netspeed-cli *)",
+      "mcp__github__get_pull_request_reviews",
+      "mcp__github__get_pull_request_files",
+      "Bash(git *)",
+      "Bash(ruby *)",
+      "WebFetch(docs.brew.sh)",
+      "mcp__github__get_file_contents",
+      "mcp__github__list_commits",
+      "mcp__github__search_issues",
+      "mcp__github__get_pull_request_comments",
+      "Read(//tmp/homebrew-core-fork/Formula/n/**)",
+      "Read(//Users/alexey.ivanov/Desktop/**)"
     ]
   },
   "$version": 3
