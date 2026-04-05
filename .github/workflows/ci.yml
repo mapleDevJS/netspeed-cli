@@ -55,11 +55,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Homebrew
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
       - name: Audit formula
         run: |
-          brew install --build-from-source --formula ./netspeed-cli.rb
-          brew audit --strict --online ./netspeed-cli.rb
+          TAP_DIR="$(brew --repository)/Library/Taps/mapledevjs/homebrew-netspeed-cli"
+          mkdir -p "$TAP_DIR"
+          cp netspeed-cli.rb "$TAP_DIR/"
+          cd "$TAP_DIR"
+          git init
+          git add netspeed-cli.rb
+          git commit -m "audit"
+          brew install --build-from-source mapledevjs/netspeed-cli/netspeed-cli
+          brew audit --strict --online mapledevjs/netspeed-cli/netspeed-cli

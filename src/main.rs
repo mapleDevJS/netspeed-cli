@@ -6,7 +6,7 @@ use netspeed_cli::formatter::{
 };
 use netspeed_cli::history;
 use netspeed_cli::http;
-use netspeed_cli::progress::{create_spinner, finish_ok, no_color, SpeedProgress};
+use netspeed_cli::progress::{SpeedProgress, create_spinner, finish_ok, no_color};
 use netspeed_cli::servers::{
     fetch_servers, measure_latency_under_load, ping_test, select_best_server,
 };
@@ -16,12 +16,12 @@ use netspeed_cli::{download, upload};
 use clap::Parser;
 use indicatif::ProgressDrawTarget;
 use owo_colors::OwoColorize;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 fn generate_shell_completion(shell: ShellType) {
     use clap::CommandFactory;
-    use clap_complete::{generate, Shell as CompleteShell};
+    use clap_complete::{Shell as CompleteShell, generate};
     use std::io;
 
     let shell_type = match shell {

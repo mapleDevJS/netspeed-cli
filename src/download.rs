@@ -8,8 +8,8 @@ use crate::error::SpeedtestError;
 use crate::progress::SpeedProgress;
 use crate::types::Server;
 use reqwest::Client;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Calculate download bandwidth from bytes and elapsed time
@@ -25,11 +25,7 @@ pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
 /// Determine number of concurrent streams based on single flag
 #[must_use]
 pub fn determine_stream_count(single: bool) -> usize {
-    if single {
-        1
-    } else {
-        4
-    }
+    if single { 1 } else { 4 }
 }
 
 /// Extract base URL from server URL (strip /upload.php suffix)

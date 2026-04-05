@@ -8,8 +8,8 @@ use crate::error::SpeedtestError;
 use crate::types::{Server, ServerConfig};
 use quick_xml::de::from_str;
 use reqwest::Client;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const SPEEDTEST_SERVERS_URL: &str = "https://www.speedtest.net/speedtest-servers-static.php";
 const SPEEDTEST_CONFIG_URL: &str = "https://www.speedtest.net/api/ios-config.php";

@@ -782,15 +782,17 @@ mod tests {
 
     #[test]
     fn test_format_detailed() {
-        assert!(format_detailed(
-            &create_test_result(),
-            false,
-            15_000_000,
-            5_000_000,
-            3.5,
-            2.1
-        )
-        .is_ok());
+        assert!(
+            format_detailed(
+                &create_test_result(),
+                false,
+                15_000_000,
+                5_000_000,
+                3.5,
+                2.1
+            )
+            .is_ok()
+        );
     }
 
     #[test]
