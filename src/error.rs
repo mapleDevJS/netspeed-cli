@@ -69,9 +69,9 @@ impl std::error::Error for SpeedtestError {
             SpeedtestError::Csv(err) => Some(err),
             SpeedtestError::ServerNotFound(_) => None,
             SpeedtestError::IoError(err) => Some(err),
-            SpeedtestError::Context { source, .. } => {
-                source.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
-            }
+            SpeedtestError::Context { source, .. } => source
+                .as_ref()
+                .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
         }
     }
 }
@@ -88,7 +88,10 @@ impl SpeedtestError {
 
     /// Create a contextual error with a source error chain.
     #[must_use]
-    pub fn with_source(msg: impl Into<String>, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+    pub fn with_source(
+        msg: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
         Self::Context {
             msg: msg.into(),
             source: Some(Box::new(source)),
@@ -242,12 +245,12 @@ mod tests {
     fn test_error_source_chain() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let err = SpeedtestError::with_source("Failed to load history", io_err);
-        
+
         // Verify source chain is preserved
         assert!(matches!(err, SpeedtestError::Context { .. }));
         let source = err.source();
         assert!(source.is_some());
-        
+
         // Verify it's an io::Error
         let source = source.unwrap();
         assert!(source.is::<std::io::Error>());

@@ -11,7 +11,7 @@ documentation = "https://docs.rs/netspeed-cli"
 readme = "README.md"
 keywords = ["speedtest", "bandwidth", "network", "internet", "cli"]
 categories = ["command-line-utilities", "network-programming"]
-rust-version = "1.85"
+rust-version = "1.86"
 
 [[bin]]
 name = "netspeed-cli"

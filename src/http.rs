@@ -23,9 +23,7 @@ pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
         builder = builder.local_address(addr.ip());
     }
 
-    let client = builder
-        .build()
-        .map_err(SpeedtestError::NetworkError)?;
+    let client = builder.build().map_err(SpeedtestError::NetworkError)?;
 
     Ok(client)
 }
@@ -117,7 +115,10 @@ mod tests {
         config.source = Some("invalid-ip".to_string());
         let result = create_client(&config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SpeedtestError::Context { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            SpeedtestError::Context { .. }
+        ));
     }
 
     #[test]
@@ -138,7 +139,9 @@ mod tests {
         let config = Config::from_args(&args);
         let result = create_client(&config);
         match result {
-            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Context { .. }) => (),
+            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Context { .. }) => {
+                ()
+            }
             Err(e) => panic!("Unexpected error type: {e:?}"),
         }
     }

@@ -114,7 +114,8 @@ pub async fn download_test(
                             // Record speed sample (throttled to avoid excessive overhead)
                             if let Ok(mut samples) = samples_ref.lock() {
                                 if samples.is_empty()
-                                    || elapsed - samples.last().copied().unwrap_or(0.0) > SAMPLE_INTERVAL_SECS
+                                    || elapsed - samples.last().copied().unwrap_or(0.0)
+                                        > SAMPLE_INTERVAL_SECS
                                 {
                                     samples.push(speed);
                                 }
