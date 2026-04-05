@@ -24,7 +24,7 @@ fn test_cli_version() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("0.2."));
+    assert!(stdout.contains("0.3."));
 }
 
 /// Test shell completion generation for bash

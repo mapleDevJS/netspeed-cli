@@ -84,26 +84,28 @@ pub async fn upload_test(
             for _ in 0..4 {
                 let upload_url = build_upload_url(&server_url);
 
-                match client.post(&upload_url).body(data.clone()).send().await {
-                    Ok(_) => {
-                        let chunk = data.len() as u64;
-                        uploaded_bytes += chunk;
-                        total_ref.fetch_add(chunk, Ordering::Relaxed);
+                if client
+                    .post(&upload_url)
+                    .body(data.clone())
+                    .send()
+                    .await
+                    .is_ok()
+                {
+                    let chunk = data.len() as u64;
+                    uploaded_bytes += chunk;
+                    total_ref.fetch_add(chunk, Ordering::Relaxed);
 
-                        let total_so_far = total_ref.load(Ordering::Relaxed);
-                        let elapsed = start_ref.elapsed().as_secs_f64();
-                        let speed = calculate_bandwidth(total_so_far, elapsed);
+                    let total_so_far = total_ref.load(Ordering::Relaxed);
+                    let elapsed = start_ref.elapsed().as_secs_f64();
+                    let speed = calculate_bandwidth(total_so_far, elapsed);
 
-                        // Update peak speed
-                        let current_peak = peak_ref.load(Ordering::Relaxed);
-                        if speed > current_peak as f64 {
-                            peak_ref.store(speed as u64, Ordering::Relaxed);
-                        }
-
-                        let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
-                        prog.update(speed / 1_000_000.0, pct, total_so_far);
+                    let current_peak = peak_ref.load(Ordering::Relaxed);
+                    if speed > current_peak as f64 {
+                        peak_ref.store(speed as u64, Ordering::Relaxed);
                     }
-                    Err(_) => {}
+
+                    let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
+                    prog.update(speed / 1_000_000.0, pct, total_so_far);
                 }
             }
 

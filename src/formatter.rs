@@ -68,14 +68,13 @@ fn format_speed_colored(bps: f64, bytes: bool) -> String {
     let value = bps / divider / 1_000_000.0;
     let mbps = bps / 1_000_000.0;
     let rating = speed_rating_mbps(mbps);
-    let colored = match rating {
+    match rating {
         "Excellent" | "Great" => format!("{value:.2} {unit}").green().bold().to_string(),
         "Good" => format!("{value:.2} {unit}").bright_green().to_string(),
         "Fair" | "Moderate" => format!("{value:.2} {unit}").yellow().to_string(),
         "Poor" | "Slow" | "Very Slow" => format!("{value:.2} {unit}").red().to_string(),
         _ => format!("{value:.2} {unit}"),
-    };
-    colored
+    }
 }
 
 fn format_speed_plain(bps: f64, bytes: bool) -> String {

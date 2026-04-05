@@ -96,32 +96,27 @@ pub async fn download_test(
             for j in 0..4 {
                 let test_url = build_test_url(&server_url, j);
 
-                match client.get(&test_url).send().await {
-                    Ok(response) => {
-                        let mut stream = response.bytes_stream();
-                        while let Some(item) = stream.next().await {
-                            if let Ok(chunk) = item {
-                                let len = chunk.len() as u64;
-                                stream_bytes += len;
-                                total_ref.fetch_add(len, Ordering::Relaxed);
+                if let Ok(response) = client.get(&test_url).send().await {
+                    let mut stream = response.bytes_stream();
+                    while let Some(item) = stream.next().await {
+                        if let Ok(chunk) = item {
+                            let len = chunk.len() as u64;
+                            stream_bytes += len;
+                            total_ref.fetch_add(len, Ordering::Relaxed);
 
-                                // Update progress bar from this stream
-                                let total_so_far = total_ref.load(Ordering::Relaxed);
-                                let elapsed = start_ref.elapsed().as_secs_f64();
-                                let speed = calculate_bandwidth(total_so_far, elapsed);
+                            let total_so_far = total_ref.load(Ordering::Relaxed);
+                            let elapsed = start_ref.elapsed().as_secs_f64();
+                            let speed = calculate_bandwidth(total_so_far, elapsed);
 
-                                // Update peak speed
-                                let current_peak = peak_ref.load(Ordering::Relaxed);
-                                if speed > current_peak as f64 {
-                                    peak_ref.store(speed as u64, Ordering::Relaxed);
-                                }
-
-                                let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
-                                prog.update(speed / 1_000_000.0, pct, total_so_far);
+                            let current_peak = peak_ref.load(Ordering::Relaxed);
+                            if speed > current_peak as f64 {
+                                peak_ref.store(speed as u64, Ordering::Relaxed);
                             }
+
+                            let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
+                            prog.update(speed / 1_000_000.0, pct, total_so_far);
                         }
                     }
-                    Err(_) => {}
                 }
             }
 
