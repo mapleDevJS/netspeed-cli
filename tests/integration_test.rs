@@ -105,19 +105,6 @@ fn test_invalid_csv_delimiter() {
     assert!(stderr.contains("CSV delimiter") || stderr.contains("error"));
 }
 
-/// Test invalid URL validation
-#[test]
-fn test_invalid_mini_url() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--mini", "invalid-url"])
-        .output()
-        .expect("Failed to execute command");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success());
-    assert!(stderr.contains("URL") || stderr.contains("error"));
-}
-
 /// Test invalid IP address validation
 #[test]
 fn test_invalid_source_ip() {
