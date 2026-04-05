@@ -52,15 +52,33 @@ pub fn format_stability_line(cv: f64, nc: bool) -> String {
 }
 
 pub fn compute_percentiles(samples: &[f64]) -> Option<(f64, f64, f64)> {
-    if samples.len() < 3 {
+    let n = samples.len();
+    if n < 3 {
         return None;
     }
-    let mut sorted = samples.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let n = sorted.len();
-    let p50 = sorted[n * 50 / 100];
-    let p95 = sorted[(n * 95 / 100).min(n - 1)];
-    let p99 = sorted[(n * 99 / 100).min(n - 1)];
+    let mut data = samples.to_vec();
+    let p50_idx = n * 50 / 100;
+    let p95_idx = (n * 95 / 100).min(n - 1);
+    let p99_idx = (n * 99 / 100).min(n - 1);
+
+    // Partition at p99: elements before are <= p99, elements after are >= p99
+    data.select_nth_unstable_by(p99_idx, |a, b| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let p99 = data[p99_idx];
+
+    // Partition the left slice at p95
+    data.select_nth_unstable_by(p95_idx, |a, b| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let p95 = data[p95_idx];
+
+    // Partition the left slice at p50
+    data.select_nth_unstable_by(p50_idx, |a, b| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let p50 = data[p50_idx];
+
     Some((p50, p95, p99))
 }
 

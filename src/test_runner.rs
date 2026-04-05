@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 
 /// Result from a bandwidth test (download or upload).
+#[derive(PartialEq, Debug)]
 pub struct TestRunResult {
     /// Average speed in bits per second
     pub avg_bps: f64,
@@ -141,5 +142,57 @@ mod tests {
         };
         assert_eq!(result.avg_bps, 100_000_000.0);
         assert_eq!(result.peak_bps, 120_000_000.0);
+    }
+
+    #[test]
+    fn test_test_run_result_default_values() {
+        let result = TestRunResult::default();
+        assert_eq!(result.avg_bps, 0.0);
+        assert_eq!(result.peak_bps, 0.0);
+        assert_eq!(result.total_bytes, 0);
+        assert_eq!(result.duration_secs, 0.0);
+        assert!(result.speed_samples.is_empty());
+        assert!(result.latency_under_load.is_none());
+    }
+
+    #[test]
+    fn test_test_run_result_default_explicit() {
+        let result = TestRunResult {
+            avg_bps: 0.0,
+            peak_bps: 0.0,
+            total_bytes: 0,
+            duration_secs: 0.0,
+            speed_samples: Vec::new(),
+            latency_under_load: None,
+        };
+        assert_eq!(result, TestRunResult::default());
+    }
+
+    #[test]
+    fn test_test_run_result_with_samples() {
+        let samples = vec![50_000_000.0, 75_000_000.0, 100_000_000.0];
+        let result = TestRunResult {
+            avg_bps: 75_000_000.0,
+            peak_bps: 100_000_000.0,
+            total_bytes: 5_000_000,
+            duration_secs: 0.5,
+            speed_samples: samples.clone(),
+            latency_under_load: Some(12.0),
+        };
+        assert_eq!(result.speed_samples, samples);
+        assert_eq!(result.speed_samples.len(), 3);
+    }
+
+    #[test]
+    fn test_test_run_result_peak_greater_than_average() {
+        let result = TestRunResult {
+            avg_bps: 100_000_000.0,
+            peak_bps: 150_000_000.0,
+            total_bytes: 8_000_000,
+            duration_secs: 0.8,
+            speed_samples: vec![100_000_000.0],
+            latency_under_load: None,
+        };
+        assert!(result.peak_bps > result.avg_bps);
     }
 }

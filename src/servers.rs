@@ -24,15 +24,23 @@ struct ServerConfig {
 /// Wrapper for the list of servers (maps to <servers> element)
 #[derive(Debug, Clone, Deserialize)]
 struct ServersWrapper {
-    #[serde(rename = "server")]
+    #[serde(rename = "server", default)]
     servers: Vec<Server>,
 }
 
 const SPEEDTEST_SERVERS_URL: &str = "https://www.speedtest.net/speedtest-servers-static.php";
 const SPEEDTEST_CONFIG_URL: &str = "https://www.speedtest.net/api/ios-config.php";
 
-/// Calculate distance between two geographic points using Haversine formula
-fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+/// Calculate distance between two geographic points using Haversine formula.
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::servers::calculate_distance;
+/// let dist = calculate_distance(40.7128, -74.0060, 34.0522, -118.2437);
+/// assert!((dist - 3944.0).abs() < 200.0); // ~3944 km, NYC to LA
+/// ```
+pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     const EARTH_RADIUS_KM: f64 = 6371.0;
 
     let lat1_rad = lat1.to_radians();
@@ -402,5 +410,81 @@ mod tests {
         let config: ClientConfig = from_str(xml).unwrap();
         assert!(config.client.lat.is_none());
         assert!(config.client.lon.is_none());
+    }
+
+    #[test]
+    fn test_calculate_distance_sydney_tokyo() {
+        let dist = calculate_distance(-33.8688, 151.2093, 35.6762, 139.6503);
+        assert!((dist - 7823.0).abs() < 300.0);
+    }
+
+    #[test]
+    fn test_calculate_distance_opposite_sides() {
+        // NYC to Sydney (roughly opposite sides of Earth)
+        let dist = calculate_distance(40.7128, -74.0060, -33.8688, 151.2093);
+        assert!(dist > 15_000.0); // Should be a very long distance
+    }
+
+    #[test]
+    fn test_calculate_distance_equator() {
+        // Points on the equator
+        let dist = calculate_distance(0.0, 0.0, 0.0, 10.0);
+        assert!((dist - 1111.0).abs() < 100.0); // ~1111 km per 10 degrees at equator
+    }
+
+    #[test]
+    fn test_server_config_deserialization() {
+        let xml = r#"<?xml version="1.0"?>
+<settings>
+    <servers>
+        <server url="http://server1.com/speedtest/upload.php" name="Server 1" sponsor="ISP 1" country="US" id="1" lat="40.0" lon="-74.0" />
+        <server url="http://server2.com/speedtest/upload.php" name="Server 2" sponsor="ISP 2" country="CA" id="2" lat="43.0" lon="-79.0" />
+    </servers>
+</settings>"#;
+        let config: ServerConfig = from_str(xml).unwrap();
+        assert_eq!(config.servers_wrapper.servers.len(), 2);
+        assert_eq!(config.servers_wrapper.servers[0].id, "1");
+        assert_eq!(config.servers_wrapper.servers[1].country, "CA");
+    }
+
+    #[test]
+    fn test_server_distance_comparison_with_negative_coords() {
+        // Test with servers in different hemispheres
+        let servers = vec![
+            Server {
+                id: "1".to_string(),
+                url: "http://server1.com".to_string(),
+                name: "Southern".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "AU".to_string(),
+                lat: -33.8688,
+                lon: 151.2093,
+                distance: 15_000.0,
+            },
+            Server {
+                id: "2".to_string(),
+                url: "http://server2.com".to_string(),
+                name: "Northern".to_string(),
+                sponsor: "ISP".to_string(),
+                country: "US".to_string(),
+                lat: 40.7128,
+                lon: -74.0060,
+                distance: 100.0,
+            },
+        ];
+
+        let best = select_best_server(&servers).unwrap();
+        assert_eq!(best.id, "2"); // Northern is closer
+    }
+
+    #[test]
+    fn test_servers_wrapper_empty_deserialization() {
+        let xml = r#"<?xml version="1.0"?>
+<settings>
+    <servers>
+    </servers>
+</settings>"#;
+        let config: ServerConfig = from_str(xml).unwrap();
+        assert!(config.servers_wrapper.servers.is_empty());
     }
 }
