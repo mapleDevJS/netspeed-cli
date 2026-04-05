@@ -101,22 +101,21 @@ fn validate_csv_delimiter(s: &str) -> Result<char, String> {
 }
 
 fn validate_ip_address(s: &str) -> Result<String, String> {
-    // Simple IPv4 validation
+    // Simple IPv4 validation for CLI parsing
+    // Note: Duplicated from common::is_valid_ipv4 to avoid build.rs dependency issues
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 4 {
         return Err(format!(
             "Invalid IP address format: '{s}'. Expected format: x.x.x.x"
         ));
     }
-
-    for part in parts {
-        match part.parse::<u8>() {
-            Ok(_) => (),
-            Err(_) => return Err(format!("Invalid IP address octet: '{part}'")),
-        }
+    if parts.iter().all(|p| p.parse::<u8>().is_ok()) {
+        Ok(s.to_string())
+    } else {
+        Err(format!(
+            "Invalid IP address format: '{s}'. Expected format: x.x.x.x"
+        ))
     }
-
-    Ok(s.to_string())
 }
 
 fn validate_timeout(s: &str) -> Result<u64, String> {

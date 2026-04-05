@@ -200,7 +200,7 @@ Results are automatically saved and can be viewed with `--history`.
 
 ### Requirements
 
-- Rust 1.70+
+- Rust 1.85+
 - cargo
 
 ```bash

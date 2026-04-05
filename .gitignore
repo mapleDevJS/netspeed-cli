@@ -1,4 +1,28 @@
+# Build artifacts
 /target
 **/*.rs.bk
 *.pdb
-Cargo.lock
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# Coverage reports
+lcov.info
+coverage/
+*.profraw
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db

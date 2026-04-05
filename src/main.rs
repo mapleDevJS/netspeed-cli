@@ -1,23 +1,18 @@
 use netspeed_cli::cli::{CliArgs, ShellType};
+use netspeed_cli::common;
 use netspeed_cli::config::Config;
 use netspeed_cli::error::SpeedtestError;
-use netspeed_cli::formatter::{
-    format_csv, format_detailed, format_json, format_list, format_simple,
-};
+use netspeed_cli::formatter::{OutputFormat, format_list};
 use netspeed_cli::history;
 use netspeed_cli::http;
-use netspeed_cli::progress::{SpeedProgress, create_spinner, finish_ok, no_color};
-use netspeed_cli::servers::{
-    fetch_servers, measure_latency_under_load, ping_test, select_best_server,
-};
+use netspeed_cli::progress::{create_spinner, finish_ok, no_color};
+use netspeed_cli::servers::{fetch_servers, ping_test, select_best_server};
+use netspeed_cli::test_runner::{self, TestRunResult};
 use netspeed_cli::types::{self, TestResult};
 use netspeed_cli::{download, upload};
 
 use clap::Parser;
-use indicatif::ProgressDrawTarget;
 use owo_colors::OwoColorize;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 fn generate_shell_completion(shell: ShellType) {
     use clap::CommandFactory;
@@ -57,6 +52,18 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
 
     let is_verbose = !config.simple && !config.json && !config.csv && !config.list;
 
+    // Print header for verbose mode
+    if is_verbose {
+        eprintln!(
+            "{}",
+            format!("  ═══  NetSpeed CLI v{}  ═══", env!("CARGO_PKG_VERSION"))
+                .dimmed()
+                .bold()
+        );
+        eprintln!("{}", "  Bandwidth test · speedtest.net".dimmed());
+        eprintln!();
+    }
+
     // Fetch server list
     let fetch_spinner = if is_verbose {
         Some(create_spinner("Finding servers..."))
@@ -66,6 +73,7 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let mut servers = fetch_servers(&client).await?;
     if let Some(ref pb) = fetch_spinner {
         finish_ok(pb, &format!("Found {} servers", servers.len()));
+        eprintln!();
     }
 
     // Handle --list option
@@ -93,10 +101,11 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
 
     // Server info
     if is_verbose {
+        let dist = common::format_distance(server.distance);
         eprintln!();
         if no_color() {
             eprintln!("  Server:   {} ({})", server.sponsor, server.name);
-            eprintln!("  Location: {} ({:.1} km)", server.country, server.distance);
+            eprintln!("  Location: {} ({dist})", server.country);
         } else {
             eprintln!(
                 "  {}   {} ({})",
@@ -104,12 +113,7 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
                 server.sponsor.white().bold(),
                 server.name
             );
-            eprintln!(
-                "  {} {} ({:.1} km)",
-                "Location:".dimmed(),
-                server.country,
-                server.distance
-            );
+            eprintln!("  {} {} ({dist})", "Location:".dimmed(), server.country,);
         }
         eprintln!();
     }
@@ -118,7 +122,7 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
     let client_ip = http::discover_client_ip(&client).await.ok();
 
     // Run ping test
-    let (ping, jitter) = if !config.no_download || !config.no_upload {
+    let (ping, jitter, packet_loss, ping_samples) = if !config.no_download || !config.no_upload {
         let ping_spinner = if is_verbose {
             Some(create_spinner("Testing latency..."))
         } else {
@@ -136,110 +140,45 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
             };
             finish_ok(pb, &msg);
         }
-        (Some(ping_result.0), Some(ping_result.1))
+        (
+            Some(ping_result.0),
+            Some(ping_result.1),
+            Some(ping_result.2),
+            ping_result.3,
+        )
     } else {
-        (None, None)
+        (None, None, None, Vec::new())
     };
 
     // Run download test
-    let (download, download_peak, latency_download, dl_bytes, dl_duration) = if config.no_download {
-        (None, None, None, 0, 0.0)
+    let dl_result = if config.no_download {
+        TestRunResult::default()
     } else {
-        let progress = Arc::new(if is_verbose {
-            SpeedProgress::new("Download")
-        } else {
-            SpeedProgress::with_target("Download", ProgressDrawTarget::hidden())
-        });
-
-        let latency_samples = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let stop_signal = Arc::new(AtomicBool::new(false));
-
-        let ping_client = http::create_client(&config)?;
-        let ping_url = server.url.clone();
-        let samples_clone = Arc::clone(&latency_samples);
-        let stop_clone = Arc::clone(&stop_signal);
-        let ping_handle = tokio::spawn(async move {
-            measure_latency_under_load(ping_client, ping_url, samples_clone, stop_clone).await;
-        });
-
-        let test_start = std::time::Instant::now();
-        let (dl_avg, dl_peak, total_bytes) =
-            download::download_test(&client, &server, config.single, Arc::clone(&progress)).await?;
-        let dl_duration = test_start.elapsed().as_secs_f64();
-        progress.finish(dl_avg / 1_000_000.0, total_bytes);
-
-        stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
-        let _ = ping_handle.await;
-
-        let lat_under_load = {
-            let lock = latency_samples.lock().unwrap();
-            if lock.is_empty() {
-                None
-            } else {
-                Some(lock.iter().sum::<f64>() / lock.len() as f64)
-            }
-        };
-
-        (
-            Some(dl_avg),
-            Some(dl_peak),
-            lat_under_load,
-            total_bytes,
-            dl_duration,
+        test_runner::run_bandwidth_test(
+            &config,
+            &server,
+            "Download",
+            is_verbose,
+            |progress| async {
+                download::download_test(&client, &server, config.single, progress).await
+            },
         )
+        .await?
     };
 
     // Run upload test
-    let (upload, upload_peak, latency_upload, ul_bytes, ul_duration) = if config.no_upload {
-        (None, None, None, 0, 0.0)
+    let ul_result = if config.no_upload {
+        TestRunResult::default()
     } else {
-        let progress = Arc::new(if is_verbose {
-            SpeedProgress::new("Upload")
-        } else {
-            SpeedProgress::with_target("Upload", ProgressDrawTarget::hidden())
-        });
-
-        let latency_samples = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let stop_signal = Arc::new(AtomicBool::new(false));
-
-        let ping_client = http::create_client(&config)?;
-        let ping_url = server.url.clone();
-        let samples_clone = Arc::clone(&latency_samples);
-        let stop_clone = Arc::clone(&stop_signal);
-        let ping_handle = tokio::spawn(async move {
-            measure_latency_under_load(ping_client, ping_url, samples_clone, stop_clone).await;
-        });
-
-        let test_start = std::time::Instant::now();
-        let (ul_avg, ul_peak, total_bytes) =
-            upload::upload_test(&client, &server, config.single, Arc::clone(&progress)).await?;
-        let ul_duration = test_start.elapsed().as_secs_f64();
-        progress.finish(ul_avg / 1_000_000.0, total_bytes);
-
-        stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
-        let _ = ping_handle.await;
-
-        let lat_under_load = {
-            let lock = latency_samples.lock().unwrap();
-            if lock.is_empty() {
-                None
-            } else {
-                Some(lock.iter().sum::<f64>() / lock.len() as f64)
-            }
-        };
-
-        (
-            Some(ul_avg),
-            Some(ul_peak),
-            lat_under_load,
-            total_bytes,
-            ul_duration,
-        )
+        test_runner::run_bandwidth_test(&config, &server, "Upload", is_verbose, |progress| async {
+            upload::upload_test(&client, &server, config.single, progress).await
+        })
+        .await?
     };
 
     // Build result
-    let result = TestResult {
-        server: types::ServerInfo {
+    let result = TestResult::from_test_runs(
+        types::ServerInfo {
             id: server.id.clone(),
             name: server.name.clone(),
             sponsor: server.sponsor.clone(),
@@ -248,38 +187,37 @@ async fn run_speedtest() -> Result<(), SpeedtestError> {
         },
         ping,
         jitter,
-        download,
-        download_peak,
-        upload,
-        upload_peak,
-        latency_download,
-        latency_upload,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        packet_loss,
+        ping_samples,
+        &dl_result,
+        &ul_result,
         client_ip,
-    };
+    );
 
     // Save to history (unless --json or --csv)
     if !config.json && !config.csv {
         history::save_result(&result).ok();
     }
 
-    // Output
-    if config.json {
-        format_json(&result, config.simple)?;
+    // Output — Strategy pattern dispatch
+    let output_format = if config.json {
+        OutputFormat::Json
     } else if config.csv {
-        format_csv(&result, config.csv_delimiter, config.csv_header)?;
+        OutputFormat::Csv {
+            delimiter: config.csv_delimiter,
+            header: config.csv_header,
+        }
     } else if config.simple {
-        format_simple(&result, config.bytes)?;
+        OutputFormat::Simple
     } else {
-        format_detailed(
-            &result,
-            config.bytes,
-            dl_bytes,
-            ul_bytes,
-            dl_duration,
-            ul_duration,
-        )?;
-    }
+        OutputFormat::Detailed {
+            dl_bytes: dl_result.total_bytes,
+            ul_bytes: ul_result.total_bytes,
+            dl_duration: dl_result.duration_secs,
+            ul_duration: ul_result.duration_secs,
+        }
+    };
+    output_format.format(&result, config.bytes)?;
 
     Ok(())
 }

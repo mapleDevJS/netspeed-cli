@@ -25,6 +25,7 @@
 //! - [`upload`] — Upload bandwidth measurement
 
 pub mod cli;
+pub mod common;
 pub mod config;
 pub mod download;
 pub mod error;
@@ -33,5 +34,6 @@ pub mod history;
 pub mod http;
 pub mod progress;
 pub mod servers;
+pub mod test_runner;
 pub mod types;
 pub mod upload;

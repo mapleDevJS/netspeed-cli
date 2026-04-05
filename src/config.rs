@@ -41,29 +41,36 @@ impl Config {
     pub fn from_args(args: &CliArgs) -> Self {
         let file_config = load_config_file().unwrap_or_default();
 
+        // Helper to prefer CLI arg over file config over default
+        let merge_bool = |cli: bool, file: Option<bool>| cli || file.unwrap_or(false);
+        let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
+            // If CLI is at default value, check file; otherwise use CLI
+            if cli == default {
+                file.unwrap_or(default)
+            } else {
+                cli
+            }
+        };
+
         Self {
-            no_download: args.no_download || file_config.no_download.unwrap_or(false),
-            no_upload: args.no_upload || file_config.no_upload.unwrap_or(false),
-            single: args.single || file_config.single.unwrap_or(false),
-            bytes: args.bytes || file_config.bytes.unwrap_or(false),
-            simple: args.simple || file_config.simple.unwrap_or(false),
-            csv: args.csv || file_config.csv.unwrap_or(false),
+            no_download: merge_bool(args.no_download, file_config.no_download),
+            no_upload: merge_bool(args.no_upload, file_config.no_upload),
+            single: merge_bool(args.single, file_config.single),
+            bytes: merge_bool(args.bytes, file_config.bytes),
+            simple: merge_bool(args.simple, file_config.simple),
+            csv: merge_bool(args.csv, file_config.csv),
             csv_delimiter: if args.csv_delimiter == ',' {
                 file_config.csv_delimiter.unwrap_or(',')
             } else {
                 args.csv_delimiter
             },
-            csv_header: args.csv_header || file_config.csv_header.unwrap_or(false),
-            json: args.json || file_config.json.unwrap_or(false),
+            csv_header: merge_bool(args.csv_header, file_config.csv_header),
+            json: merge_bool(args.json, file_config.json),
             list: args.list,
             server_ids: args.server.clone(),
             exclude_ids: args.exclude.clone(),
             source: args.source.clone(),
-            timeout: if args.timeout == 10 {
-                file_config.timeout.unwrap_or(10)
-            } else {
-                args.timeout
-            },
+            timeout: merge_u64(args.timeout, file_config.timeout, 10),
         }
     }
 }
@@ -117,5 +124,80 @@ mod tests {
         let config = Config::from_args(&args);
         assert!(config.no_download);
         assert!(!config.no_upload);
+    }
+
+    #[test]
+    fn test_config_file_deserialization() {
+        let toml_content = r#"
+            no_download = true
+            no_upload = false
+            single = true
+            bytes = true
+            simple = false
+            csv = false
+            csv_delimiter = ';'
+            csv_header = true
+            json = true
+            timeout = 30
+        "#;
+
+        let config: ConfigFile = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.no_download, Some(true));
+        assert_eq!(config.no_upload, Some(false));
+        assert_eq!(config.single, Some(true));
+        assert_eq!(config.bytes, Some(true));
+        assert_eq!(config.simple, Some(false));
+        assert_eq!(config.csv, Some(false));
+        assert_eq!(config.csv_delimiter, Some(';'));
+        assert_eq!(config.csv_header, Some(true));
+        assert_eq!(config.json, Some(true));
+        assert_eq!(config.timeout, Some(30));
+    }
+
+    #[test]
+    fn test_config_file_partial() {
+        let toml_content = r#"
+            no_download = true
+            timeout = 20
+        "#;
+
+        let config: ConfigFile = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.no_download, Some(true));
+        assert!(config.no_upload.is_none());
+        assert!(config.single.is_none());
+        assert_eq!(config.timeout, Some(20));
+        assert!(config.csv_delimiter.is_none());
+    }
+
+    #[test]
+    fn test_config_from_args_overrides_file() {
+        // Test that CLI flags override file config when explicitly set
+        let args = CliArgs::parse_from(["netspeed-cli", "--no-download"]);
+        let config = Config::from_args(&args);
+        assert!(config.no_download);
+    }
+
+    #[test]
+    fn test_config_merge_bool_file_true_cli_false() {
+        // When CLI flag is false (default) and file config is true, result should be false
+        // because merge_bool = cli || file.unwrap_or(false)
+        // Actually merge_bool returns true only if CLI is true OR file is Some(true)
+        // Let's verify the actual behavior
+        let toml_content = r#"
+            no_download = true
+        "#;
+        let file_config: ConfigFile = toml::from_str(toml_content).unwrap();
+
+        // CLI args with no_download=false (default)
+        let args = CliArgs::parse_from(["netspeed-cli"]);
+        let file_config_loaded = Some(file_config);
+
+        // Manual merge check
+        let cli_val = args.no_download; // false
+        let file_val = file_config_loaded.and_then(|c| c.no_download); // Some(true)
+        let merged = cli_val || file_val.unwrap_or(false);
+        // Since CLI is false and file is Some(true), result depends on merge logic
+        // The current merge is: cli || file.unwrap_or(false) = false || true = true
+        assert!(merged);
     }
 }

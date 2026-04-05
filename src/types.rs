@@ -1,21 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Root element for the Speedtest.net servers XML response
-/// XML structure: <settings><servers><server .../></servers></settings>
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename = "settings")]
-pub struct ServerConfig {
-    #[serde(rename = "servers")]
-    pub servers_wrapper: ServersWrapper,
-}
-
-/// Wrapper for the list of servers (maps to <servers> element)
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ServersWrapper {
-    #[serde(rename = "server")]
-    pub servers: Vec<Server>,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Server {
     #[serde(rename = "@id")]
@@ -34,8 +18,6 @@ pub struct Server {
     pub lon: f64,
     #[serde(skip)]
     pub distance: f64,
-    #[serde(skip)]
-    pub latency: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,14 +25,59 @@ pub struct TestResult {
     pub server: ServerInfo,
     pub ping: Option<f64>,
     pub jitter: Option<f64>,
+    pub packet_loss: Option<f64>,
     pub download: Option<f64>,
     pub download_peak: Option<f64>,
     pub upload: Option<f64>,
     pub upload_peak: Option<f64>,
     pub latency_download: Option<f64>,
     pub latency_upload: Option<f64>,
+    pub download_samples: Option<Vec<f64>>,
+    pub upload_samples: Option<Vec<f64>>,
+    pub ping_samples: Option<Vec<f64>>,
     pub timestamp: String,
     pub client_ip: Option<String>,
+}
+
+impl TestResult {
+    /// Build a `TestResult` from ping test output and download/upload test runs.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn from_test_runs(
+        server: ServerInfo,
+        ping: Option<f64>,
+        jitter: Option<f64>,
+        packet_loss: Option<f64>,
+        ping_samples: Vec<f64>,
+        dl: &crate::test_runner::TestRunResult,
+        ul: &crate::test_runner::TestRunResult,
+        client_ip: Option<String>,
+    ) -> Self {
+        fn opt_samples(v: &[f64]) -> Option<Vec<f64>> {
+            if v.is_empty() { None } else { Some(v.to_vec()) }
+        }
+        fn opt_positive(v: f64) -> Option<f64> {
+            if v > 0.0 { Some(v) } else { None }
+        }
+
+        Self {
+            server,
+            ping,
+            jitter,
+            packet_loss,
+            download: opt_positive(dl.avg_bps),
+            download_peak: opt_positive(dl.peak_bps),
+            upload: opt_positive(ul.avg_bps),
+            upload_peak: opt_positive(ul.peak_bps),
+            latency_download: dl.latency_under_load,
+            latency_upload: ul.latency_under_load,
+            download_samples: opt_samples(&dl.speed_samples),
+            upload_samples: opt_samples(&ul.speed_samples),
+            ping_samples: opt_samples(&ping_samples),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            client_ip,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,6 +98,7 @@ pub struct CsvOutput {
     pub distance: f64,
     pub ping: f64,
     pub jitter: f64,
+    pub packet_loss: f64,
     pub download: f64,
     pub download_peak: f64,
     pub upload: f64,
@@ -93,7 +121,6 @@ mod tests {
             lat: 40.7128,
             lon: -74.0060,
             distance: 100.5,
-            latency: 15.2,
         };
 
         let json = serde_json::to_string(&server).unwrap();
@@ -114,12 +141,16 @@ mod tests {
             },
             ping: Some(15.234),
             jitter: Some(1.2),
+            packet_loss: Some(0.0),
             download: Some(150_000_000.0),
             download_peak: Some(180_000_000.0),
             upload: Some(50_000_000.0),
             upload_peak: Some(60_000_000.0),
             latency_download: Some(25.0),
             latency_upload: Some(30.0),
+            download_samples: None,
+            upload_samples: None,
+            ping_samples: None,
             timestamp: "2026-04-04T12:00:00Z".to_string(),
             client_ip: Some("192.168.1.1".to_string()),
         };
@@ -140,6 +171,7 @@ mod tests {
             distance: 100.5,
             ping: 15.234,
             jitter: 1.2,
+            packet_loss: 0.0,
             download: 150_000_000.0,
             download_peak: 180_000_000.0,
             upload: 50_000_000.0,
@@ -164,7 +196,6 @@ mod tests {
             lat: 40.0,
             lon: -74.0,
             distance: 0.0,
-            latency: 0.0,
         };
 
         let cloned = server.clone();
