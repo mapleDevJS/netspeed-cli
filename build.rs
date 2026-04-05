@@ -30,6 +30,7 @@ fn main() -> std::io::Result<()> {
     fs::write(man_dir.join("netspeed-cli.1"), buffer)?;
 
     println!("cargo:rerun-if-changed=src/cli.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
 
     Ok(())
 }

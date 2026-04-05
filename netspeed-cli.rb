@@ -6,6 +6,11 @@ class NetspeedCli < Formula
 
   license "MIT"
 
+  livecheck do
+    url :stable
+    regex(/^v?(\d+(?:\.\d+)+)$/i)
+  end
+
   depends_on "rust" => :build
 
   def install
@@ -21,6 +26,6 @@ class NetspeedCli < Formula
   end
 
   test do
-    assert_match "netspeed-cli", shell_output("#{bin}/netspeed-cli --version")
+    assert_match "internet bandwidth", shell_output("#{bin}/netspeed-cli --help")
   end
 end
