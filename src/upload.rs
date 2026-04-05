@@ -117,11 +117,9 @@ pub async fn upload_test(
         handles.push(handle);
     }
 
-    // Collect results
+    // Collect results (bytes already counted in tasks, no need to add again)
     for handle in handles {
-        if let Ok(bytes) = handle.await {
-            total_bytes.fetch_add(bytes, Ordering::Relaxed);
-        }
+        let _ = handle.await;
     }
 
     let final_total_bytes = total_bytes.load(Ordering::Relaxed);
