@@ -139,17 +139,18 @@ pub fn finish_ok(pb: &ProgressBar, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
-    /// Safely set NO_COLOR env var (unsafe in Rust 2024)
+    /// Safely set NO_COLOR env var
     fn set_no_color() {
-        // SAFETY: Tests run single-threaded; no concurrent env access
-        unsafe { std::env::set_var("NO_COLOR", "1") };
+        // SAFETY: Tests using this function are marked with #[serial] to prevent concurrent env access
+        unsafe { std::env::set_var("NO_COLOR", "1") }
     }
 
-    /// Safely remove NO_COLOR env var (unsafe in Rust 2024)
+    /// Safely remove NO_COLOR env var
     fn unset_no_color() {
-        // SAFETY: Tests run single-threaded; no concurrent env access
-        unsafe { std::env::remove_var("NO_COLOR") };
+        // SAFETY: Tests using this function are marked with #[serial] to prevent concurrent env access
+        unsafe { std::env::remove_var("NO_COLOR") }
     }
 
     #[test]
@@ -189,6 +190,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_no_color_env_set() {
         set_no_color();
         assert!(no_color());
@@ -196,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_spinner_nc() {
         set_no_color();
         let pb = create_spinner("Testing...");
@@ -205,6 +208,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_finish_ok_nc() {
         set_no_color();
         let pb = create_spinner("Testing...");
@@ -214,6 +218,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_speed_progress_nc() {
         set_no_color();
         let sp = SpeedProgress::new("Download");

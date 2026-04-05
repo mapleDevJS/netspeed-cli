@@ -46,6 +46,8 @@ clap_mangen = "0.2"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
 wiremock = "0.6.5"
+serial_test = "3.2"
+tempfile = "3.19"
 
 [profile.release]
 # Enable Link Time Optimization for better performance and smaller binaries
