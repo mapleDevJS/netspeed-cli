@@ -139,9 +139,7 @@ mod tests {
         let config = Config::from_args(&args);
         let result = create_client(&config);
         match result {
-            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Context { .. }) => {
-                ()
-            }
+            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Context { .. }) => {}
             Err(e) => panic!("Unexpected error type: {e:?}"),
         }
     }
