@@ -18,6 +18,8 @@ repos:
       - id: detect-private-key
       - id: mixed-line-ending
         args: [--fix=lf]
+      - id: check-added-large-files
+        args: [--maxkb=500]
 
   # Rust formatting and linting
   - repo: local
@@ -33,4 +35,10 @@ repos:
         entry: cargo clippy -- -D warnings
         language: system
         types: [rust]
+        pass_filenames: false
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        types: [cargo]
         pass_filenames: false

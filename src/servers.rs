@@ -75,9 +75,10 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestE
 
     match (config.client.lat, config.client.lon) {
         (Some(lat), Some(lon)) => Ok((lat, lon)),
-        _ => Err(SpeedtestError::ParseError(
-            "Could not parse client location from config".to_string(),
-        )),
+        _ => Err(SpeedtestError::Context {
+            msg: "Could not parse client location from config".to_string(),
+            source: None,
+        }),
     }
 }
 
@@ -86,7 +87,7 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestE
 /// # Errors
 ///
 /// Returns [`SpeedtestError::NetworkError`] if fetching the server list fails.
-/// Returns [`SpeedtestError::ParseError`] if the XML response cannot be parsed.
+/// Returns [`SpeedtestError::DeserializeXml`] if the XML response cannot be parsed.
 pub async fn fetch_servers(client: &Client) -> Result<Vec<Server>, SpeedtestError> {
     let (client_lat, client_lon) = fetch_client_location(client).await.unwrap_or((0.0, 0.0));
 
@@ -171,9 +172,10 @@ pub async fn ping_test(
 
     // Calculate average latency
     if latencies.is_empty() {
-        return Err(SpeedtestError::NetworkError(
-            "All ping attempts failed".to_string(),
-        ));
+        return Err(SpeedtestError::Context {
+            msg: "All ping attempts failed".to_string(),
+            source: None,
+        });
     }
 
     let avg = latencies.iter().sum::<f64>() / latencies.len() as f64;

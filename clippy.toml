@@ -1,0 +1,11 @@
+# Clippy configuration for netspeed-cli
+# See: https://doc.rust-lang.org/clippy/lint_configuration.html
+
+# Allow try shorthand in rustfmt (matches clippy pedantic rules)
+allowed-duplicate-crates = ["clap"]
+
+# Warn on cognitive complexity (functions too complex)
+cognitive-complexity-threshold = 25
+
+# Allow more type complexity before warning
+type-complexity-threshold = 300

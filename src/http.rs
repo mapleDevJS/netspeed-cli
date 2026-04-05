@@ -7,7 +7,7 @@ use reqwest::Client;
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::Custom`] if the source IP is invalid.
+/// Returns [`SpeedtestError::Context`] if the source IP is invalid.
 /// Returns [`SpeedtestError::NetworkError`] if the client fails to build.
 pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
     let mut builder = Client::builder()
@@ -19,13 +19,13 @@ pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
     if let Some(ref source_ip) = config.source {
         let addr: std::net::SocketAddr = source_ip
             .parse()
-            .map_err(|e| SpeedtestError::Custom(format!("Invalid source IP: {e}")))?;
+            .map_err(|e| SpeedtestError::with_source("Invalid source IP", e))?;
         builder = builder.local_address(addr.ip());
     }
 
     let client = builder
         .build()
-        .map_err(|e| SpeedtestError::NetworkError(e.to_string()))?;
+        .map_err(SpeedtestError::NetworkError)?;
 
     Ok(client)
 }
@@ -117,7 +117,7 @@ mod tests {
         config.source = Some("invalid-ip".to_string());
         let result = create_client(&config);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SpeedtestError::Custom(_)));
+        assert!(matches!(result.unwrap_err(), SpeedtestError::Context { .. }));
     }
 
     #[test]
@@ -138,7 +138,7 @@ mod tests {
         let config = Config::from_args(&args);
         let result = create_client(&config);
         match result {
-            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Custom(_)) => (),
+            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Context { .. }) => (),
             Err(e) => panic!("Unexpected error type: {e:?}"),
         }
     }

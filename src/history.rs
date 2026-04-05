@@ -56,7 +56,7 @@ fn get_history_path() -> Option<PathBuf> {
 /// # Errors
 ///
 /// Returns [`SpeedtestError::IoError`] if reading or writing the history file fails.
-/// Returns [`SpeedtestError::ParseError`] if the history file contains invalid JSON.
+/// Returns [`SpeedtestError::ParseJson`] if the history file contains invalid JSON.
 pub fn save_result(result: &TestResult) -> Result<(), SpeedtestError> {
     let Some(path) = get_history_path() else {
         return Ok(());
@@ -87,7 +87,7 @@ pub fn save_result(result: &TestResult) -> Result<(), SpeedtestError> {
 /// # Errors
 ///
 /// Returns [`SpeedtestError::IoError`] if reading the history file fails.
-/// Returns [`SpeedtestError::ParseError`] if the history file contains invalid JSON.
+/// Returns [`SpeedtestError::ParseJson`] if the history file contains invalid JSON.
 pub fn load_history() -> Result<Vec<HistoryEntry>, SpeedtestError> {
     let Some(path) = get_history_path() else {
         return Ok(Vec::new());
@@ -107,7 +107,7 @@ pub fn load_history() -> Result<Vec<HistoryEntry>, SpeedtestError> {
 /// # Errors
 ///
 /// Returns [`SpeedtestError::IoError`] if reading the history file fails.
-/// Returns [`SpeedtestError::ParseError`] if the history file contains invalid JSON.
+/// Returns [`SpeedtestError::ParseJson`] if the history file contains invalid JSON.
 pub fn print_history() -> Result<(), SpeedtestError> {
     let history = load_history()?;
 

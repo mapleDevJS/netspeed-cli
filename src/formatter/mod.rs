@@ -162,7 +162,7 @@ pub fn format_detailed(
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::ParseError`] if serialization fails.
+/// Returns [`SpeedtestError::ParseJson`] if serialization fails.
 pub fn format_json(result: &TestResult) -> Result<(), SpeedtestError> {
     let is_tty = {
         use std::io::IsTerminal;
@@ -181,7 +181,7 @@ pub fn format_json(result: &TestResult) -> Result<(), SpeedtestError> {
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::Custom`] if CSV serialization fails.
+/// Returns [`SpeedtestError::Csv`] if CSV serialization fails.
 pub fn format_csv(
     result: &TestResult,
     delimiter: char,

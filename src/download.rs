@@ -23,6 +23,14 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
+/// Estimated total bytes for progress bar initialization.
+/// This is a rough estimate; the bar will adjust as actual data is downloaded.
+const ESTIMATED_DOWNLOAD_BYTES: u64 = 15_000_000; // 15 MB estimate
+
+/// Interval between speed samples in seconds.
+/// Throttling prevents excessive sampling overhead.
+const SAMPLE_INTERVAL_SECS: f64 = 0.05; // 50ms between samples (20 Hz max)
+
 /// Extract base URL from server URL (strip /upload.php suffix)
 #[must_use]
 pub fn extract_base_url(url: &str) -> &str {
@@ -53,7 +61,7 @@ use futures_util::StreamExt;
 /// # Errors
 ///
 /// Returns [`SpeedtestError::NetworkError`] if all download streams fail.
-/// Returns [`SpeedtestError::Custom`] if the server URL is invalid.
+/// Returns [`SpeedtestError::Context`] if the server URL is invalid.
 pub async fn download_test(
     client: &Client,
     server: &Server,
@@ -66,9 +74,8 @@ pub async fn download_test(
     let speed_samples = Arc::new(Mutex::new(Vec::new()));
     let start = Instant::now();
 
-    // Estimated total: ~8-12 MB for typical speedtest, we'll update dynamically
-    // Use a large estimate so the bar fills gradually
-    let estimated_total: u64 = 15_000_000; // 15 MB estimate
+    // Estimated total: progress bar will update dynamically as data is downloaded
+    let estimated_total: u64 = ESTIMATED_DOWNLOAD_BYTES;
 
     // Spawn streams that report progress
     let mut handles = Vec::new();
@@ -104,10 +111,10 @@ pub async fn download_test(
                                 peak_ref.store(speed as u64, Ordering::Relaxed);
                             }
 
-                            // Record speed sample (throttled to avoid too many samples)
+                            // Record speed sample (throttled to avoid excessive overhead)
                             if let Ok(mut samples) = samples_ref.lock() {
                                 if samples.is_empty()
-                                    || elapsed - samples.last().copied().unwrap_or(0.0) > 0.05
+                                    || elapsed - samples.last().copied().unwrap_or(0.0) > SAMPLE_INTERVAL_SECS
                                 {
                                     samples.push(speed);
                                 }
