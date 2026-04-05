@@ -27,9 +27,10 @@ use std::time::Instant;
 /// This is a rough estimate; the bar will adjust as actual data is downloaded.
 const ESTIMATED_DOWNLOAD_BYTES: u64 = 15_000_000; // 15 MB estimate
 
-/// Interval between speed samples in seconds.
-/// Throttling prevents excessive sampling overhead.
-const SAMPLE_INTERVAL_SECS: f64 = 0.05; // 50ms between samples (20 Hz max)
+/// Interval between speed samples in milliseconds.
+/// Throttling prevents excessive sampling overhead on all hot-path operations.
+/// Uses 0 as initial value so the first chunk always triggers a sample.
+const SAMPLE_INTERVAL_MS: u64 = 50; // 50ms between samples (20 Hz max)
 
 /// Extract base URL from server URL (strip /upload.php suffix)
 #[must_use]
@@ -77,6 +78,10 @@ pub async fn download_test(
     // Estimated total: progress bar will update dynamically as data is downloaded
     let estimated_total: u64 = ESTIMATED_DOWNLOAD_BYTES;
 
+    // Throttle gate: tracks last sample time in millis to limit all expensive ops to 20 Hz.
+    // Initialized to 0 so the first chunk always triggers a sample (any elapsed > 0 fires).
+    let last_sample_ms = Arc::new(AtomicU64::new(0));
+
     // Spawn streams that report progress
     let mut handles = Vec::new();
     for _ in 0..concurrent_streams {
@@ -87,6 +92,7 @@ pub async fn download_test(
         let samples_ref = Arc::clone(&speed_samples);
         let start_ref = start;
         let prog = Arc::clone(&progress);
+        let throttle_ref = Arc::clone(&last_sample_ms);
 
         let handle = tokio::spawn(async move {
             let mut stream_bytes = 0u64;
@@ -100,29 +106,38 @@ pub async fn download_test(
                         if let Ok(chunk) = item {
                             let len = chunk.len() as u64;
                             stream_bytes += len;
+                            // Cheap atomic add — runs on every chunk
                             total_ref.fetch_add(len, Ordering::Relaxed);
 
-                            let total_so_far = total_ref.load(Ordering::Relaxed);
-                            let elapsed = start_ref.elapsed().as_secs_f64();
-                            let speed = common::calculate_bandwidth(total_so_far, elapsed);
+                            // Throttle gate: only run expensive ops every 50ms.
+                            // First sample always fires (last_sample_ms == 0 means "never sampled").
+                            let elapsed_ms = start_ref.elapsed().as_millis() as u64;
+                            let last_ms = throttle_ref.load(Ordering::Relaxed);
+                            let should_sample = last_ms == 0
+                                || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
+                            if should_sample {
+                                // Update throttle timestamp
+                                throttle_ref.store(elapsed_ms, Ordering::Relaxed);
 
-                            let current_peak = peak_ref.load(Ordering::Relaxed);
-                            if speed > current_peak as f64 {
-                                peak_ref.store(speed as u64, Ordering::Relaxed);
-                            }
+                                // All expensive ops now run at most every 50ms:
+                                let total_so_far = total_ref.load(Ordering::Relaxed);
+                                let elapsed = start_ref.elapsed().as_secs_f64();
+                                let speed = common::calculate_bandwidth(total_so_far, elapsed);
 
-                            // Record speed sample (throttled to avoid excessive overhead)
-                            if let Ok(mut samples) = samples_ref.lock() {
-                                if samples.is_empty()
-                                    || elapsed - samples.last().copied().unwrap_or(0.0)
-                                        > SAMPLE_INTERVAL_SECS
-                                {
+                                // Peak tracking (cheap compare-and-swap)
+                                let current_peak = peak_ref.load(Ordering::Relaxed);
+                                if speed > current_peak as f64 {
+                                    peak_ref.store(speed as u64, Ordering::Relaxed);
+                                }
+
+                                // Record speed sample (throttled, no need for additional check)
+                                if let Ok(mut samples) = samples_ref.lock() {
                                     samples.push(speed);
                                 }
-                            }
 
-                            let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
-                            prog.update(speed / 1_000_000.0, pct, total_so_far);
+                                let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
+                                prog.update(speed / 1_000_000.0, pct, total_so_far);
+                            }
                         }
                     }
                 }
@@ -208,11 +223,51 @@ mod tests {
     }
 
     #[test]
+    fn test_download_url_generation_all_sizes() {
+        let server_url = "http://server.example.com/speedtest/upload.php";
+        let expected = [
+            "http://server.example.com/speedtest/random2000x2000.jpg",
+            "http://server.example.com/speedtest/random3000x3000.jpg",
+            "http://server.example.com/speedtest/random3500x3500.jpg",
+            "http://server.example.com/speedtest/random4000x4000.jpg",
+        ];
+
+        for (i, expected_url) in expected.iter().enumerate() {
+            assert_eq!(build_test_url(server_url, i), *expected_url);
+        }
+    }
+
+    #[test]
     fn test_extract_base_url() {
         let url = "http://server.example.com:8080/speedtest/upload.php";
         assert_eq!(
             extract_base_url(url),
             "http://server.example.com:8080/speedtest"
         );
+    }
+
+    #[test]
+    fn test_extract_base_url_no_suffix() {
+        let url = "http://server.example.com/speedtest";
+        assert_eq!(extract_base_url(url), "http://server.example.com/speedtest");
+    }
+
+    #[test]
+    fn test_extract_base_url_different_path() {
+        let url = "https://cdn.speedtest.net/upload.php";
+        assert_eq!(extract_base_url(url), "https://cdn.speedtest.net");
+    }
+
+    #[test]
+    fn test_estimated_download_bytes_constant() {
+        // Verify the constant is reasonable (around 15 MB)
+        const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES > 10_000_000);
+        const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES < 20_000_000);
+    }
+
+    #[test]
+    fn test_sample_interval_constant() {
+        // Verify sample interval is 50ms (20 Hz)
+        const _: () = assert!(SAMPLE_INTERVAL_MS == 50);
     }
 }

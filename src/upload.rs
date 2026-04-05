@@ -37,6 +37,10 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
     data
 }
 
+/// Interval between speed samples in milliseconds.
+/// Throttling prevents excessive sampling overhead on all hot-path operations.
+const SAMPLE_INTERVAL_MS: u64 = 50; // 50ms between samples (20 Hz max)
+
 /// Run upload bandwidth test against the given server.
 ///
 /// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_uploaded, speed_samples)`.
@@ -59,6 +63,10 @@ pub async fn upload_test(
     let upload_data = generate_upload_data(200_000); // 200KB chunks
     let estimated_total: u64 = 4_000_000; // 4 MB estimate
 
+    // Throttle gate: tracks last sample time in millis to limit all expensive ops to 20 Hz.
+    // Initialized to 0 so the first upload always triggers a sample (any elapsed > 0 fires).
+    let last_sample_ms = Arc::new(AtomicU64::new(0));
+
     let mut handles = Vec::new();
 
     for _ in 0..concurrent_uploads {
@@ -70,6 +78,7 @@ pub async fn upload_test(
         let samples_ref = Arc::clone(&speed_samples);
         let start_ref = start;
         let prog = Arc::clone(&progress);
+        let throttle_ref = Arc::clone(&last_sample_ms);
 
         let handle = tokio::spawn(async move {
             let mut uploaded_bytes = 0u64;
@@ -86,28 +95,38 @@ pub async fn upload_test(
                 {
                     let chunk = data.len() as u64;
                     uploaded_bytes += chunk;
+                    // Cheap atomic add — runs on every upload
                     total_ref.fetch_add(chunk, Ordering::Relaxed);
 
-                    let total_so_far = total_ref.load(Ordering::Relaxed);
-                    let elapsed = start_ref.elapsed().as_secs_f64();
-                    let speed = common::calculate_bandwidth(total_so_far, elapsed);
+                    // Throttle gate: only run expensive ops every 50ms.
+                    // First sample always fires (last_sample_ms == 0 means "never sampled").
+                    let elapsed_ms = start_ref.elapsed().as_millis() as u64;
+                    let last_ms = throttle_ref.load(Ordering::Relaxed);
+                    let should_sample = last_ms == 0
+                        || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
+                    if should_sample {
+                        // Update throttle timestamp
+                        throttle_ref.store(elapsed_ms, Ordering::Relaxed);
 
-                    let current_peak = peak_ref.load(Ordering::Relaxed);
-                    if speed > current_peak as f64 {
-                        peak_ref.store(speed as u64, Ordering::Relaxed);
-                    }
+                        // All expensive ops now run at most every 50ms:
+                        let total_so_far = total_ref.load(Ordering::Relaxed);
+                        let elapsed = start_ref.elapsed().as_secs_f64();
+                        let speed = common::calculate_bandwidth(total_so_far, elapsed);
 
-                    // Record speed sample (throttled)
-                    if let Ok(mut samples) = samples_ref.lock() {
-                        if samples.is_empty()
-                            || elapsed - samples.last().copied().unwrap_or(0.0) > 0.05
-                        {
+                        // Peak tracking
+                        let current_peak = peak_ref.load(Ordering::Relaxed);
+                        if speed > current_peak as f64 {
+                            peak_ref.store(speed as u64, Ordering::Relaxed);
+                        }
+
+                        // Record speed sample (throttled)
+                        if let Ok(mut samples) = samples_ref.lock() {
                             samples.push(speed);
                         }
-                    }
 
-                    let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
-                    prog.update(speed / 1_000_000.0, pct, total_so_far);
+                        let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
+                        prog.update(speed / 1_000_000.0, pct, total_so_far);
+                    }
                 }
             }
 
@@ -169,6 +188,12 @@ mod tests {
     }
 
     #[test]
+    fn test_upload_url_generation_full_path() {
+        let url = build_upload_url("http://server.example.com/speedtest");
+        assert_eq!(url, "http://server.example.com/speedtest/upload");
+    }
+
+    #[test]
     fn test_generate_upload_data_size() {
         let data = generate_upload_data(1000);
         assert_eq!(data.len(), 1000);
@@ -180,5 +205,27 @@ mod tests {
         for (i, &byte) in data.iter().enumerate() {
             assert_eq!(byte, (i % 256) as u8);
         }
+    }
+
+    #[test]
+    fn test_generate_upload_data_wraps_at_256() {
+        let data = generate_upload_data(512);
+        assert_eq!(data[0], 0u8);
+        assert_eq!(data[255], 255u8);
+        assert_eq!(data[256], 0u8);
+        assert_eq!(data[511], 255u8);
+    }
+
+    #[test]
+    fn test_generate_upload_data_empty() {
+        let data = generate_upload_data(0);
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn test_upload_data_size_constant() {
+        // Verify the upload data size used in upload_test (200KB)
+        let data = generate_upload_data(200_000);
+        assert_eq!(data.len(), 200_000);
     }
 }
