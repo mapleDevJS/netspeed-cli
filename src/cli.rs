@@ -1,9 +1,23 @@
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 #[command(name = "netspeed-cli")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Command line interface for testing internet bandwidth using speedtest.net")]
+#[command(after_help = "\
+Examples:
+  netspeed-cli                          Run a full speed test
+  netspeed-cli --simple                 Run with minimal output
+  netspeed-cli --json                   Output results as JSON
+  netspeed-cli --list                   List available servers
+  netspeed-cli --server 1234            Test against a specific server
+  netspeed-cli --no-upload              Skip upload test
+  netspeed-cli --bytes                  Show results in MB/s instead of Mbit/s
+  netspeed-cli --single                 Use a single connection (debugging)
+  netspeed-cli --generate-completion zsh > ~/.zsh/functions/_netspeed-cli
+                                        Generate Zsh shell completions
+")]
 pub struct CliArgs {
     /// Do not perform download test
     #[arg(long)]
@@ -20,10 +34,6 @@ pub struct CliArgs {
     /// Display values in bytes instead of bits
     #[arg(long)]
     pub bytes: bool,
-
-    /// Generate and provide a URL to the speedtest.net share results image
-    #[arg(long)]
-    pub share: bool,
 
     /// Suppress verbose output, only show basic information
     #[arg(long)]
@@ -57,10 +67,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub exclude: Vec<String>,
 
-    /// URL of the Speedtest Mini server
-    #[arg(long, value_parser = validate_url)]
-    pub mini: Option<String>,
-
     /// Source IP address to bind to
     #[arg(long, value_parser = validate_ip_address)]
     pub source: Option<String>,
@@ -69,17 +75,13 @@ pub struct CliArgs {
     #[arg(long, default_value = "10", value_parser = validate_timeout)]
     pub timeout: u64,
 
-    /// Use HTTPS instead of HTTP
-    #[arg(long)]
-    pub secure: bool,
-
-    /// Do not pre-allocate upload data
-    #[arg(long)]
-    pub no_pre_allocate: bool,
-
     /// Generate shell completion script
     #[arg(long, value_enum)]
     pub generate_completion: Option<ShellType>,
+
+    /// Display test history
+    #[arg(long)]
+    pub history: bool,
 }
 
 fn validate_csv_delimiter(s: &str) -> Result<char, String> {
@@ -87,41 +89,40 @@ fn validate_csv_delimiter(s: &str) -> Result<char, String> {
     if chars.len() != 1 {
         return Err("CSV delimiter must be a single character".to_string());
     }
-    
+
     let delimiter = chars[0];
     if !",;|\\t".contains(delimiter) {
-        return Err(format!("Invalid CSV delimiter '{}'. Must be one of: comma, semicolon, pipe, or tab", delimiter));
+        return Err(format!(
+            "Invalid CSV delimiter '{delimiter}'. Must be one of: comma, semicolon, pipe, or tab"
+        ));
     }
-    
-    Ok(delimiter)
-}
 
-fn validate_url(s: &str) -> Result<String, String> {
-    if !s.starts_with("http://") && !s.starts_with("https://") {
-        return Err("URL must start with http:// or https://".to_string());
-    }
-    Ok(s.to_string())
+    Ok(delimiter)
 }
 
 fn validate_ip_address(s: &str) -> Result<String, String> {
     // Simple IPv4 validation
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 4 {
-        return Err(format!("Invalid IP address format: '{}'. Expected format: x.x.x.x", s));
+        return Err(format!(
+            "Invalid IP address format: '{s}'. Expected format: x.x.x.x"
+        ));
     }
-    
+
     for part in parts {
         match part.parse::<u8>() {
             Ok(_) => (),
-            Err(_) => return Err(format!("Invalid IP address octet: '{}'", part)),
+            Err(_) => return Err(format!("Invalid IP address octet: '{part}'")),
         }
     }
-    
+
     Ok(s.to_string())
 }
 
 fn validate_timeout(s: &str) -> Result<u64, String> {
-    let timeout: u64 = s.parse().map_err(|_| format!("Invalid timeout value: '{}'", s))?;
+    let timeout: u64 = s
+        .parse()
+        .map_err(|_| format!("Invalid timeout value: '{s}'"))?;
     if timeout == 0 {
         return Err("Timeout must be greater than 0".to_string());
     }
@@ -167,26 +168,6 @@ mod tests {
     #[test]
     fn test_validate_csv_delimiter_multiple_chars() {
         assert!(validate_csv_delimiter(",,,").is_err());
-    }
-
-    #[test]
-    fn test_validate_url_http() {
-        assert!(validate_url("http://example.com").is_ok());
-    }
-
-    #[test]
-    fn test_validate_url_https() {
-        assert!(validate_url("https://example.com").is_ok());
-    }
-
-    #[test]
-    fn test_validate_url_invalid_no_protocol() {
-        assert!(validate_url("example.com").is_err());
-    }
-
-    #[test]
-    fn test_validate_url_invalid_ftp() {
-        assert!(validate_url("ftp://example.com").is_err());
     }
 
     #[test]

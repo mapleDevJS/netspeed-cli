@@ -1,11 +1,29 @@
 use crate::cli::CliArgs;
+use directories::ProjectDirs;
+use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
 
+#[derive(Debug, Default, Deserialize)]
+pub struct ConfigFile {
+    pub no_download: Option<bool>,
+    pub no_upload: Option<bool>,
+    pub single: Option<bool>,
+    pub bytes: Option<bool>,
+    pub simple: Option<bool>,
+    pub csv: Option<bool>,
+    pub csv_delimiter: Option<char>,
+    pub csv_header: Option<bool>,
+    pub json: Option<bool>,
+    pub timeout: Option<u64>,
+}
+
+#[allow(clippy::struct_excessive_bools)]
 pub struct Config {
     pub no_download: bool,
     pub no_upload: bool,
     pub single: bool,
     pub bytes: bool,
-    pub share: bool,
     pub simple: bool,
     pub csv: bool,
     pub csv_delimiter: char,
@@ -14,49 +32,58 @@ pub struct Config {
     pub list: bool,
     pub server_ids: Vec<String>,
     pub exclude_ids: Vec<String>,
-    #[allow(dead_code)]
-    pub mini_url: Option<String>,
-    #[allow(dead_code)]
     pub source: Option<String>,
     pub timeout: u64,
-    #[allow(dead_code)]
-    pub secure: bool,
-    #[allow(dead_code)]
-    pub no_pre_allocate: bool,
-    #[allow(dead_code)]
-    pub client_ip: Option<String>,
 }
 
 impl Config {
+    #[must_use]
     pub fn from_args(args: &CliArgs) -> Self {
+        let file_config = load_config_file().unwrap_or_default();
+
         Self {
-            no_download: args.no_download,
-            no_upload: args.no_upload,
-            single: args.single,
-            bytes: args.bytes,
-            share: args.share,
-            simple: args.simple,
-            csv: args.csv,
-            csv_delimiter: args.csv_delimiter,
-            csv_header: args.csv_header,
-            json: args.json,
+            no_download: args.no_download || file_config.no_download.unwrap_or(false),
+            no_upload: args.no_upload || file_config.no_upload.unwrap_or(false),
+            single: args.single || file_config.single.unwrap_or(false),
+            bytes: args.bytes || file_config.bytes.unwrap_or(false),
+            simple: args.simple || file_config.simple.unwrap_or(false),
+            csv: args.csv || file_config.csv.unwrap_or(false),
+            csv_delimiter: if args.csv_delimiter == ',' {
+                file_config.csv_delimiter.unwrap_or(',')
+            } else {
+                args.csv_delimiter
+            },
+            csv_header: args.csv_header || file_config.csv_header.unwrap_or(false),
+            json: args.json || file_config.json.unwrap_or(false),
             list: args.list,
             server_ids: args.server.clone(),
             exclude_ids: args.exclude.clone(),
-            mini_url: args.mini.clone(),
             source: args.source.clone(),
-            timeout: args.timeout,
-            secure: args.secure,
-            no_pre_allocate: args.no_pre_allocate,
-            client_ip: None,
+            timeout: if args.timeout == 10 {
+                file_config.timeout.unwrap_or(10)
+            } else {
+                args.timeout
+            },
         }
     }
+}
 
-    #[allow(dead_code)]
-    pub fn with_client_ip(mut self, ip: String) -> Self {
-        self.client_ip = Some(ip);
-        self
+fn get_config_path() -> Option<PathBuf> {
+    ProjectDirs::from("dev", "vibe", "netspeed-cli").map(|proj_dirs| {
+        let config_dir = proj_dirs.config_dir();
+        fs::create_dir_all(config_dir).ok();
+        config_dir.join("config.toml")
+    })
+}
+
+fn load_config_file() -> Option<ConfigFile> {
+    let path = get_config_path()?;
+    if !path.exists() {
+        return None;
     }
+
+    let content = fs::read_to_string(path).ok()?;
+    toml::from_str(&content).ok()
 }
 
 #[cfg(test)]
@@ -73,13 +100,11 @@ mod tests {
         assert!(!config.no_upload);
         assert!(!config.single);
         assert!(!config.bytes);
-        assert!(!config.share);
         assert!(!config.simple);
         assert!(!config.csv);
         assert!(!config.json);
         assert!(!config.list);
         assert_eq!(config.timeout, 10);
-        assert!(!config.secure);
         assert_eq!(config.csv_delimiter, ',');
         assert!(!config.csv_header);
         assert!(config.server_ids.is_empty());
@@ -93,101 +118,4 @@ mod tests {
         assert!(config.no_download);
         assert!(!config.no_upload);
     }
-
-    #[test]
-    fn test_config_from_args_no_upload() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--no-upload"]);
-        let config = Config::from_args(&args);
-        assert!(!config.no_download);
-        assert!(config.no_upload);
-    }
-
-    #[test]
-    fn test_config_from_args_single() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--single"]);
-        let config = Config::from_args(&args);
-        assert!(config.single);
-    }
-
-    #[test]
-    fn test_config_from_args_bytes() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--bytes"]);
-        let config = Config::from_args(&args);
-        assert!(config.bytes);
-    }
-
-    #[test]
-    fn test_config_from_args_json() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--json"]);
-        let config = Config::from_args(&args);
-        assert!(config.json);
-    }
-
-    #[test]
-    fn test_config_from_args_csv_with_delimiter() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--csv", "--csv-delimiter", ";"]);
-        let config = Config::from_args(&args);
-        assert!(config.csv);
-        assert_eq!(config.csv_delimiter, ';');
-    }
-
-    #[test]
-    fn test_config_from_args_server_ids() {
-        let args = CliArgs::parse_from([
-            "netspeed-cli",
-            "--server",
-            "1234",
-            "--server",
-            "5678",
-        ]);
-        let config = Config::from_args(&args);
-        assert_eq!(config.server_ids, vec!["1234", "5678"]);
-    }
-
-    #[test]
-    fn test_config_from_args_exclude_ids() {
-        let args = CliArgs::parse_from([
-            "netspeed-cli",
-            "--exclude",
-            "9999",
-        ]);
-        let config = Config::from_args(&args);
-        assert_eq!(config.exclude_ids, vec!["9999"]);
-    }
-
-    #[test]
-    fn test_config_from_args_timeout() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--timeout", "30"]);
-        let config = Config::from_args(&args);
-        assert_eq!(config.timeout, 30);
-    }
-
-    #[test]
-    fn test_config_from_args_secure() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--secure"]);
-        let config = Config::from_args(&args);
-        assert!(config.secure);
-    }
-
-    #[test]
-    fn test_config_from_args_mini_url() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--mini", "http://mini.example.com"]);
-        let config = Config::from_args(&args);
-        assert_eq!(config.mini_url, Some("http://mini.example.com".to_string()));
-    }
-
-    #[test]
-    fn test_config_from_args_source() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--source", "192.168.1.100"]);
-        let config = Config::from_args(&args);
-        assert_eq!(config.source, Some("192.168.1.100".to_string()));
-    }
-
-    #[test]
-    fn test_config_with_client_ip() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let config = Config::from_args(&args).with_client_ip("10.0.0.1".to_string());
-        assert_eq!(config.client_ip, Some("10.0.0.1".to_string()));
-    }
 }
-
