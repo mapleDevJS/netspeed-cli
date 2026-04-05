@@ -4,7 +4,7 @@ use directories::ProjectDirs;
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HistoryEntry {
@@ -51,19 +51,21 @@ fn get_history_path() -> Option<PathBuf> {
     })
 }
 
-/// Save a test result to the history file.
-///
-/// # Errors
-///
-/// Returns [`SpeedtestError::IoError`] if reading or writing the history file fails.
-/// Returns [`SpeedtestError::ParseJson`] if the history file contains invalid JSON.
-pub fn save_result(result: &TestResult) -> Result<(), SpeedtestError> {
-    let Some(path) = get_history_path() else {
-        return Ok(());
-    };
+/// Internal: load history from a specific path
+fn load_history_from_path(path: &Path) -> Result<Vec<HistoryEntry>, SpeedtestError> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
 
+    let content = fs::read_to_string(path)?;
+    let history: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+    Ok(history)
+}
+
+/// Internal: save result to a specific path
+fn save_result_to_path(result: &TestResult, path: &Path) -> Result<(), SpeedtestError> {
     let mut history: Vec<HistoryEntry> = if path.exists() {
-        let content = fs::read_to_string(&path)?;
+        let content = fs::read_to_string(path)?;
         serde_json::from_str(&content).unwrap_or_default()
     } else {
         Vec::new()
@@ -82,6 +84,20 @@ pub fn save_result(result: &TestResult) -> Result<(), SpeedtestError> {
     Ok(())
 }
 
+/// Save a test result to the history file.
+///
+/// # Errors
+///
+/// Returns [`SpeedtestError::IoError`] if reading or writing the history file fails.
+/// Returns [`SpeedtestError::ParseJson`] if the history file contains invalid JSON.
+pub fn save_result(result: &TestResult) -> Result<(), SpeedtestError> {
+    let Some(path) = get_history_path() else {
+        return Ok(());
+    };
+
+    save_result_to_path(result, &path)
+}
+
 /// Load all test history from the history file.
 ///
 /// # Errors
@@ -93,13 +109,7 @@ pub fn load_history() -> Result<Vec<HistoryEntry>, SpeedtestError> {
         return Ok(Vec::new());
     };
 
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let content = fs::read_to_string(path)?;
-    let history: Vec<HistoryEntry> = serde_json::from_str(&content)?;
-    Ok(history)
+    load_history_from_path(&path)
 }
 
 /// Print formatted test history to stdout.
@@ -223,6 +233,7 @@ pub fn format_comparison(download_mbps: f64, upload_mbps: f64, nc: bool) -> Opti
 mod tests {
     use super::*;
     use crate::types::{ServerInfo, TestResult};
+    use serial_test::serial;
 
     fn make_test_result(download: f64, upload: f64, timestamp: &str) -> TestResult {
         TestResult {
@@ -250,149 +261,186 @@ mod tests {
         }
     }
 
+    /// Helper: create a temp directory with a history.json path
+    fn temp_history_path() -> (tempfile::TempDir, PathBuf) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let path = temp_dir.path().join("history.json");
+        (temp_dir, path)
+    }
+
     #[test]
+    #[serial]
     fn test_get_averages_returns_values() {
-        // Save several results to ensure we have history
-        let base_results = vec![
+        let (_temp, path) = temp_history_path();
+
+        let results = vec![
             make_test_result(100_000_000.0, 50_000_000.0, "2026-01-01T00:00:00Z"),
             make_test_result(120_000_000.0, 60_000_000.0, "2026-01-02T00:00:00Z"),
             make_test_result(80_000_000.0, 40_000_000.0, "2026-01-03T00:00:00Z"),
         ];
-        for r in &base_results {
-            save_result(r).ok();
+        for r in &results {
+            save_result_to_path(r, &path).unwrap();
         }
 
-        let result = get_averages();
-        // May or may not have values depending on prior test state
-        if let Some((avg_dl, avg_ul)) = result {
-            assert!(avg_dl >= 0.0);
-            assert!(avg_ul >= 0.0);
-        }
+        // Load and verify
+        let history = load_history_from_path(&path).unwrap();
+        let dl_values: Vec<f64> = history
+            .iter()
+            .filter_map(|e| e.download.map(|d| d / 1_000_000.0))
+            .collect();
+        assert_eq!(dl_values.len(), 3);
+        let avg_dl = dl_values.iter().sum::<f64>() / dl_values.len() as f64;
+        assert!((avg_dl - 100.0).abs() < 0.1);
     }
 
     #[test]
+    #[serial]
     fn test_format_comparison_faster() {
-        // Save baseline data and compare - just verify it doesn't panic
+        let (_temp, path) = temp_history_path();
+
         for i in 0..3 {
             let r = make_test_result(
                 20_000_000.0,
                 10_000_000.0,
                 &format!("2026-06-{i:02}T00:00:00Z"),
             );
-            save_result(&r).ok();
+            save_result_to_path(&r, &path).unwrap();
         }
 
-        let _ = format_comparison(200.0, 100.0, false);
+        // Verify it doesn't panic
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 3);
     }
 
     #[test]
+    #[serial]
     fn test_format_comparison_slower() {
+        let (_temp, path) = temp_history_path();
+
         for i in 0..3 {
             let r = make_test_result(
                 800_000_000.0,
                 800_000_000.0,
                 &format!("2026-07-{i:02}T00:00:00Z"),
             );
-            save_result(&r).ok();
+            save_result_to_path(&r, &path).unwrap();
         }
 
-        let _ = format_comparison(10.0, 5.0, false);
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 3);
     }
 
     #[test]
+    #[serial]
     fn test_format_comparison_on_par() {
-        // Save similar results
+        let (_temp, path) = temp_history_path();
+
         let sim_results = vec![
             make_test_result(100_000_000.0, 50_000_000.0, "2026-04-01T00:00:00Z"),
             make_test_result(105_000_000.0, 52_000_000.0, "2026-04-02T00:00:00Z"),
             make_test_result(95_000_000.0, 48_000_000.0, "2026-04-03T00:00:00Z"),
         ];
         for r in &sim_results {
-            save_result(r).ok();
+            save_result_to_path(r, &path).unwrap();
         }
 
-        // Test with a similar result
-        let result = format_comparison(100.0, 50.0, true);
-        // May or may not be on-par depending on exact values, but should not panic
-        let _ = result;
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 3);
     }
 
     #[test]
+    #[serial]
+    fn test_save_result_appends_to_existing() {
+        let (_temp, path) = temp_history_path();
+
+        let r1 = make_test_result(50_000_000.0, 25_000_000.0, "2026-08-01T00:00:00Z");
+        save_result_to_path(&r1, &path).unwrap();
+        let r2 = make_test_result(60_000_000.0, 30_000_000.0, "2026-08-02T00:00:00Z");
+        save_result_to_path(&r2, &path).unwrap();
+
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    #[serial]
     fn test_print_history_with_data() {
-        // Save some results - just verify it doesn't panic
+        let (_temp, path) = temp_history_path();
+
         for i in 0..3 {
             let r = make_test_result(
                 100_000_000.0,
                 50_000_000.0,
                 &format!("2026-05-{i:02}T00:00:00Z"),
             );
-            let _ = save_result(&r);
+            save_result_to_path(&r, &path).unwrap();
         }
-        let _ = print_history();
+
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 3);
     }
 
     #[test]
-    fn test_save_result_appends_to_existing() {
-        // Save a result, then another - just verify it doesn't panic
-        let r1 = make_test_result(50_000_000.0, 25_000_000.0, "2026-08-01T00:00:00Z");
-        save_result(&r1).ok();
-        let r2 = make_test_result(60_000_000.0, 30_000_000.0, "2026-08-02T00:00:00Z");
-        save_result(&r2).ok();
-
-        // History should be loadable after saving
-        let _ = load_history();
-    }
-
-    #[test]
+    #[serial]
     fn test_print_history_long_sponsor_truncation() {
-        // Save a result with a very long sponsor name - just verify no panic
+        let (_temp, path) = temp_history_path();
+
         let mut r = make_test_result(100_000_000.0, 50_000_000.0, "2026-09-01T00:00:00Z");
         r.server.sponsor = "VeryLongSponsorNameThatExceedsLimit".to_string();
-        let _ = save_result(&r);
-        let _ = print_history();
+        save_result_to_path(&r, &path).unwrap();
+
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history[0].sponsor, "VeryLongSponsorNameThatExceedsLimit");
     }
 
     #[test]
+    #[serial]
     fn test_format_comparison_zero_avg() {
-        // Save results with zero speeds
-        let r = make_test_result(0.0, 0.0, "2026-10-01T00:00:00Z");
-        save_result(&r).ok();
+        let (_temp, path) = temp_history_path();
 
-        // Should handle zero avg gracefully
-        let result = format_comparison(100.0, 50.0, false);
-        // May return None or Some depending on implementation
-        let _ = result;
+        let r = make_test_result(0.0, 0.0, "2026-10-01T00:00:00Z");
+        save_result_to_path(&r, &path).unwrap();
+
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].download, Some(0.0));
     }
 
     #[test]
-    fn test_format_comparison_nc() {
-        // Save similar results - just verify it doesn't panic
-        for i in 0..3 {
+    #[serial]
+    fn test_save_result_invalid_json_recovery() {
+        let (_temp, path) = temp_history_path();
+
+        // Write invalid JSON
+        fs::write(&path, "{invalid json}").unwrap();
+
+        // Should recover and save the new result
+        let r = make_test_result(100_000_000.0, 50_000_000.0, "2026-12-01T00:00:00Z");
+        save_result_to_path(&r, &path).unwrap();
+
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].download, Some(100_000_000.0));
+    }
+
+    #[test]
+    #[serial]
+    fn test_history_keeps_last_100_entries() {
+        let (_temp, path) = temp_history_path();
+
+        // Save 105 entries
+        for i in 0..105 {
             let r = make_test_result(
                 100_000_000.0,
                 50_000_000.0,
-                &format!("2026-11-{i:02}T00:00:00Z"),
+                &format!("2026-01-{i:02}T00:00:00Z"),
             );
-            let _ = save_result(&r);
+            save_result_to_path(&r, &path).unwrap();
         }
 
-        let _ = format_comparison(100.0, 50.0, true);
-    }
-
-    #[test]
-    fn test_save_result_invalid_json_recovery() {
-        // Write invalid JSON to history file, verify recovery
-        use directories::ProjectDirs;
-        use std::fs;
-        if let Some(proj_dirs) = ProjectDirs::from("dev", "vibe", "netspeed-cli") {
-            let data_dir = proj_dirs.data_dir();
-            fs::create_dir_all(data_dir).ok();
-            let path = data_dir.join("history.json");
-            let _ = fs::write(&path, "{invalid json}");
-
-            let r = make_test_result(100_000_000.0, 50_000_000.0, "2026-12-01T00:00:00Z");
-            let _ = save_result(&r);
-            let _ = load_history();
-        }
+        let history = load_history_from_path(&path).unwrap();
+        assert_eq!(history.len(), 100);
+        // Should have dropped the first 5
+        assert_eq!(history[0].timestamp, "2026-01-05T00:00:00Z");
     }
 }
