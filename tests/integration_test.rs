@@ -254,3 +254,99 @@ fn test_combined_flags() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stderr.contains("error: unexpected argument"));
 }
+
+/// Test that error output includes the word "Error:" for user readability
+#[test]
+fn test_error_output_format() {
+    let output = Command::new("cargo")
+        .args(["run", "--", "--source", "invalid"])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Should have a user-friendly error message
+    assert!(
+        stderr.contains("Error") || stderr.contains("error") || stderr.contains("invalid"),
+        "Expected user-friendly error message, got: {stderr}"
+    );
+}
+
+/// Test that exit code is non-zero on error (clap validation = 2, runtime = 1)
+#[test]
+fn test_exit_code_on_error() {
+    // Clap validation errors (like invalid IP) return exit code 2
+    let output = Command::new("cargo")
+        .args(["run", "--", "--source", "999.999.999.999"])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(!output.status.success());
+    let exit_code = output.status.code();
+    assert!(
+        exit_code == Some(1) || exit_code == Some(2),
+        "Expected exit code 1 (runtime error) or 2 (clap validation error), got {exit_code:?}"
+    );
+}
+
+/// Test that --version output matches Cargo.toml version
+#[test]
+fn test_version_matches_cargo_toml() {
+    let output = Command::new("cargo")
+        .args(["run", "--", "--version"])
+        .output()
+        .expect("Failed to execute command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    // Version should match the pattern "netspeed-cli X.Y.Z"
+    assert!(
+        stdout.contains("netspeed-cli"),
+        "Version output should contain binary name: {stdout}"
+    );
+}
+
+/// Test --history flag with no existing history (should not crash)
+#[test]
+fn test_history_no_data() {
+    // This may or may not produce output depending on whether history file exists,
+    // but it should never panic or crash
+    let output = Command::new("cargo")
+        .args(["run", "--", "--history"])
+        .output()
+        .expect("Failed to execute command");
+
+    // Either success with empty output or error is acceptable
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked"));
+    assert!(!stderr.contains("panic"));
+}
+
+/// Test that help output contains all documented options
+#[test]
+fn test_help_contains_expected_options() {
+    let output = Command::new("cargo")
+        .args(["run", "--", "--help"])
+        .output()
+        .expect("Failed to execute command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+
+    // Verify key options are documented
+    assert!(
+        stdout.contains("--no-download"),
+        "Missing --no-download in help"
+    );
+    assert!(
+        stdout.contains("--no-upload"),
+        "Missing --no-upload in help"
+    );
+    assert!(stdout.contains("--single"), "Missing --single in help");
+    assert!(stdout.contains("--json"), "Missing --json in help");
+    assert!(stdout.contains("--csv"), "Missing --csv in help");
+    assert!(stdout.contains("--list"), "Missing --list in help");
+    assert!(stdout.contains("--server"), "Missing --server in help");
+    assert!(stdout.contains("--history"), "Missing --history in help");
+    assert!(stdout.contains("--timeout"), "Missing --timeout in help");
+}

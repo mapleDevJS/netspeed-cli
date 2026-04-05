@@ -1,3 +1,4 @@
+use crate::common;
 use crate::config::Config;
 use crate::error::SpeedtestError;
 use reqwest::Client;
@@ -42,7 +43,7 @@ pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestErro
     {
         if let Ok(text) = response.text().await {
             let trimmed = text.trim().to_string();
-            if is_valid_ipv4(&trimmed) {
+            if common::is_valid_ipv4(&trimmed) {
                 return Ok(trimmed);
             }
         }
@@ -63,14 +64,6 @@ pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestErro
     Ok("unknown".to_string())
 }
 
-fn is_valid_ipv4(s: &str) -> bool {
-    let parts: Vec<&str> = s.split('.').collect();
-    if parts.len() != 4 {
-        return false;
-    }
-    parts.iter().all(|p| p.parse::<u8>().is_ok())
-}
-
 fn parse_ip_from_xml(xml: &str) -> Option<String> {
     for line in xml.lines() {
         if line.contains("<client") && line.contains("ip=\"") {
@@ -78,7 +71,7 @@ fn parse_ip_from_xml(xml: &str) -> Option<String> {
                 let rest = &line[start + 4..];
                 if let Some(end) = rest.find('"') {
                     let ip = &rest[..end];
-                    if is_valid_ipv4(ip) {
+                    if common::is_valid_ipv4(ip) {
                         return Some(ip.to_string());
                     }
                 }
@@ -91,23 +84,6 @@ fn parse_ip_from_xml(xml: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_valid_ipv4() {
-        assert!(is_valid_ipv4("192.168.1.1"));
-        assert!(is_valid_ipv4("0.0.0.0"));
-        assert!(is_valid_ipv4("255.255.255.255"));
-        assert!(is_valid_ipv4("173.35.57.235"));
-    }
-
-    #[test]
-    fn test_is_valid_ipv4_invalid() {
-        assert!(!is_valid_ipv4("256.1.1.1"));
-        assert!(!is_valid_ipv4("1.2.3"));
-        assert!(!is_valid_ipv4("abc"));
-        assert!(!is_valid_ipv4(""));
-        assert!(!is_valid_ipv4("1.2.3.4.5"));
-    }
 
     #[test]
     fn test_parse_ip_from_xml() {

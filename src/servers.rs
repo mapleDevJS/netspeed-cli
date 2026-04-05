@@ -5,11 +5,28 @@
 )]
 
 use crate::error::SpeedtestError;
-use crate::types::{Server, ServerConfig};
+use crate::types::Server;
 use quick_xml::de::from_str;
 use reqwest::Client;
+use serde::Deserialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Root element for the Speedtest.net servers XML response
+/// XML structure: <settings><servers><server .../></servers></settings>
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename = "settings")]
+struct ServerConfig {
+    #[serde(rename = "servers")]
+    servers_wrapper: ServersWrapper,
+}
+
+/// Wrapper for the list of servers (maps to <servers> element)
+#[derive(Debug, Clone, Deserialize)]
+struct ServersWrapper {
+    #[serde(rename = "server")]
+    servers: Vec<Server>,
+}
 
 const SPEEDTEST_SERVERS_URL: &str = "https://www.speedtest.net/speedtest-servers-static.php";
 const SPEEDTEST_CONFIG_URL: &str = "https://www.speedtest.net/api/ios-config.php";
@@ -30,6 +47,21 @@ fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     EARTH_RADIUS_KM * c
 }
 
+/// Client location data from the speedtest.net config API
+#[derive(Debug, Clone, Deserialize)]
+struct ClientConfig {
+    #[serde(rename = "client")]
+    client: ClientInfo,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ClientInfo {
+    #[serde(rename = "@lat")]
+    lat: Option<f64>,
+    #[serde(rename = "@lon")]
+    lon: Option<f64>,
+}
+
 /// Fetch client location from speedtest.net config API
 async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestError> {
     let response = client
@@ -39,32 +71,9 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestE
         .text()
         .await?;
 
-    // Extract lat and lon from XML config
-    let mut client_lat = None;
-    let mut client_lon = None;
+    let config: ClientConfig = from_str(&response)?;
 
-    for line in response.lines() {
-        if line.contains("<client") {
-            if let Some(start) = line.find("lat=\"") {
-                let rest = &line[start + 5..];
-                if let Some(end) = rest.find('"') {
-                    if let Ok(lat) = rest[..end].parse::<f64>() {
-                        client_lat = Some(lat);
-                    }
-                }
-            }
-            if let Some(start) = line.find("lon=\"") {
-                let rest = &line[start + 5..];
-                if let Some(end) = rest.find('"') {
-                    if let Ok(lon) = rest[..end].parse::<f64>() {
-                        client_lon = Some(lon);
-                    }
-                }
-            }
-        }
-    }
-
-    match (client_lat, client_lon) {
+    match (config.client.lat, config.client.lon) {
         (Some(lat), Some(lon)) => Ok((lat, lon)),
         _ => Err(SpeedtestError::ParseError(
             "Could not parse client location from config".to_string(),
@@ -93,7 +102,6 @@ pub async fn fetch_servers(client: &Client) -> Result<Vec<Server>, SpeedtestErro
     let mut servers = server_config.servers_wrapper.servers;
     for server in &mut servers {
         server.distance = calculate_distance(client_lat, client_lon, server.lat, server.lon);
-        server.latency = 0.0;
     }
 
     // Sort by distance so closest servers are first
@@ -132,16 +140,20 @@ pub fn select_best_server(servers: &[Server]) -> Result<Server, SpeedtestError> 
     Ok(best)
 }
 
-/// Run a ping test against the given server, returning average latency and jitter.
+/// Run a ping test against the given server, returning (average latency, jitter, packet_loss%, individual_samples).
 ///
 /// # Errors
 ///
 /// Returns [`SpeedtestError::NetworkError`] if all ping attempts fail.
-pub async fn ping_test(client: &Client, server: &Server) -> Result<(f64, f64), SpeedtestError> {
+pub async fn ping_test(
+    client: &Client,
+    server: &Server,
+) -> Result<(f64, f64, f64, Vec<f64>), SpeedtestError> {
+    const PING_ATTEMPTS: usize = 8;
     let mut latencies = Vec::new();
 
     // Perform multiple ping measurements
-    for _ in 0..8 {
+    for _ in 0..PING_ATTEMPTS {
         let start = std::time::Instant::now();
 
         let response = client
@@ -177,7 +189,10 @@ pub async fn ping_test(client: &Client, server: &Server) -> Result<(f64, f64), S
         0.0
     };
 
-    Ok((avg, jitter))
+    // Calculate packet loss percentage
+    let packet_loss = ((PING_ATTEMPTS - latencies.len()) as f64 / PING_ATTEMPTS as f64) * 100.0;
+
+    Ok((avg, jitter, packet_loss, latencies))
 }
 
 pub async fn measure_latency_under_load(
@@ -219,7 +234,6 @@ mod tests {
                 lat: 40.0,
                 lon: -74.0,
                 distance: 5000.0,
-                latency: 0.0,
             },
             Server {
                 id: "2".to_string(),
@@ -230,7 +244,6 @@ mod tests {
                 lat: 41.0,
                 lon: -73.0,
                 distance: 100.0,
-                latency: 0.0,
             },
         ];
 
@@ -261,7 +274,6 @@ mod tests {
             lat: 40.0,
             lon: -74.0,
             distance: 500.0,
-            latency: 0.0,
         }];
 
         let best = select_best_server(&servers).unwrap();
@@ -280,7 +292,6 @@ mod tests {
                 lat: 40.0,
                 lon: -74.0,
                 distance: 300.0,
-                latency: 0.0,
             },
             Server {
                 id: "2".to_string(),
@@ -291,7 +302,6 @@ mod tests {
                 lat: 41.0,
                 lon: -73.0,
                 distance: 200.0,
-                latency: 0.0,
             },
             Server {
                 id: "3".to_string(),
@@ -302,7 +312,6 @@ mod tests {
                 lat: 42.0,
                 lon: -72.0,
                 distance: 100.0,
-                latency: 0.0,
             },
         ];
 
@@ -322,7 +331,6 @@ mod tests {
                 lat: 40.0,
                 lon: -74.0,
                 distance: 100.0,
-                latency: 0.0,
             },
             Server {
                 id: "2".to_string(),
@@ -333,7 +341,6 @@ mod tests {
                 lat: 41.0,
                 lon: -73.0,
                 distance: 100.0,
-                latency: 0.0,
             },
         ];
 
@@ -371,5 +378,27 @@ mod tests {
     fn test_calculate_distance_nyc_london() {
         let dist = calculate_distance(40.7128, -74.0060, 51.5074, -0.1278);
         assert!((dist - 5570.0).abs() < 300.0);
+    }
+
+    #[test]
+    fn test_client_config_deserialization() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <client lat="40.7128" lon="-74.0060" ip="192.168.1.1" />
+</settings>"#;
+        let config: ClientConfig = from_str(xml).unwrap();
+        assert_eq!(config.client.lat, Some(40.7128));
+        assert_eq!(config.client.lon, Some(-74.0060));
+    }
+
+    #[test]
+    fn test_client_config_missing_coords() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <client ip="192.168.1.1" />
+</settings>"#;
+        let config: ClientConfig = from_str(xml).unwrap();
+        assert!(config.client.lat.is_none());
+        assert!(config.client.lon.is_none());
     }
 }
