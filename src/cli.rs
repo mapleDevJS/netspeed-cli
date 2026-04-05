@@ -101,8 +101,8 @@ fn validate_csv_delimiter(s: &str) -> Result<char, String> {
 }
 
 fn validate_ip_address(s: &str) -> Result<String, String> {
-    // Simple IPv4 validation for CLI parsing
-    // Note: Duplicated from common::is_valid_ipv4 to avoid build.rs dependency issues
+    // Note: This duplicates common::is_valid_ipv4 to avoid build.rs dependency issues.
+    // The build script includes cli.rs via `include!()`, but common isn't available there.
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 4 {
         return Err(format!(

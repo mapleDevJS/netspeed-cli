@@ -1,79 +1,46 @@
-use std::fmt;
+use thiserror::Error;
 
 /// Unified error type for netspeed-cli operations.
 ///
 /// This enum preserves the original error cause chains by storing
 /// the underlying errors directly, enabling better debugging and
 /// error reporting via the `std::error::Error::source()` method.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SpeedtestError {
     /// Network-related errors from HTTP requests
-    NetworkError(reqwest::Error),
+    #[error("Network error: {0}")]
+    NetworkError(#[from] reqwest::Error),
+
     /// XML parsing errors
-    ParseXml(quick_xml::Error),
+    #[error("XML parse error: {0}")]
+    ParseXml(#[from] quick_xml::Error),
+
     /// JSON parsing/serialization errors
-    ParseJson(serde_json::Error),
+    #[error("JSON parse error: {0}")]
+    ParseJson(#[from] serde_json::Error),
+
     /// XML deserialization errors
-    DeserializeXml(quick_xml::de::DeError),
+    #[error("XML deserialization error: {0}")]
+    DeserializeXml(#[from] quick_xml::de::DeError),
+
     /// CSV parsing/serialization errors
-    Csv(csv::Error),
+    #[error("CSV error: {0}")]
+    Csv(#[from] csv::Error),
+
     /// Server selection errors
+    #[error("Server not found: {0}")]
     ServerNotFound(String),
+
     /// I/O errors from file operations
-    IoError(std::io::Error),
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+
     /// Application-specific errors with context
+    #[error("{msg}")]
     Context {
         msg: String,
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
-}
-
-impl fmt::Display for SpeedtestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SpeedtestError::NetworkError(err) => {
-                write!(f, "Network error: {err}")
-            }
-            SpeedtestError::ParseXml(err) => {
-                write!(f, "XML parse error: {err}")
-            }
-            SpeedtestError::ParseJson(err) => {
-                write!(f, "JSON parse error: {err}")
-            }
-            SpeedtestError::DeserializeXml(err) => {
-                write!(f, "XML deserialization error: {err}")
-            }
-            SpeedtestError::Csv(err) => {
-                write!(f, "CSV error: {err}")
-            }
-            SpeedtestError::ServerNotFound(msg) => {
-                write!(f, "Server not found: {msg}")
-            }
-            SpeedtestError::IoError(err) => {
-                write!(f, "I/O error: {err}")
-            }
-            SpeedtestError::Context { msg, .. } => {
-                write!(f, "{msg}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for SpeedtestError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            SpeedtestError::NetworkError(err) => Some(err),
-            SpeedtestError::ParseXml(err) => Some(err),
-            SpeedtestError::ParseJson(err) => Some(err),
-            SpeedtestError::DeserializeXml(err) => Some(err),
-            SpeedtestError::Csv(err) => Some(err),
-            SpeedtestError::ServerNotFound(_) => None,
-            SpeedtestError::IoError(err) => Some(err),
-            SpeedtestError::Context { source, .. } => source
-                .as_ref()
-                .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
-        }
-    }
 }
 
 impl SpeedtestError {
@@ -96,42 +63,6 @@ impl SpeedtestError {
             msg: msg.into(),
             source: Some(Box::new(source)),
         }
-    }
-}
-
-impl From<reqwest::Error> for SpeedtestError {
-    fn from(err: reqwest::Error) -> Self {
-        SpeedtestError::NetworkError(err)
-    }
-}
-
-impl From<std::io::Error> for SpeedtestError {
-    fn from(err: std::io::Error) -> Self {
-        SpeedtestError::IoError(err)
-    }
-}
-
-impl From<quick_xml::Error> for SpeedtestError {
-    fn from(err: quick_xml::Error) -> Self {
-        SpeedtestError::ParseXml(err)
-    }
-}
-
-impl From<serde_json::Error> for SpeedtestError {
-    fn from(err: serde_json::Error) -> Self {
-        SpeedtestError::ParseJson(err)
-    }
-}
-
-impl From<quick_xml::de::DeError> for SpeedtestError {
-    fn from(err: quick_xml::de::DeError) -> Self {
-        SpeedtestError::DeserializeXml(err)
-    }
-}
-
-impl From<csv::Error> for SpeedtestError {
-    fn from(err: csv::Error) -> Self {
-        SpeedtestError::Csv(err)
     }
 }
 

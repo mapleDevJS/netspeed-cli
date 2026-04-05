@@ -37,6 +37,7 @@ owo-colors = "4"
 futures-util = "0.3.31"
 directories = "6.0.0"
 toml = "0.9.6"
+thiserror = "2"
 
 [build-dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -48,6 +49,12 @@ tokio = { version = "1", features = ["macros"] }
 wiremock = "0.6.5"
 serial_test = "3.2"
 tempfile = "3.19"
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+thiserror = "2"
+
+[[bench]]
+name = "core_benchmarks"
+harness = false
 
 [profile.release]
 # Enable Link Time Optimization for better performance and smaller binaries
@@ -56,5 +63,5 @@ lto = "thin"
 strip = true
 # Use single codegen unit for better optimization
 codegen-units = 1
-# Optimize for binary size (alternatively use 3 for speed)
-opt-level = "z"
+# Optimize for speed (network-bound workload)
+opt-level = 3
