@@ -76,10 +76,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
       - name: Run cargo audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo audit --deny warnings
 
   msrv:
     name: MSRV Check
