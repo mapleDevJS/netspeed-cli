@@ -60,13 +60,18 @@ fn build_latency_load_line(lat_load: f64, idle_ping: Option<f64>, nc: bool) -> S
 }
 
 pub fn build_latency_section(result: &TestResult, nc: bool) -> String {
-    let Some(ping) = result.ping else { return String::new() };
+    let Some(ping) = result.ping else {
+        return String::new();
+    };
 
     let mut lines = Vec::new();
 
     let rating_str = colorize_rating(ping_rating(ping), nc);
     if nc {
-        lines.push(format!("  {:>14}:   {:>8.1} ms  ({rating_str})", "Latency", ping));
+        lines.push(format!(
+            "  {:>14}:   {:>8.1} ms  ({rating_str})",
+            "Latency", ping
+        ));
     } else {
         lines.push(format!(
             "  {:>14}:   {}  {rating_str}",
@@ -136,7 +141,9 @@ pub fn format_latency_section(result: &TestResult, nc: bool) {
 }
 
 pub fn build_download_section(result: &TestResult, bytes: bool, nc: bool) -> String {
-    let Some(dl) = result.download else { return String::new() };
+    let Some(dl) = result.download else {
+        return String::new();
+    };
 
     let mut lines = Vec::new();
     lines.push(build_speed_section("Download", dl, bytes, nc));
@@ -160,7 +167,9 @@ pub fn format_download_section(result: &TestResult, bytes: bool, nc: bool) {
 }
 
 pub fn build_upload_section(result: &TestResult, bytes: bool, nc: bool) -> String {
-    let Some(ul) = result.upload else { return String::new() };
+    let Some(ul) = result.upload else {
+        return String::new();
+    };
 
     let mut lines = Vec::new();
     lines.push(build_speed_section("Upload", ul, bytes, nc));
@@ -314,7 +323,10 @@ pub fn format_test_summary(
     ul_duration: f64,
     nc: bool,
 ) {
-    eprintln!("{}", build_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc));
+    eprintln!(
+        "{}",
+        build_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc)
+    );
 }
 
 pub fn build_footer(timestamp: &str, nc: bool) -> String {
@@ -337,17 +349,17 @@ pub fn format_footer(timestamp: &str, nc: bool) {
 pub fn build_list(servers: &[Server]) -> String {
     let nc = no_color();
 
-    let (max_id_len, max_sponsor_len, max_name_len) = servers.iter().fold(
-        (3, 7, 24),
-        |(max_id, max_sponsor, max_name), s| {
-            let name_len = s.name.len() + s.country.len() + 3;
-            (
-                max_id.max(s.id.len()),
-                max_sponsor.max(s.sponsor.len()),
-                max_name.max(name_len),
-            )
-        },
-    );
+    let (max_id_len, max_sponsor_len, max_name_len) =
+        servers
+            .iter()
+            .fold((3, 7, 24), |(max_id, max_sponsor, max_name), s| {
+                let name_len = s.name.len() + s.country.len() + 3;
+                (
+                    max_id.max(s.id.len()),
+                    max_sponsor.max(s.sponsor.len()),
+                    max_name.max(name_len),
+                )
+            });
 
     let idw = max_id_len.max(3);
     let sw = max_sponsor_len.max(7);
@@ -377,7 +389,10 @@ pub fn build_list(servers: &[Server]) -> String {
     }
 
     if nc {
-        lines.push(format!("  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}", "", "", "", ""));
+        lines.push(format!(
+            "  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}",
+            "", "", "", ""
+        ));
     } else {
         lines.push(format!(
             "  {:->idw$}  {:->sw$}  {:->nw$}  {:->10}",

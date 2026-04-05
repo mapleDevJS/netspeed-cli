@@ -74,9 +74,9 @@ pub mod stability;
 // Re-export commonly used functions for backward compatibility
 pub use estimates::{format_estimates, format_targets};
 pub use ratings::{
-    bufferbloat_colorized, bufferbloat_grade, colorize_rating, connection_rating, degradation_str,
-    format_duration, format_overall_rating, format_speed_colored, format_speed_plain, ping_rating,
-    speed_rating_mbps, BufferbloatGrade,
+    BufferbloatGrade, bufferbloat_colorized, bufferbloat_grade, colorize_rating, connection_rating,
+    degradation_str, format_duration, format_overall_rating, format_speed_colored,
+    format_speed_plain, ping_rating, speed_rating_mbps,
 };
 pub use sections::{
     format_connection_info, format_download_section, format_footer, format_latency_section,

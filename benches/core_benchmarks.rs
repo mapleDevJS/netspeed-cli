@@ -49,9 +49,27 @@ mod distance {
 
         let routes = [
             ("NYC-LA", 40.7128f64, -74.0060f64, 34.0522f64, -118.2437f64),
-            ("NYC-London", 40.7128f64, -74.0060f64, 51.5074f64, -0.1278f64),
-            ("Tokyo-Sydney", 35.6762f64, 139.6503f64, -33.8688f64, 151.2093f64),
-            ("Same location", 40.7128f64, -74.0060f64, 40.7128f64, -74.0060f64),
+            (
+                "NYC-London",
+                40.7128f64,
+                -74.0060f64,
+                51.5074f64,
+                -0.1278f64,
+            ),
+            (
+                "Tokyo-Sydney",
+                35.6762f64,
+                139.6503f64,
+                -33.8688f64,
+                151.2093f64,
+            ),
+            (
+                "Same location",
+                40.7128f64,
+                -74.0060f64,
+                40.7128f64,
+                -74.0060f64,
+            ),
         ];
 
         for (name, lat1, lon1, lat2, lon2) in routes {
@@ -87,13 +105,9 @@ mod formatting {
             (150.5f64, "medium"),
             (5570.0f64, "long"),
         ] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &value,
-                |b, &value| {
-                    b.iter(|| common::format_distance(black_box(value)));
-                },
-            );
+            group.bench_with_input(BenchmarkId::from_parameter(label), &value, |b, &value| {
+                b.iter(|| common::format_distance(black_box(value)));
+            });
         }
 
         group.finish();
@@ -108,13 +122,9 @@ mod formatting {
             (10 * 1024 * 1024, "megabytes"),
             (4 * 1024 * 1024 * 1024, "gigabytes"),
         ] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &bytes,
-                |b, &bytes| {
-                    b.iter(|| common::format_data_size(black_box(bytes)));
-                },
-            );
+            group.bench_with_input(BenchmarkId::from_parameter(label), &bytes, |b, &bytes| {
+                b.iter(|| common::format_data_size(black_box(bytes)));
+            });
         }
 
         group.finish();
@@ -136,13 +146,9 @@ mod validation {
             ("1.2.3.4.5", "too_many"),
             ("abc", "not_ip"),
         ] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &ip,
-                |b, &ip| {
-                    b.iter(|| common::is_valid_ipv4(black_box(ip)));
-                },
-            );
+            group.bench_with_input(BenchmarkId::from_parameter(label), &ip, |b, &ip| {
+                b.iter(|| common::is_valid_ipv4(black_box(ip)));
+            });
         }
 
         group.finish();
@@ -180,7 +186,9 @@ mod url_construction {
 
     pub fn bench_extract_base_url(c: &mut Criterion) {
         c.bench_function("url/extract_base_url", |b| {
-            b.iter(|| extract_base_url(black_box("http://server.example.com/speedtest/upload.php")));
+            b.iter(|| {
+                extract_base_url(black_box("http://server.example.com/speedtest/upload.php"))
+            });
         });
     }
 }

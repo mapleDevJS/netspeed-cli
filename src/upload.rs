@@ -102,8 +102,8 @@ pub async fn upload_test(
                     // First sample always fires (last_sample_ms == 0 means "never sampled").
                     let elapsed_ms = start_ref.elapsed().as_millis() as u64;
                     let last_ms = throttle_ref.load(Ordering::Relaxed);
-                    let should_sample = last_ms == 0
-                        || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
+                    let should_sample =
+                        last_ms == 0 || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
                     if should_sample {
                         // Update throttle timestamp
                         throttle_ref.store(elapsed_ms, Ordering::Relaxed);

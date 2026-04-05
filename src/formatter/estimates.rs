@@ -41,7 +41,9 @@ const TARGETS: &[Target] = &[
 
 /// Build target usage check output as a string.
 pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
-    let Some(dl) = download_bps else { return String::new() };
+    let Some(dl) = download_bps else {
+        return String::new();
+    };
     let dl_mbps = dl / 1_000_000.0;
 
     let mut lines = Vec::new();
@@ -141,7 +143,9 @@ fn format_time_estimate(secs: f64, _nc: bool) -> String {
 
 /// Build real-world download time estimates as a string.
 pub fn build_estimates(download_bps: Option<f64>, nc: bool) -> String {
-    let Some(dl) = download_bps else { return String::new() };
+    let Some(dl) = download_bps else {
+        return String::new();
+    };
     let dl_bytes_per_sec = dl / 8.0;
 
     let mut lines = Vec::new();

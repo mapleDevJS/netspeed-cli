@@ -26,3 +26,20 @@ coverage/
 
 # OS files
 Thumbs.db
+
+# AI tool configs - using global only
+.qwen/
+.qwenignore
+.claude/
+CLAUDE.md
+.kilo/
+.kilocode/
+kilo.json
+skills-lock.json
+.cursor/
+.aider*
+.cline/
+.codex/
+.continue/
+.windsurfrules
+.augment
