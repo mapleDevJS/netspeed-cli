@@ -19,6 +19,7 @@ set edit:completion:arg-completer[netspeed-cli] = {|@words|
     var completions = [
         &'netspeed-cli'= {
             cand --csv-delimiter 'Single character delimiter for CSV output (default: ",")'
+            cand --format 'Output format (supersedes --json, --csv, --simple)'
             cand --server 'Specify a server ID to test against (can be supplied multiple times)'
             cand --exclude 'Exclude a server from selection (can be supplied multiple times)'
             cand --source 'Source IP address to bind to'

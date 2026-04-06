@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH netspeed-cli 1  "netspeed-cli 0.3.0" 
+.TH netspeed-cli 1  "netspeed-cli 0.4.0" 
 .SH NAME
 netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Command line interface for testing internet bandwidth using speedtest.net
 .SH OPTIONS
@@ -35,6 +35,23 @@ Print CSV headers
 .TP
 \fB\-\-json\fR
 Output in JSON format
+.TP
+\fB\-\-format\fR \fI<FORMAT>\fR
+Output format (supersedes \-\-json, \-\-csv, \-\-simple)
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+json
+.IP \(bu 2
+csv
+.IP \(bu 2
+simple
+.IP \(bu 2
+detailed
+.RE
 .TP
 \fB\-\-list\fR
 Display a list of speedtest.net servers sorted by distance
@@ -91,4 +108,4 @@ Examples:
   netspeed\-cli \-\-generate\-completion zsh > ~/.zsh/functions/_netspeed\-cli
                                         Generate Zsh shell completions
 .SH VERSION
-v0.3.0
+v0.4.0
