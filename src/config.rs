@@ -34,6 +34,7 @@ pub struct Config {
     pub exclude_ids: Vec<String>,
     pub source: Option<String>,
     pub timeout: u64,
+    pub quiet: bool,
 }
 
 impl Config {
@@ -41,7 +42,16 @@ impl Config {
     pub fn from_args(args: &CliArgs) -> Self {
         let file_config = load_config_file().unwrap_or_default();
 
-        // Helper to prefer CLI arg over file config over default
+        // Merge strategy: CLI flags and config file are combined with OR semantics.
+        // Since clap defaults `bool` to `false`, we cannot distinguish "user didn't
+        // pass the flag" from "user explicitly passed `--no-flag`".
+        //
+        // Practical effect: if config file has `no_download = true`, downloads will
+        // be skipped unless the user passes `--no-download=false` (if supported)
+        // or removes the config line. The config file acts as a persistent default.
+        //
+        // For timeout: CLI value is used only if explicitly set (non-default).
+        // Otherwise, file config is checked, falling back to the compiled default (10).
         let merge_bool = |cli: bool, file: Option<bool>| cli || file.unwrap_or(false);
         let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
             // If CLI is at default value, check file; otherwise use CLI
@@ -71,6 +81,7 @@ impl Config {
             exclude_ids: args.exclude.clone(),
             source: args.source.clone(),
             timeout: merge_u64(args.timeout, file_config.timeout, 10),
+            quiet: merge_bool(args.quiet, None),
         }
     }
 }
@@ -90,7 +101,17 @@ fn load_config_file() -> Option<ConfigFile> {
     }
 
     let content = fs::read_to_string(path).ok()?;
-    toml::from_str(&content).ok()
+    let mut config: ConfigFile = toml::from_str(&content).ok()?;
+
+    // Validate timeout if present
+    if let Some(timeout) = config.timeout {
+        if timeout == 0 || timeout > 300 {
+            // Silently ignore invalid timeout — fall back to default
+            config.timeout = None;
+        }
+    }
+
+    Some(config)
 }
 
 #[cfg(test)]
@@ -111,6 +132,7 @@ mod tests {
         assert!(!config.csv);
         assert!(!config.json);
         assert!(!config.list);
+        assert!(!config.quiet);
         assert_eq!(config.timeout, 10);
         assert_eq!(config.csv_delimiter, ',');
         assert!(!config.csv_header);

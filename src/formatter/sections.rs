@@ -1,11 +1,5 @@
 //! Output section formatters for detailed test results.
 
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-
 use crate::common;
 use crate::progress::no_color;
 use crate::types::{Server, TestResult};
@@ -16,6 +10,18 @@ use super::ratings::{
     format_speed_colored, format_speed_plain, ping_rating, speed_rating_mbps,
 };
 
+fn build_skipped_line(label: &str, nc: bool) -> String {
+    if nc {
+        format!("  {:>14}:   — (skipped)", label)
+    } else {
+        format!(
+            "  {:>14}:   {}",
+            label.dimmed(),
+            "— (skipped)".bright_black()
+        )
+    }
+}
+
 fn build_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) -> String {
     let speed = if nc {
         format_speed_plain(speed_bps, bytes)
@@ -23,10 +29,26 @@ fn build_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) -> St
         format_speed_colored(speed_bps, bytes)
     };
     let rating = colorize_rating(speed_rating_mbps(speed_bps / 1_000_000.0), nc);
-    if nc {
-        format!("  {label:>14}:   {speed}")
+    let bar = crate::common::bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
+    let bar_display = if nc {
+        bar
     } else {
-        format!("  {:>14}:   {speed}  {rating}", label.dimmed())
+        let fill_pct = (speed_bps / 1_000_000.0 / 1000.0).clamp(0.0, 1.0) * 100.0;
+        if fill_pct >= 70.0 {
+            bar.green().to_string()
+        } else if fill_pct >= 40.0 {
+            bar.yellow().to_string()
+        } else {
+            bar.red().to_string()
+        }
+    };
+    if nc {
+        format!("  {label:>14}:   {speed}  {bar_display}")
+    } else {
+        format!(
+            "  {:>14}:   {speed}  {bar_display}  {rating}",
+            label.dimmed()
+        )
     }
 }
 
@@ -140,8 +162,11 @@ pub fn format_latency_section(result: &TestResult, nc: bool) {
     }
 }
 
-pub fn build_download_section(result: &TestResult, bytes: bool, nc: bool) -> String {
+pub fn build_download_section(result: &TestResult, bytes: bool, nc: bool, skipped: bool) -> String {
     let Some(dl) = result.download else {
+        if skipped {
+            return build_skipped_line("Download", nc);
+        }
         return String::new();
     };
 
@@ -159,15 +184,18 @@ pub fn build_download_section(result: &TestResult, bytes: bool, nc: bool) -> Str
     lines.join("\n")
 }
 
-pub fn format_download_section(result: &TestResult, bytes: bool, nc: bool) {
-    let output = build_download_section(result, bytes, nc);
+pub fn format_download_section(result: &TestResult, bytes: bool, nc: bool, skipped: bool) {
+    let output = build_download_section(result, bytes, nc, skipped);
     if !output.is_empty() {
         eprintln!("{output}");
     }
 }
 
-pub fn build_upload_section(result: &TestResult, bytes: bool, nc: bool) -> String {
+pub fn build_upload_section(result: &TestResult, bytes: bool, nc: bool, skipped: bool) -> String {
     let Some(ul) = result.upload else {
+        if skipped {
+            return build_skipped_line("Upload", nc);
+        }
         return String::new();
     };
 
@@ -212,8 +240,8 @@ pub fn build_upload_section(result: &TestResult, bytes: bool, nc: bool) -> Strin
     lines.join("\n")
 }
 
-pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool) {
-    let output = build_upload_section(result, bytes, nc);
+pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool, skipped: bool) {
+    let output = build_upload_section(result, bytes, nc, skipped);
     if !output.is_empty() {
         eprintln!("{output}");
     }

@@ -97,6 +97,30 @@ pub fn is_valid_ipv4(s: &str) -> bool {
     parts.iter().all(|p| p.parse::<u8>().is_ok())
 }
 
+/// Render a horizontal bar chart using Unicode block characters.
+///
+/// `value` and `max` define the proportion. `width` is the bar length in chars.
+/// Returns filled (`█`) and empty (`░`) segments. Pure text — callers apply
+/// color via `owo_colors` for consistency.
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::common::bar_chart;
+/// let bar = bar_chart(50.0, 100.0, 10);
+/// assert_eq!(bar.chars().count(), 10);
+/// ```
+#[must_use]
+pub fn bar_chart(value: f64, max: f64, width: usize) -> String {
+    if max <= 0.0 || width == 0 {
+        return "░".repeat(width);
+    }
+    let pct = (value / max).clamp(0.0, 1.0);
+    let filled = (pct * width as f64).round() as usize;
+    let empty = width.saturating_sub(filled);
+    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +191,43 @@ mod tests {
         assert!(!is_valid_ipv4("abc"));
         assert!(!is_valid_ipv4(""));
         assert!(!is_valid_ipv4("1.2.3.4.5"));
+    }
+
+    #[test]
+    fn test_bar_chart_half() {
+        let bar = bar_chart(50.0, 100.0, 10);
+        assert_eq!(bar.chars().count(), 10);
+        assert_eq!(bar, "█████░░░░░");
+    }
+
+    #[test]
+    fn test_bar_chart_full() {
+        let bar = bar_chart(100.0, 100.0, 10);
+        assert_eq!(bar.chars().count(), 10);
+        assert_eq!(bar, "██████████");
+    }
+
+    #[test]
+    fn test_bar_chart_empty_val() {
+        let bar = bar_chart(0.0, 100.0, 10);
+        assert_eq!(bar, "░░░░░░░░░░");
+    }
+
+    #[test]
+    fn test_bar_chart_zero_max() {
+        let bar = bar_chart(50.0, 0.0, 10);
+        assert_eq!(bar, "░░░░░░░░░░");
+    }
+
+    #[test]
+    fn test_bar_chart_zero_width() {
+        let bar = bar_chart(50.0, 100.0, 0);
+        assert_eq!(bar, "");
+    }
+
+    #[test]
+    fn test_bar_chart_over_max() {
+        let bar = bar_chart(150.0, 100.0, 10);
+        assert_eq!(bar, "██████████"); // clamped to 100%
     }
 }

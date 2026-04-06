@@ -13,9 +13,12 @@ Examples:
   netspeed-cli                          Run a full speed test
   netspeed-cli --simple                 Run with minimal output
   netspeed-cli --json                   Output results as JSON
+  netspeed-cli --format dashboard       Rich dashboard with bar charts and history
+  netspeed-cli --format detailed        Full output with ratings and stability
   netspeed-cli --list                   List available servers
   netspeed-cli --server 1234            Test against a specific server
   netspeed-cli --no-upload              Skip upload test
+  netspeed-cli --quiet                  Suppress all progress output
   netspeed-cli --bytes                  Show results in MB/s instead of Mbit/s
   netspeed-cli --single                 Use a single connection (debugging)
   netspeed-cli --generate-completion zsh > ~/.zsh/functions/_netspeed-cli
@@ -89,6 +92,10 @@ pub struct CliArgs {
     /// Display test history
     #[arg(long)]
     pub history: bool,
+
+    /// Suppress all progress output (JSON/CSV still go to stdout)
+    #[arg(long)]
+    pub quiet: bool,
 }
 
 fn validate_csv_delimiter(s: &str) -> Result<char, String> {
@@ -136,6 +143,7 @@ pub enum OutputFormatType {
     Csv,
     Simple,
     Detailed,
+    Dashboard,
 }
 
 #[cfg(test)]

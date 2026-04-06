@@ -7,21 +7,14 @@
 //! - Real-time progress tracking with speed calculation
 //! - Peak speed detection through periodic sampling
 
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-
+use crate::bandwidth_loop::BandwidthLoopState;
 use crate::common;
 use crate::error::SpeedtestError;
-use crate::progress::SpeedProgress;
+use crate::progress::{SpeedProgress, no_color};
 use crate::types::Server;
+use owo_colors::OwoColorize;
 use reqwest::Client;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 /// Build upload URL
 #[must_use]
@@ -37,12 +30,11 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
     data
 }
 
-/// Interval between speed samples in milliseconds.
-/// Throttling prevents excessive sampling overhead on all hot-path operations.
-const SAMPLE_INTERVAL_MS: u64 = 50; // 50ms between samples (20 Hz max)
-
 /// Number of upload rounds per stream (each round uploads a chunk of test data).
 const UPLOAD_TEST_ROUNDS: usize = 4;
+
+/// Estimated total bytes for progress bar initialization.
+const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
 
 /// Run upload bandwidth test against the given server.
 ///
@@ -58,17 +50,8 @@ pub async fn upload_test(
     progress: Arc<SpeedProgress>,
 ) -> Result<(f64, f64, u64, Vec<f64>), SpeedtestError> {
     let concurrent_uploads = common::determine_stream_count(single);
-    let total_bytes = Arc::new(AtomicU64::new(0));
-    let peak_bps = Arc::new(AtomicU64::new(0));
-    let speed_samples = Arc::new(Mutex::new(Vec::new()));
-    let start = Instant::now();
-
+    let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
     let upload_data = generate_upload_data(200_000); // 200KB chunks
-    let estimated_total: u64 = 4_000_000; // 4 MB estimate
-
-    // Throttle gate: tracks last sample time in millis to limit all expensive ops to 20 Hz.
-    // Initialized to 0 so the first upload always triggers a sample (any elapsed > 0 fires).
-    let last_sample_ms = Arc::new(AtomicU64::new(0));
 
     let mut handles = Vec::new();
 
@@ -76,12 +59,7 @@ pub async fn upload_test(
         let client = client.clone();
         let server_url = server.url.clone();
         let data = upload_data.clone();
-        let total_ref = Arc::clone(&total_bytes);
-        let peak_ref = Arc::clone(&peak_bps);
-        let samples_ref = Arc::clone(&speed_samples);
-        let start_ref = start;
-        let prog = Arc::clone(&progress);
-        let throttle_ref = Arc::clone(&last_sample_ms);
+        let state = Arc::clone(&state);
 
         let handle = tokio::spawn(async move {
             let mut uploaded_bytes = 0u64;
@@ -89,47 +67,11 @@ pub async fn upload_test(
             for _ in 0..UPLOAD_TEST_ROUNDS {
                 let upload_url = build_upload_url(&server_url);
 
-                if client
-                    .post(&upload_url)
-                    .body(data.clone())
-                    .send()
-                    .await
-                    .is_ok()
-                {
-                    let chunk = data.len() as u64;
-                    uploaded_bytes += chunk;
-                    // Cheap atomic add — runs on every upload
-                    total_ref.fetch_add(chunk, Ordering::Relaxed);
-
-                    // Throttle gate: only run expensive ops every 50ms.
-                    // First sample always fires (last_sample_ms == 0 means "never sampled").
-                    let elapsed_ms = start_ref.elapsed().as_millis() as u64;
-                    let last_ms = throttle_ref.load(Ordering::Relaxed);
-                    let should_sample =
-                        last_ms == 0 || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
-                    if should_sample {
-                        // Update throttle timestamp
-                        throttle_ref.store(elapsed_ms, Ordering::Relaxed);
-
-                        // All expensive ops now run at most every 50ms:
-                        // Acquire ensures we see the latest fetch_add results on ARM64.
-                        let total_so_far = total_ref.load(Ordering::Acquire);
-                        let elapsed = start_ref.elapsed().as_secs_f64();
-                        let speed = common::calculate_bandwidth(total_so_far, elapsed);
-
-                        // Peak tracking
-                        let current_peak = peak_ref.load(Ordering::Relaxed);
-                        if speed > current_peak as f64 {
-                            peak_ref.store(speed as u64, Ordering::Relaxed);
-                        }
-
-                        // Record speed sample (throttled)
-                        if let Ok(mut samples) = samples_ref.lock() {
-                            samples.push(speed);
-                        }
-
-                        let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
-                        prog.update(speed / 1_000_000.0, pct, total_so_far);
+                if let Ok(response) = client.post(&upload_url).body(data.clone()).send().await {
+                    if response.status().is_success() {
+                        let chunk = data.len() as u64;
+                        uploaded_bytes += chunk;
+                        state.record_bytes(chunk);
                     }
                 }
             }
@@ -144,19 +86,21 @@ pub async fn upload_test(
     // Bytes are already counted via atomic counters, so we don't need the return values.
     for (i, handle) in handles.into_iter().enumerate() {
         if let Err(e) = handle.await {
-            eprintln!("Warning: upload task {i} failed: {e}");
+            let msg = format!("Warning: upload task {i} failed: {e}");
+            if no_color() {
+                eprintln!("\n{msg}");
+            } else {
+                eprintln!("\n{}", msg.yellow().bold());
+            }
         }
     }
 
-    let final_total_bytes = total_bytes.load(Ordering::Relaxed);
-    let final_peak_speed = peak_bps.load(Ordering::Relaxed) as f64;
-    let elapsed = start.elapsed().as_secs_f64();
-    let samples = speed_samples.lock().unwrap().to_vec();
+    let final_result = state.finish();
     Ok((
-        common::calculate_bandwidth(final_total_bytes, elapsed),
-        final_peak_speed,
-        final_total_bytes,
-        samples,
+        final_result.avg_bps,
+        final_result.peak_bps,
+        final_result.total_bytes,
+        final_result.speed_samples,
     ))
 }
 

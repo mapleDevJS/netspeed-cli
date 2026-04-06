@@ -6,12 +6,6 @@
 //! - [`stability`] — Speed stability analysis and latency percentiles
 //! - [`estimates`] — Usage check targets and download time estimates
 
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-
 use crate::error::SpeedtestError;
 use crate::progress::no_color;
 use crate::types::{CsvOutput, TestResult};
@@ -30,6 +24,18 @@ pub enum OutputFormat {
         dl_bytes: u64,
         ul_bytes: u64,
         dl_duration: f64,
+        ul_duration: f64,
+        dl_skipped: bool,
+        ul_skipped: bool,
+    },
+    Dashboard {
+        dl_mbps: f64,
+        dl_peak_mbps: f64,
+        dl_bytes: u64,
+        dl_duration: f64,
+        ul_mbps: f64,
+        ul_peak_mbps: f64,
+        ul_bytes: u64,
         ul_duration: f64,
     },
 }
@@ -50,6 +56,8 @@ impl OutputFormat {
                 ul_bytes,
                 dl_duration,
                 ul_duration,
+                dl_skipped,
+                ul_skipped,
             } => {
                 format_detailed(
                     result,
@@ -58,14 +66,42 @@ impl OutputFormat {
                     *ul_bytes,
                     *dl_duration,
                     *ul_duration,
+                    *dl_skipped,
+                    *ul_skipped,
                 )?;
                 format_verbose_sections(result);
+                Ok(())
+            }
+            OutputFormat::Dashboard {
+                dl_mbps,
+                dl_peak_mbps,
+                dl_bytes,
+                dl_duration,
+                ul_mbps,
+                ul_peak_mbps,
+                ul_bytes,
+                ul_duration,
+            } => {
+                dashboard::format_dashboard(
+                    result,
+                    &dashboard::DashboardSummary {
+                        dl_mbps: *dl_mbps,
+                        dl_peak_mbps: *dl_peak_mbps,
+                        dl_bytes: *dl_bytes,
+                        dl_duration: *dl_duration,
+                        ul_mbps: *ul_mbps,
+                        ul_peak_mbps: *ul_peak_mbps,
+                        ul_bytes: *ul_bytes,
+                        ul_duration: *ul_duration,
+                    },
+                )?;
                 Ok(())
             }
         }
     }
 }
 
+pub mod dashboard;
 pub mod estimates;
 pub mod ratings;
 pub mod sections;
@@ -96,7 +132,7 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
 
     if let Some(ping) = result.ping {
         parts.push(if nc {
-            format!("{ping:.1} ms")
+            format!("Latency: {ping:.1} ms")
         } else {
             format!("Latency: {} ms", ping.cyan())
         });
@@ -130,6 +166,7 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
+#[allow(clippy::too_many_arguments)]
 pub fn format_detailed(
     result: &TestResult,
     bytes: bool,
@@ -137,6 +174,8 @@ pub fn format_detailed(
     ul_bytes: u64,
     dl_duration: f64,
     ul_duration: f64,
+    dl_skipped: bool,
+    ul_skipped: bool,
 ) -> Result<(), SpeedtestError> {
     let nc = no_color();
 
@@ -149,8 +188,8 @@ pub fn format_detailed(
     eprintln!();
 
     sections::format_latency_section(result, nc);
-    sections::format_download_section(result, bytes, nc);
-    sections::format_upload_section(result, bytes, nc);
+    sections::format_download_section(result, bytes, nc, dl_skipped);
+    sections::format_upload_section(result, bytes, nc, ul_skipped);
     sections::format_connection_info(result, nc);
     sections::format_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc);
     sections::format_footer(&result.timestamp, nc);
@@ -346,5 +385,68 @@ mod tests {
     #[test]
     fn test_format_data_gb() {
         assert_eq!(crate::common::format_data_size(1_073_741_824), "1.00 GB");
+    }
+
+    #[test]
+    fn test_format_verbose_sections_integration() {
+        use crate::types::{ServerInfo, TestResult};
+        let result = TestResult {
+            server: ServerInfo {
+                id: "1".to_string(),
+                name: "Test".to_string(),
+                sponsor: "Test ISP".to_string(),
+                country: "US".to_string(),
+                distance: 10.0,
+            },
+            ping: Some(10.0),
+            jitter: Some(1.5),
+            packet_loss: Some(0.0),
+            download: Some(100_000_000.0),
+            download_peak: Some(120_000_000.0),
+            upload: Some(50_000_000.0),
+            upload_peak: Some(60_000_000.0),
+            latency_download: Some(15.0),
+            latency_upload: Some(12.0),
+            download_samples: Some(vec![95_000_000.0, 100_000_000.0, 105_000_000.0]),
+            upload_samples: Some(vec![48_000_000.0, 50_000_000.0, 52_000_000.0]),
+            ping_samples: Some(vec![9.5, 10.0, 10.5]),
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            client_ip: Some("192.168.1.1".to_string()),
+        };
+
+        // Exercise the full integration path: targets, estimates, stability,
+        // latency percentiles, and history comparison
+        format_verbose_sections(&result);
+    }
+
+    #[test]
+    fn test_format_verbose_sections_empty() {
+        use crate::types::{ServerInfo, TestResult};
+        let result = TestResult {
+            server: ServerInfo {
+                id: "1".to_string(),
+                name: "Test".to_string(),
+                sponsor: "Test".to_string(),
+                country: "US".to_string(),
+                distance: 0.0,
+            },
+            ping: None,
+            jitter: None,
+            packet_loss: None,
+            download: None,
+            download_peak: None,
+            upload: None,
+            upload_peak: None,
+            latency_download: None,
+            latency_upload: None,
+            download_samples: None,
+            upload_samples: None,
+            ping_samples: None,
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            client_ip: None,
+        };
+
+        // Should not panic with all None values
+        format_verbose_sections(&result);
     }
 }

@@ -1,11 +1,5 @@
 //! Rating helper functions for speed test results.
 
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
-
 use crate::types::TestResult;
 use owo_colors::OwoColorize;
 
@@ -49,12 +43,12 @@ pub fn colorize_rating(rating: &str, nc: bool) -> String {
     } else {
         match rating {
             "Excellent" => format!("{}{}", "⚡ ".green().bold(), rating.green().bold()),
-            "Great" => format!("{}{}", "🟢  ".green(), rating.green()),
+            "Great" => format!("{}{}", "🔵  ".blue(), rating.blue()),
             "Good" => format!("{}{}", "🟢  ".bright_green(), rating.bright_green()),
             "Fair" => format!("{}{}", "🟡  ".yellow(), rating.yellow()),
             "Moderate" => format!("{}{}", "🟠  ".bright_yellow(), rating.bright_yellow()),
             "Poor" => format!("{}{}", "🔴  ".red(), rating.red()),
-            "Slow" => format!("{}{}", "🔴  ".bright_red(), rating.bright_red()),
+            "Slow" => format!("{}{}", "🟤  ".bright_red(), rating.bright_red()),
             "Very Slow" => format!("{}{}", "⚠️  ".red().bold(), rating.red().bold()),
             _ => rating.to_string(),
         }
@@ -261,7 +255,7 @@ pub fn format_overall_rating(result: &TestResult, nc: bool) -> String {
     } else {
         let (icon, color) = match rating {
             "Excellent" => ("⚡ ", "green"),
-            "Great" => ("🟢  ", "green"),
+            "Great" => ("🔵  ", "blue"),
             "Good" => ("🟢  ", "bright_green"),
             "Fair" => ("🟡  ", "yellow"),
             "Moderate" => ("🟠  ", "bright_yellow"),
@@ -271,6 +265,7 @@ pub fn format_overall_rating(result: &TestResult, nc: bool) -> String {
         let text = format!("{icon}{rating}");
         let colored = match color {
             "green" => text.green().bold().to_string(),
+            "blue" => text.blue().to_string(),
             "bright_green" => text.bright_green().to_string(),
             "yellow" => text.yellow().to_string(),
             "bright_yellow" => text.bright_yellow().to_string(),
