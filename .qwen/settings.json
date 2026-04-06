@@ -13,7 +13,14 @@
       "Bash(gh *)",
       "Bash(cargo fmt)",
       "Bash(cargo *)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(which *)",
+      "Bash(git tag *)",
+      "Bash(chmod *)",
+      "Bash(git fetch *)",
+      "Bash(sed *)",
+      "Bash(git *)",
+      "Bash(xargs *)"
     ]
   },
   "$version": 3
