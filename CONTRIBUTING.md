@@ -99,6 +99,18 @@ Documentation improvements are always welcome:
 - Module-level doc comments (use `///` and `//!`)
 - Examples and usage guides
 
+#### Version Badges
+
+The README includes live version badges that auto-update on every release:
+
+| Badge | Source | Updates when |
+|---|---|---|
+| Crates.io | crates.io index | `cargo publish` completes |
+| GitHub Release | GitHub releases API | tag is created |
+| Homebrew | Homebrew formula repo | formula is updated |
+
+**Do not hardcode version numbers in the README.** The badges pull the current version dynamically. If you see a hardcoded version, it should be replaced with a badge or removed.
+
 ## Testing Guidelines
 
 - Write unit tests for pure functions
