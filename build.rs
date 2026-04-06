@@ -3,6 +3,7 @@ use clap_complete::{Shell, generate_to};
 use std::fs;
 use std::path::Path;
 
+// Include CLI args (which pulls in shared validation via its own include!)
 include!("src/cli.rs");
 
 fn main() -> std::io::Result<()> {

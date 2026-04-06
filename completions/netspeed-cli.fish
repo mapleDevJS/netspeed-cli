@@ -1,4 +1,8 @@
 complete -c netspeed-cli -l csv-delimiter -d 'Single character delimiter for CSV output (default: ",")' -r
+complete -c netspeed-cli -l format -d 'Output format (supersedes --json, --csv, --simple)' -r -f -a "json\t''
+csv\t''
+simple\t''
+detailed\t''"
 complete -c netspeed-cli -l server -d 'Specify a server ID to test against (can be supplied multiple times)' -r
 complete -c netspeed-cli -l exclude -d 'Exclude a server from selection (can be supplied multiple times)' -r
 complete -c netspeed-cli -l source -d 'Source IP address to bind to' -r

@@ -1,5 +1,8 @@
 use clap::{Parser, ValueEnum};
 
+// Shared validation functions (also used by build.rs via include!)
+include!("validate.rs");
+
 #[derive(Parser, Debug)]
 #[allow(clippy::struct_excessive_bools)]
 #[command(name = "netspeed-cli")]
@@ -55,6 +58,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub json: bool,
 
+    /// Output format (supersedes --json, --csv, --simple)
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormatType>,
+
     /// Display a list of speedtest.net servers sorted by distance
     #[arg(long)]
     pub list: bool,
@@ -100,24 +107,6 @@ fn validate_csv_delimiter(s: &str) -> Result<char, String> {
     Ok(delimiter)
 }
 
-fn validate_ip_address(s: &str) -> Result<String, String> {
-    // Simple IPv4 validation for CLI parsing
-    // Note: Duplicated from common::is_valid_ipv4 to avoid build.rs dependency issues
-    let parts: Vec<&str> = s.split('.').collect();
-    if parts.len() != 4 {
-        return Err(format!(
-            "Invalid IP address format: '{s}'. Expected format: x.x.x.x"
-        ));
-    }
-    if parts.iter().all(|p| p.parse::<u8>().is_ok()) {
-        Ok(s.to_string())
-    } else {
-        Err(format!(
-            "Invalid IP address format: '{s}'. Expected format: x.x.x.x"
-        ))
-    }
-}
-
 fn validate_timeout(s: &str) -> Result<u64, String> {
     let timeout: u64 = s
         .parse()
@@ -138,6 +127,15 @@ pub enum ShellType {
     Fish,
     PowerShell,
     Elvish,
+}
+
+/// Unified output format selection (supersedes --json, --csv, --simple).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum OutputFormatType {
+    Json,
+    Csv,
+    Simple,
+    Detailed,
 }
 
 #[cfg(test)]

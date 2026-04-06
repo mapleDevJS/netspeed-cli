@@ -22,6 +22,7 @@ Register-ArgumentCompleter -Native -CommandName 'netspeed-cli' -ScriptBlock {
     $completions = @(switch ($command) {
         'netspeed-cli' {
             [CompletionResult]::new('--csv-delimiter', '--csv-delimiter', [CompletionResultType]::ParameterName, 'Single character delimiter for CSV output (default: ",")')
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Output format (supersedes --json, --csv, --simple)')
             [CompletionResult]::new('--server', '--server', [CompletionResultType]::ParameterName, 'Specify a server ID to test against (can be supplied multiple times)')
             [CompletionResult]::new('--exclude', '--exclude', [CompletionResultType]::ParameterName, 'Exclude a server from selection (can be supplied multiple times)')
             [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Source IP address to bind to')

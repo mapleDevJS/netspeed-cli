@@ -73,3 +73,11 @@ uninstall:
 # Run the CLI
 run *args:
     cargo run -- {{args}}
+
+# Run benchmarks
+bench:
+    cargo bench
+
+# Run benchmarks with HTML report
+bench-report:
+    cargo bench -- --output-format criterion

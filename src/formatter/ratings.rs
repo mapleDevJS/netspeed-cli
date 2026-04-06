@@ -105,76 +105,64 @@ pub fn format_duration(secs: f64) -> String {
 
 #[must_use]
 pub fn connection_rating(result: &TestResult) -> &'static str {
+    /// Score a "lower is better" metric (ping, jitter) on a 0–100 scale.
+    fn score_lower(value: f64, thresholds: [f64; 5]) -> f64 {
+        if value < thresholds[0] {
+            100.0
+        } else if value < thresholds[1] {
+            80.0
+        } else if value < thresholds[2] {
+            60.0
+        } else if value < thresholds[3] {
+            40.0
+        } else {
+            20.0
+        }
+    }
+
+    /// Score a "higher is better" metric (download, upload) on a 0–100 scale.
+    fn score_higher(mbps: f64, thresholds: [f64; 6]) -> f64 {
+        if mbps >= thresholds[0] {
+            100.0
+        } else if mbps >= thresholds[1] {
+            85.0
+        } else if mbps >= thresholds[2] {
+            70.0
+        } else if mbps >= thresholds[3] {
+            55.0
+        } else if mbps >= thresholds[4] {
+            40.0
+        } else if mbps >= thresholds[5] {
+            25.0
+        } else {
+            10.0
+        }
+    }
+
     let mut score = 0.0;
     let mut factors = 0.0;
 
+    // Ping (lower is better)
     if let Some(ping) = result.ping {
-        score += if ping < 10.0 {
-            100.0
-        } else if ping < 30.0 {
-            80.0
-        } else if ping < 60.0 {
-            60.0
-        } else if ping < 100.0 {
-            40.0
-        } else {
-            20.0
-        };
+        score += score_lower(ping, [10.0, 30.0, 60.0, 100.0, f64::MAX]);
         factors += 1.0;
     }
 
+    // Jitter (lower is better)
     if let Some(jitter) = result.jitter {
-        score += if jitter < 2.0 {
-            100.0
-        } else if jitter < 5.0 {
-            80.0
-        } else if jitter < 10.0 {
-            60.0
-        } else if jitter < 20.0 {
-            40.0
-        } else {
-            20.0
-        };
+        score += score_lower(jitter, [2.0, 5.0, 10.0, 20.0, f64::MAX]);
         factors += 1.0;
     }
 
+    // Download speed (higher is better)
     if let Some(dl) = result.download {
-        let mbps = dl / 1_000_000.0;
-        score += if mbps >= 500.0 {
-            100.0
-        } else if mbps >= 200.0 {
-            85.0
-        } else if mbps >= 100.0 {
-            70.0
-        } else if mbps >= 50.0 {
-            55.0
-        } else if mbps >= 25.0 {
-            40.0
-        } else if mbps >= 10.0 {
-            25.0
-        } else {
-            10.0
-        };
+        score += score_higher(dl / 1_000_000.0, [500.0, 200.0, 100.0, 50.0, 25.0, 10.0]);
         factors += 1.0;
     }
 
+    // Upload speed (higher is better)
     if let Some(ul) = result.upload {
-        let mbps = ul / 1_000_000.0;
-        score += if mbps >= 500.0 {
-            100.0
-        } else if mbps >= 200.0 {
-            85.0
-        } else if mbps >= 100.0 {
-            70.0
-        } else if mbps >= 50.0 {
-            55.0
-        } else if mbps >= 25.0 {
-            40.0
-        } else if mbps >= 10.0 {
-            25.0
-        } else {
-            10.0
-        };
+        score += score_higher(ul / 1_000_000.0, [500.0, 200.0, 100.0, 50.0, 25.0, 10.0]);
         factors += 1.0;
     }
 
@@ -198,41 +186,63 @@ pub fn connection_rating(result: &TestResult) -> &'static str {
     }
 }
 
+/// Bufferbloat grade based on added latency under load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BufferbloatGrade {
+    A,
+    B,
+    C,
+    D,
+    F,
+}
+
+impl BufferbloatGrade {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+            Self::C => "C",
+            Self::D => "D",
+            Self::F => "F",
+        }
+    }
+}
+
 /// Compute bufferbloat grade from latency degradation under load.
 #[must_use]
-pub fn bufferbloat_grade(load_latency: f64, idle_latency: f64) -> (&'static str, f64) {
+pub fn bufferbloat_grade(load_latency: f64, idle_latency: f64) -> (BufferbloatGrade, f64) {
     let added = if idle_latency > 0.0 {
         load_latency - idle_latency
     } else {
         load_latency
     };
     let grade = if added < 5.0 {
-        "A"
+        BufferbloatGrade::A
     } else if added < 20.0 {
-        "B"
+        BufferbloatGrade::B
     } else if added < 50.0 {
-        "C"
+        BufferbloatGrade::C
     } else if added < 100.0 {
-        "D"
+        BufferbloatGrade::D
     } else {
-        "F"
+        BufferbloatGrade::F
     };
     (grade, added.max(0.0))
 }
 
-pub fn bufferbloat_colorized(grade: &str, added_ms: f64, nc: bool) -> String {
+pub fn bufferbloat_colorized(grade: BufferbloatGrade, added_ms: f64, nc: bool) -> String {
     if nc {
-        format!("{grade} ({added_ms:.0}ms)")
+        format!("{} ({added_ms:.0}ms)", grade.as_str())
     } else {
         let (color, bold) = match grade {
-            "A" => ("green", true),
-            "B" => ("bright_green", false),
-            "C" => ("yellow", false),
-            "D" => ("bright_yellow", false),
-            "F" => ("red", true),
-            _ => ("dimmed", false),
+            BufferbloatGrade::A => ("green", true),
+            BufferbloatGrade::B => ("bright_green", false),
+            BufferbloatGrade::C => ("yellow", false),
+            BufferbloatGrade::D => ("bright_yellow", false),
+            BufferbloatGrade::F => ("red", true),
         };
-        let text = format!("{grade} ({added_ms:.0}ms added)");
+        let text = format!("{} ({added_ms:.0}ms added)", grade.as_str());
         match (color, bold) {
             ("green", true) => text.green().bold().to_string(),
             ("bright_green", _) => text.bright_green().to_string(),

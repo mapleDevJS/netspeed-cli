@@ -12,6 +12,7 @@
 //! ## Modules
 //!
 //! - [`cli`] — Command-line argument parsing with clap
+//! - [`common`] — Shared utilities (bandwidth calculation, formatting, validation)
 //! - [`config`] — Configuration merging (CLI args + config file)
 //! - [`download`] — Multi-stream download bandwidth measurement
 //! - [`upload`] — Multi-stream upload bandwidth measurement
@@ -21,8 +22,8 @@
 //! - [`http`] — HTTP client creation and IP discovery
 //! - [`progress`] — Terminal progress bars and spinners
 //! - [`servers`] — Server discovery, distance calculation, and selection
-//! - [`types`] — Shared data structures (Server, `TestResult`, etc.)
-//! - [`upload`] — Upload bandwidth measurement
+//! - [`test_runner`] — Test orchestration with template method pattern
+//! - [`types`] — Shared data structures (Server, TestResult, etc.)
 
 pub mod cli;
 pub mod common;
@@ -32,6 +33,7 @@ pub mod error;
 pub mod formatter;
 pub mod history;
 pub mod http;
+pub mod orchestrator;
 pub mod progress;
 pub mod servers;
 pub mod test_runner;
