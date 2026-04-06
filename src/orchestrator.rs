@@ -119,7 +119,16 @@ impl SpeedTestOrchestrator {
 
     /// Whether verbose output should be shown.
     pub fn is_verbose(&self) -> bool {
-        !self.config.simple && !self.config.json && !self.config.csv && !self.config.list
+        use crate::cli::OutputFormatType;
+        let format_non_verbose = matches!(
+            self.args.format,
+            Some(OutputFormatType::Simple | OutputFormatType::Json | OutputFormatType::Csv)
+        );
+        !self.config.simple
+            && !self.config.json
+            && !self.config.csv
+            && !self.config.list
+            && !format_non_verbose
     }
 
     fn print_header() {
@@ -271,21 +280,41 @@ impl SpeedTestOrchestrator {
         dl_result: &TestRunResult,
         ul_result: &TestRunResult,
     ) -> Result<(), SpeedtestError> {
-        let output_format = if self.config.json {
-            OutputFormat::Json
-        } else if self.config.csv {
-            OutputFormat::Csv {
+        use crate::cli::OutputFormatType;
+
+        // --format flag takes precedence over legacy --json/--csv/--simple booleans
+        let output_format = match self.args.format {
+            Some(OutputFormatType::Json) => OutputFormat::Json,
+            Some(OutputFormatType::Csv) => OutputFormat::Csv {
                 delimiter: self.config.csv_delimiter,
                 header: self.config.csv_header,
-            }
-        } else if self.config.simple {
-            OutputFormat::Simple
-        } else {
-            OutputFormat::Detailed {
+            },
+            Some(OutputFormatType::Simple) => OutputFormat::Simple,
+            Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
                 dl_bytes: dl_result.total_bytes,
                 ul_bytes: ul_result.total_bytes,
                 dl_duration: dl_result.duration_secs,
                 ul_duration: ul_result.duration_secs,
+            },
+            None => {
+                // Legacy boolean flag fallback
+                if self.config.json {
+                    OutputFormat::Json
+                } else if self.config.csv {
+                    OutputFormat::Csv {
+                        delimiter: self.config.csv_delimiter,
+                        header: self.config.csv_header,
+                    }
+                } else if self.config.simple {
+                    OutputFormat::Simple
+                } else {
+                    OutputFormat::Detailed {
+                        dl_bytes: dl_result.total_bytes,
+                        ul_bytes: ul_result.total_bytes,
+                        dl_duration: dl_result.duration_secs,
+                        ul_duration: ul_result.duration_secs,
+                    }
+                }
             }
         };
         output_format.format(result, self.config.bytes)?;

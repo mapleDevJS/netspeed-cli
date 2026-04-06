@@ -58,6 +58,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub json: bool,
 
+    /// Output format (supersedes --json, --csv, --simple)
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormatType>,
+
     /// Display a list of speedtest.net servers sorted by distance
     #[arg(long)]
     pub list: bool,
@@ -123,6 +127,15 @@ pub enum ShellType {
     Fish,
     PowerShell,
     Elvish,
+}
+
+/// Unified output format selection (supersedes --json, --csv, --simple).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum OutputFormatType {
+    Json,
+    Csv,
+    Simple,
+    Detailed,
 }
 
 #[cfg(test)]
