@@ -210,4 +210,4 @@ release_main() {
     print_summary
 }
 
-main "$@"
+release_main "$@"
