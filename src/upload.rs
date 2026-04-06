@@ -41,6 +41,9 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
 /// Throttling prevents excessive sampling overhead on all hot-path operations.
 const SAMPLE_INTERVAL_MS: u64 = 50; // 50ms between samples (20 Hz max)
 
+/// Number of upload rounds per stream (each round uploads a chunk of test data).
+const UPLOAD_TEST_ROUNDS: usize = 4;
+
 /// Run upload bandwidth test against the given server.
 ///
 /// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_uploaded, speed_samples)`.
@@ -83,7 +86,7 @@ pub async fn upload_test(
         let handle = tokio::spawn(async move {
             let mut uploaded_bytes = 0u64;
 
-            for _ in 0..4 {
+            for _ in 0..UPLOAD_TEST_ROUNDS {
                 let upload_url = build_upload_url(&server_url);
 
                 if client
@@ -109,7 +112,8 @@ pub async fn upload_test(
                         throttle_ref.store(elapsed_ms, Ordering::Relaxed);
 
                         // All expensive ops now run at most every 50ms:
-                        let total_so_far = total_ref.load(Ordering::Relaxed);
+                        // Acquire ensures we see the latest fetch_add results on ARM64.
+                        let total_so_far = total_ref.load(Ordering::Acquire);
                         let elapsed = start_ref.elapsed().as_secs_f64();
                         let speed = common::calculate_bandwidth(total_so_far, elapsed);
 
@@ -136,9 +140,12 @@ pub async fn upload_test(
         handles.push(handle);
     }
 
-    // Collect results (bytes already counted in tasks, no need to add again)
-    for handle in handles {
-        let _ = handle.await;
+    // Collect results — log any task panics so failures aren't silently swallowed.
+    // Bytes are already counted via atomic counters, so we don't need the return values.
+    for (i, handle) in handles.into_iter().enumerate() {
+        if let Err(e) = handle.await {
+            eprintln!("Warning: upload task {i} failed: {e}");
+        }
     }
 
     let final_total_bytes = total_bytes.load(Ordering::Relaxed);

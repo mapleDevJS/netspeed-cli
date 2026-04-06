@@ -97,7 +97,15 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestE
 /// Returns [`SpeedtestError::NetworkError`] if fetching the server list fails.
 /// Returns [`SpeedtestError::DeserializeXml`] if the XML response cannot be parsed.
 pub async fn fetch_servers(client: &Client) -> Result<Vec<Server>, SpeedtestError> {
-    let (client_lat, client_lon) = fetch_client_location(client).await.unwrap_or((0.0, 0.0));
+    let (client_lat, client_lon) = match fetch_client_location(client).await {
+        Ok(coords) => coords,
+        Err(ref e) => {
+            eprintln!(
+                "Warning: could not determine client location ({e}), using default (equator)"
+            );
+            (0.0, 0.0)
+        }
+    };
 
     let response = client
         .get(SPEEDTEST_SERVERS_URL)

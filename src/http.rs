@@ -63,20 +63,25 @@ pub async fn discover_client_ip(client: &Client) -> Result<String, SpeedtestErro
 }
 
 fn parse_ip_from_xml(xml: &str) -> Option<String> {
-    for line in xml.lines() {
-        if line.contains("<client") && line.contains("ip=\"") {
-            if let Some(start) = line.find("ip=\"") {
-                let rest = &line[start + 4..];
-                if let Some(end) = rest.find('"') {
-                    let ip = &rest[..end];
-                    if common::is_valid_ipv4(ip) {
-                        return Some(ip.to_string());
-                    }
-                }
-            }
-        }
+    // Use structured XML deserialization instead of manual string scanning
+    // to handle edge cases (comments, CDATA, nested elements) correctly.
+    #[derive(serde::Deserialize)]
+    struct Settings {
+        client: ClientElement,
     }
-    None
+    #[derive(serde::Deserialize)]
+    struct ClientElement {
+        #[serde(rename = "@ip")]
+        ip: Option<String>,
+    }
+
+    let settings: Settings = quick_xml::de::from_str(xml).ok()?;
+    let ip = settings.client.ip?;
+    if common::is_valid_ipv4(&ip) {
+        Some(ip)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -85,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_parse_ip_from_xml() {
-        let xml = r#"<client country="CA" ip="173.35.57.235" isp="Rogers"/>"#;
+        let xml = r#"<settings><client country="CA" ip="173.35.57.235" isp="Rogers"/></settings>"#;
         assert_eq!(parse_ip_from_xml(xml), Some("173.35.57.235".to_string()));
     }
 
@@ -103,7 +108,7 @@ mod tests {
     fn test_parse_ip_from_xml_invalid() {
         assert!(parse_ip_from_xml("not xml").is_none());
         assert!(parse_ip_from_xml("<html></html>").is_none());
-        assert!(parse_ip_from_xml("<client ip=\"invalid\"/>").is_none());
+        assert!(parse_ip_from_xml("<settings><client ip=\"invalid\"/></settings>").is_none());
     }
 
     #[test]

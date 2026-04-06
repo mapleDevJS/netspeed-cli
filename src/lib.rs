@@ -33,6 +33,7 @@ pub mod error;
 pub mod formatter;
 pub mod history;
 pub mod http;
+pub mod orchestrator;
 pub mod progress;
 pub mod servers;
 pub mod test_runner;

@@ -32,6 +32,9 @@ const ESTIMATED_DOWNLOAD_BYTES: u64 = 15_000_000; // 15 MB estimate
 /// Uses 0 as initial value so the first chunk always triggers a sample.
 const SAMPLE_INTERVAL_MS: u64 = 50; // 50ms between samples (20 Hz max)
 
+/// Number of download rounds per stream (each round fetches a different test file).
+const DOWNLOAD_TEST_ROUNDS: usize = 4;
+
 /// Extract base URL from server URL (strip /upload.php suffix)
 #[must_use]
 pub fn extract_base_url(url: &str) -> &str {
@@ -97,7 +100,7 @@ pub async fn download_test(
         let handle = tokio::spawn(async move {
             let mut stream_bytes = 0u64;
 
-            for j in 0..4 {
+            for j in 0..DOWNLOAD_TEST_ROUNDS {
                 let test_url = build_test_url(&server_url, j);
 
                 if let Ok(response) = client.get(&test_url).send().await {
@@ -120,7 +123,8 @@ pub async fn download_test(
                                 throttle_ref.store(elapsed_ms, Ordering::Relaxed);
 
                                 // All expensive ops now run at most every 50ms:
-                                let total_so_far = total_ref.load(Ordering::Relaxed);
+                                // Acquire ensures we see the latest fetch_add results on ARM64.
+                                let total_so_far = total_ref.load(Ordering::Acquire);
                                 let elapsed = start_ref.elapsed().as_secs_f64();
                                 let speed = common::calculate_bandwidth(total_so_far, elapsed);
 
