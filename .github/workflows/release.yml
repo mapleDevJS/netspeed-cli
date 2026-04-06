@@ -9,9 +9,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  verify-tag-on-main:
+    name: Verify Tag is on Main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify tag points to main branch
+        run: |
+          if ! git branch -r --contains "${{ github.ref_name }}" | grep -q 'origin/main'; then
+            echo "::error::Tag ${{ github.ref_name }} is not on the 'main' branch."
+            echo "::error::Releases must be created from main. Merge develop → main first."
+            echo "::error::See RELEASE.md for the release process."
+            exit 1
+          fi
+          echo "Tag ${{ github.ref_name }} is on main branch"
+
   build-binaries:
     name: Build Binary (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    needs: [verify-tag-on-main]
     strategy:
       matrix:
         include:

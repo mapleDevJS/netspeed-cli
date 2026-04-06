@@ -34,11 +34,11 @@ cargo clippy -- -D warnings  # Fail on any warning
 ```
 
 All CI checks must pass before a PR can be merged:
-- `cargo test` on Ubuntu and macOS
+- `cargo test` on Ubuntu, macOS, and Windows
 - `cargo fmt -- --check`
-- `cargo clippy -- -D warnings`
-- `cargo audit` (security scan)
-- MSRV verification with Rust 1.85
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo deny check` (security + license audit)
+- MSRV verification with Rust 1.86
 
 ## Development Workflow
 
@@ -50,10 +50,29 @@ All CI checks must pass before a PR can be merged:
 
 ### Branch Strategy
 
-- `main` — stable releases
-- `develop` — integration branch for upcoming features
-- Feature branches — `feature/your-feature-name`
-- Hotfix branches — `hotfix/issue-description`
+| Branch | Purpose |
+|---|---|
+| `main` | Stable releases only |
+| `develop` | Integration branch for features and fixes |
+| Feature branches | `feature/your-feature-name` (branch from `develop`) |
+| Hotfix branches | `hotfix/issue-description` (branch from `main`) |
+
+**PR rules:**
+- Feature PRs → target `develop`
+- Release PRs → `develop` → `main` (see [Release Process](#release-process))
+- Hotfix PRs → target `main` directly
+
+## Release Process
+
+Releases are published from **`main`** via CI automation. See [RELEASE.md](RELEASE.md)
+for the complete release workflow.
+
+**Quick summary:**
+1. Develop on `develop`
+2. Open PR `develop` → `main`
+3. Merge PR to `main`
+4. Run `./scripts/release.sh <version>` from `main`
+5. CI builds binaries, publishes GitHub Release, updates Homebrew, and publishes to crates.io
 
 ## What to Contribute
 
