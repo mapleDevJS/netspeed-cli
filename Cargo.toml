@@ -65,3 +65,9 @@ strip = true
 codegen-units = 1
 # Optimize for speed (network-bound workload)
 opt-level = 3
+
+[package.metadata.docs.rs]
+# Build only the library documentation, not the binary
+no-default-features = false
+# Use the default docs.rs target
+default-target = "x86_64-unknown-linux-gnu"
