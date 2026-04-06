@@ -7,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies**: Updated 6 dependencies to latest versions
+  - `indicatif`: 0.17.11 → 0.18.4
+  - `clap_mangen`: 0.2.33 → 0.3.0
+  - `quick-xml`: 0.37.5 → 0.39.2
+  - `toml`: 0.9.12 → 1.1.2
+  - `criterion`: 0.5.1 → 0.8.2
+  - `actions/upload-artifact`: 4 → 7
+
 ### Fixed
 
 - docs.rs build failure: `build.rs` now skips file generation on docs.rs (read-only filesystem)
 - Added `[package.metadata.docs.rs]` configuration to `Cargo.toml`
+- Benchmark compatibility with criterion 0.8 (`std::hint::black_box`)
+
+### Pending
+
+- `actions/download-artifact`: 7 → 8 (requires manual merge — workflow file)
 
 ## [0.3.0] - 2026-04-05
 
