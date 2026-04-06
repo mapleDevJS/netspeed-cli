@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
       - name: Verify tag points to main branch
         run: |
-          if ! git branch -r --contains "${{ github.ref_name }}" | grep -q 'origin/main'; then
+          if ! git branch -r --contains "${{ github.ref_name }}" | grep -q 'origin/master'; then
             echo "::error::Tag ${{ github.ref_name }} is not on the 'main' branch."
             echo "::error::Releases must be created from main. Merge develop → main first."
             echo "::error::See RELEASE.md for the release process."

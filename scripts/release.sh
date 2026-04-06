@@ -9,7 +9,7 @@
 #   ./scripts/release.sh 0.5.0
 #
 # Workflow:
-#   1. Validate you're on `main` with a clean tree
+#   1. Validate you're on `master` with a clean tree
 #   2. Update Cargo.toml version
 #   3. Commit with conventional commit message
 #   4. Create annotated git tag
@@ -18,7 +18,7 @@
 #      updates Homebrew formula, and publishes to crates.io
 #
 # Prerequisites:
-#   - You must be on the `main` branch
+#   - You must be on the `master` branch
 #   - Working tree must be clean
 #   - git, cargo, and gh CLI must be installed and authenticated
 #
@@ -81,10 +81,10 @@ check_branch() {
     local branch
     branch="$(git branch --show-current)"
 
-    if [[ "$branch" != "main" ]]; then
-        log_error "You must be on the 'main' branch to create a release (currently on '$branch')"
-        log_error "Merge your changes from 'develop' to 'main' first:"
-        log_error "  gh pr create --base main --head develop --title 'Release v${VERSION}'"
+    if [[ "$branch" != "master" ]]; then
+        log_error "You must be on the 'master' branch to create a release (currently on '$branch')"
+        log_error "Merge your changes from 'develop' to 'master' first:"
+        log_error "  gh pr create --base master --head develop --title 'Release v${VERSION}'"
         exit 1
     fi
 
@@ -95,7 +95,7 @@ check_branch() {
         exit 1
     fi
 
-    log_ok "On 'main' branch with clean working tree"
+    log_ok "On 'master' branch with clean working tree"
 }
 
 # ── Version bump ─────────────────────────────────────────────────────
@@ -150,10 +150,10 @@ commit_changes() {
 push_to_origin() {
     cd "$PROJECT_DIR"
 
-    log_info "Pushing to origin/main..."
-    git push origin main
+    log_info "Pushing to origin/master..."
+    git push origin master
 
-    log_ok "Pushed to origin/main"
+    log_ok "Pushed to origin/master"
 }
 
 # ── Tag ──────────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ print_summary() {
 }
 
 # ── Main ─────────────────────────────────────────────────────────────
-main() {
+release_main() {
     echo ""
     echo -e "${BLUE}============================================${NC}"
     echo -e "${BLUE}  netspeed-cli Release Pipeline${NC}"
