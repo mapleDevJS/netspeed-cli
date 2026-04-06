@@ -10,7 +10,11 @@ all-features = false
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-ignore = []
+# Transitive dependency via indicatif — no direct upgrade path available
+# indicatif 0.17 still uses number_prefix; upgrading indicatif to 0.18+ would resolve
+ignore = [
+    "RUSTSEC-2025-0119",
+]
 
 [licenses]
 allow = [
@@ -25,6 +29,7 @@ allow = [
     "OpenSSL",
     "Zlib",
     "MPL-2.0",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
@@ -33,7 +38,10 @@ multiple-versions = "warn"
 wildcards = "allow"
 deny = []
 skip = []
-skip-tree = []
+skip-tree = [
+    # Transitive: toml pulls in both winnow 0.7 and 1.0 via toml_parser
+    { name = "winnow", version = "1.0.1" },
+]
 
 [sources]
 unknown-registry = "warn"
