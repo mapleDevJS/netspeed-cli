@@ -49,7 +49,7 @@ tokio = { version = "1", features = ["macros"] }
 wiremock = "0.6.5"
 serial_test = "3.2"
 tempfile = "3.19"
-criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+criterion = { version = "0.8", features = ["html_reports", "async_tokio"] }
 thiserror = "2"
 
 [[bench]]
