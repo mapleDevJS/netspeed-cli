@@ -122,6 +122,8 @@ jobs:
   brew-audit:
     name: Homebrew Audit
     runs-on: macos-latest
+    # Only run when a version tag is pushed (release tarball must exist)
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v6
       - name: Audit formula
