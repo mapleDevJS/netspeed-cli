@@ -16,7 +16,7 @@ _netspeed-cli() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
 '--csv-delimiter=[Single character delimiter for CSV output (default\: ",")]:CSV_DELIMITER:_default' \
-'--format=[Output format (supersedes --json, --csv, --simple)]:FORMAT:(json csv simple detailed)' \
+'--format=[Output format (supersedes --json, --csv, --simple)]:FORMAT:(json csv simple detailed dashboard)' \
 '*--server=[Specify a server ID to test against (can be supplied multiple times)]:SERVER:_default' \
 '*--exclude=[Exclude a server from selection (can be supplied multiple times)]:EXCLUDE:_default' \
 '--source=[Source IP address to bind to]:SOURCE:_default' \
@@ -32,6 +32,7 @@ _netspeed-cli() {
 '--json[Output in JSON format]' \
 '--list[Display a list of speedtest.net servers sorted by distance]' \
 '--history[Display test history]' \
+'--quiet[Suppress all progress output (JSON/CSV still go to stdout)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \

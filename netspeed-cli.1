@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH netspeed-cli 1  "netspeed-cli 0.6.0" 
+.TH netspeed-cli 1  "netspeed-cli 0.8.0-SNAPSHOT" 
 .SH NAME
 netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Command line interface for testing internet bandwidth using speedtest.net
 .SH OPTIONS
@@ -51,6 +51,8 @@ csv
 simple
 .IP \(bu 2
 detailed
+.IP \(bu 2
+dashboard
 .RE
 .TP
 \fB\-\-list\fR
@@ -90,6 +92,9 @@ elvish
 \fB\-\-history\fR
 Display test history
 .TP
+\fB\-\-quiet\fR
+Suppress all progress output (JSON/CSV still go to stdout)
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
 .TP
@@ -100,12 +105,15 @@ Examples:
   netspeed\-cli                          Run a full speed test
   netspeed\-cli \-\-simple                 Run with minimal output
   netspeed\-cli \-\-json                   Output results as JSON
+  netspeed\-cli \-\-format dashboard       Rich dashboard with bar charts and history
+  netspeed\-cli \-\-format detailed        Full output with ratings and stability
   netspeed\-cli \-\-list                   List available servers
   netspeed\-cli \-\-server 1234            Test against a specific server
   netspeed\-cli \-\-no\-upload              Skip upload test
+  netspeed\-cli \-\-quiet                  Suppress all progress output
   netspeed\-cli \-\-bytes                  Show results in MB/s instead of Mbit/s
   netspeed\-cli \-\-single                 Use a single connection (debugging)
   netspeed\-cli \-\-generate\-completion zsh > ~/.zsh/functions/_netspeed\-cli
                                         Generate Zsh shell completions
 .SH VERSION
-v0.6.0
+v0.8.0\-SNAPSHOT
