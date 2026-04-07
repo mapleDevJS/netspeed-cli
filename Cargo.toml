@@ -1,6 +1,6 @@
 [package]
 name = "netspeed-cli"
-version = "0.8.0-SNAPSHOT"
+version = "0.7.0"
 edition = "2024"
 description = "Command-line interface for testing internet bandwidth using speedtest.net"
 license = "MIT"
