@@ -2,7 +2,7 @@
 //!
 //! This module provides a visually rich single-screen output suitable for
 //! terminal display. It uses only existing dependencies (`owo_colors`, `common`,
-//! `history`) — no new crates.
+//! `history`, `ratings`) — no new crates.
 
 use crate::common;
 use crate::formatter::ratings;
@@ -11,13 +11,16 @@ use crate::progress::no_color;
 use crate::types::TestResult;
 use owo_colors::OwoColorize;
 
+const BOX_WIDTH: usize = 60;
+const BAR_WIDTH: usize = 28;
+
 /// Render a horizontal bar scaled to the metric's typical range.
-fn metric_bar(value_mbps: f64, max_mbps: f64, width: usize, nc: bool) -> String {
-    let bar = common::bar_chart(value_mbps, max_mbps, width);
+fn metric_bar(value: f64, max: f64, width: usize, nc: bool) -> String {
+    let bar = common::bar_chart(value, max, width);
     if nc {
         bar
     } else {
-        let fill_pct = (value_mbps / max_mbps).clamp(0.0, 1.0) * 100.0;
+        let fill_pct = (value / max).clamp(0.0, 1.0) * 100.0;
         if fill_pct >= 70.0 {
             bar.green().to_string()
         } else if fill_pct >= 40.0 {
@@ -40,12 +43,26 @@ pub struct DashboardSummary {
     pub ul_duration: f64,
 }
 
+/// Build a section separator line.
+fn section_divider(title: &str, nc: bool) -> String {
+    let title_with_spaces = format!(" {title} ");
+    let dash_count = BOX_WIDTH.saturating_sub(title_with_spaces.len() + 4);
+    let dashes = "─".repeat(dash_count);
+    if nc {
+        format!("  {title_with_spaces}{dashes}")
+    } else {
+        format!("  {}", title_with_spaces.dimmed()) + &dashes.dimmed().to_string()
+    }
+}
+
 /// Build the boxed header with version, server, and client IP.
 fn build_header(result: &TestResult, nc: bool) -> String {
-    let width = 62;
     let version = env!("CARGO_PKG_VERSION");
-    let title = format!("netspeed-cli v{version}");
-    let padded_title = format!(" {title:^width$} ", width = width - 4);
+    let title = format!(" netspeed-cli v{version} ");
+    let half_pad = (BOX_WIDTH.saturating_sub(title.len())) / 2;
+    let left_pad = "═".repeat(half_pad);
+    let right_pad = "═".repeat(BOX_WIDTH.saturating_sub(half_pad + title.len()));
+    let title_line = format!("{left_pad}{title}{right_pad}");
 
     let server_line = format!(
         "  Server: {} ({}) · {} · {}",
@@ -55,54 +72,78 @@ fn build_header(result: &TestResult, nc: bool) -> String {
         common::format_distance(result.server.distance)
     );
 
+    let ip_line = result
+        .client_ip
+        .as_ref()
+        .map(|ip| format!("  Client IP: {ip}"));
+
     let mut lines = Vec::new();
+
+    // Top border
     if nc {
-        lines.push(format!("╔{padded_title}╗"));
+        lines.push(format!("╔{title_line}╗"));
     } else {
-        lines.push(format!("╔{padded_title}╗").dimmed().to_string());
+        lines.push(format!("╔{title_line}╗").dimmed().to_string());
     }
+
+    // Server info
+    let padded_server = format!("{server_line:<BOX_WIDTH$}");
     if nc {
-        lines.push(format!("║{server_line:<width$}║"));
+        lines.push(format!("║{padded_server}║"));
     } else {
-        lines.push(format!("║{server_line:<width$}║").dimmed().to_string());
+        lines.push(format!("║{padded_server}║").dimmed().to_string());
     }
-    if let Some(ip) = &result.client_ip {
-        let ip_line = format!("  Client IP: {ip}");
+
+    // Client IP (if available)
+    if let Some(ip) = ip_line {
+        let padded_ip = format!("{ip:<BOX_WIDTH$}");
         if nc {
-            lines.push(format!("║{ip_line:<width$}║"));
+            lines.push(format!("║{padded_ip}║"));
         } else {
-            lines.push(format!("║{ip_line:<width$}║").dimmed().to_string());
+            lines.push(format!("║{padded_ip}║").dimmed().to_string());
         }
     }
+
+    // Bottom border
     if nc {
-        lines.push(format!("╚{:═<width$}╝", ""));
+        lines.push(format!("╚{:═<BOX_WIDTH$}╝", ""));
     } else {
-        lines.push(format!("╚{:═<width$}╝", "").dimmed().to_string());
+        lines.push(format!("╚{:═<BOX_WIDTH$}╝", "").dimmed().to_string());
     }
+
     lines.join("\n")
+}
+
+/// Build the overall connection rating line.
+fn build_overall_rating(result: &TestResult, nc: bool) -> String {
+    let rating = ratings::connection_rating(result);
+    if nc {
+        format!("  Overall: {rating}")
+    } else {
+        let rating_colored = ratings::colorize_rating(rating, nc);
+        format!("  {} {rating_colored}", "Overall:".dimmed())
+    }
 }
 
 /// Build metric lines with bar charts for latency, download, and upload.
 fn build_metric_bars(result: &TestResult, nc: bool) -> String {
-    let bar_width = 28;
     let mut lines = Vec::new();
 
-    // Latency bar (0–100 ms scale, inverted: lower is better)
+    // Latency bar (0–100 ms scale, direct: shorter bar = lower ping = better)
     if let Some(ping) = result.ping {
         let rating = ratings::ping_rating(ping);
-        // Invert: 0ms = full bar, 100ms = empty bar
-        let inverted = (100.0 - ping).max(0.0);
-        let bar = metric_bar(inverted, 100.0, bar_width, nc);
+        // Direct scale: 0ms = empty bar, 100ms = full bar
+        let bar = metric_bar(ping, 100.0, BAR_WIDTH, nc);
         if nc {
             lines.push(format!(
-                "  {:<10} {}  {:>7.1} ms  ({rating})",
+                "  {:<14} {}  {:>8.1} ms  ({rating})",
                 "Latency", bar, ping
             ));
         } else {
             let ping_str = format!("{ping:.1} ms");
             let rating_str = ratings::colorize_rating(rating, nc);
             lines.push(format!(
-                "  {:<10} {}  {}  {}",
+                "  {:<14} {}  {}  {}",
                 "Latency".dimmed(),
                 bar,
                 ping_str.cyan().bold(),
@@ -115,10 +156,10 @@ fn build_metric_bars(result: &TestResult, nc: bool) -> String {
     if let Some(dl) = result.download {
         let dl_mbps = dl / 1_000_000.0;
         let rating = ratings::speed_rating_mbps(dl_mbps);
-        let bar = metric_bar(dl_mbps, 1000.0, bar_width, nc);
+        let bar = metric_bar(dl_mbps, 1000.0, BAR_WIDTH, nc);
         if nc {
             lines.push(format!(
-                "  {:<10} {}  {:>8.2} Mb/s  ({rating})",
+                "  {:<14} {}  {:>8.2} Mb/s  ({rating})",
                 "Download", bar, dl_mbps
             ));
         } else {
@@ -133,7 +174,7 @@ fn build_metric_bars(result: &TestResult, nc: bool) -> String {
                 speed_str.red().to_string()
             };
             lines.push(format!(
-                "  {:<10} {}  {}  {}",
+                "  {:<14} {}  {}  {}",
                 "Download".dimmed(),
                 bar,
                 colored_speed,
@@ -146,10 +187,10 @@ fn build_metric_bars(result: &TestResult, nc: bool) -> String {
     if let Some(ul) = result.upload {
         let ul_mbps = ul / 1_000_000.0;
         let rating = ratings::speed_rating_mbps(ul_mbps);
-        let bar = metric_bar(ul_mbps, 1000.0, bar_width, nc);
+        let bar = metric_bar(ul_mbps, 1000.0, BAR_WIDTH, nc);
         if nc {
             lines.push(format!(
-                "  {:<10} {}  {:>8.2} Mb/s  ({rating})",
+                "  {:<14} {}  {:>8.2} Mb/s  ({rating})",
                 "Upload", bar, ul_mbps
             ));
         } else {
@@ -164,7 +205,7 @@ fn build_metric_bars(result: &TestResult, nc: bool) -> String {
                 speed_str.red().to_string()
             };
             lines.push(format!(
-                "  {:<10} {}  {}  {}",
+                "  {:<14} {}  {}  {}",
                 "Upload".dimmed(),
                 bar,
                 colored_speed,
@@ -176,85 +217,133 @@ fn build_metric_bars(result: &TestResult, nc: bool) -> String {
     lines.join("\n")
 }
 
-/// Build the live progress summary from dashboard summary data.
-fn build_progress_summary(summary: &DashboardSummary, nc: bool) -> String {
-    let mut lines = Vec::new();
+/// Build the download summary section.
+fn build_download_summary(summary: &DashboardSummary, nc: bool) -> String {
+    if summary.dl_duration <= 0.0 {
+        return String::new();
+    }
 
+    let mut lines = Vec::new();
+    lines.push(section_divider("Download Summary", nc));
+
+    let bar = metric_bar(summary.dl_mbps, 1000.0, BAR_WIDTH, nc);
     if nc {
-        lines.push(String::from(
-            "  ── Summary ──────────────────────────────────────────────────",
+        lines.push(format!(
+            "  {:<14} {:>8.2} Mb/s  {bar}",
+            "Speed:", summary.dl_mbps
         ));
     } else {
         lines.push(format!(
-            "  {}",
-            "── Summary ──────────────────────────────────────────────────".dimmed()
+            "  {:<14} {}  {}",
+            "Speed:".dimmed(),
+            format!("{:.2} Mb/s", summary.dl_mbps).cyan().bold(),
+            bar,
         ));
     }
 
-    if summary.dl_duration > 0.0 {
-        let bar = metric_bar(summary.dl_mbps, 1000.0, 28, nc);
+    if summary.dl_peak_mbps > 0.0 {
         if nc {
             lines.push(format!(
-                "  Download: {:>8.2} Mb/s  {}  ({:.1}s, {})",
-                summary.dl_mbps,
-                bar,
-                summary.dl_duration,
-                common::format_data_size(summary.dl_bytes)
+                "  {:<14} {:.2} Mb/s",
+                "Peak:", summary.dl_peak_mbps
             ));
         } else {
             lines.push(format!(
-                "  {:>14}: {} {}  ({:.1}s, {})",
-                "Download".dimmed(),
-                format!("{:.2} Mb/s", summary.dl_mbps).cyan(),
-                bar,
-                summary.dl_duration,
-                common::format_data_size(summary.dl_bytes).white(),
+                "  {:<14} {}",
+                "Peak:".dimmed(),
+                format!("{:.2} Mb/s", summary.dl_peak_mbps).bright_cyan(),
             ));
-        }
-        if summary.dl_peak_mbps > 0.0 {
-            if nc {
-                lines.push(format!("  Peak:       {:.2} Mb/s", summary.dl_peak_mbps));
-            } else {
-                lines.push(format!(
-                    "  {:>14}: {}",
-                    "Peak".dimmed(),
-                    format!("{:.2} Mb/s", summary.dl_peak_mbps).bright_cyan()
-                ));
-            }
         }
     }
 
-    if summary.ul_duration > 0.0 {
-        let bar = metric_bar(summary.ul_mbps, 1000.0, 28, nc);
+    if nc {
+        lines.push(format!("  {:<14} {:.1}s", "Duration:", summary.dl_duration));
+    } else {
+        lines.push(format!(
+            "  {:<14} {}",
+            "Duration:".dimmed(),
+            format!("{:.1}s", summary.dl_duration).white(),
+        ));
+    }
+
+    if nc {
+        lines.push(format!(
+            "  {:<14} {}",
+            "Transferred:",
+            common::format_data_size(summary.dl_bytes)
+        ));
+    } else {
+        lines.push(format!(
+            "  {:<14} {}",
+            "Transferred:".dimmed(),
+            common::format_data_size(summary.dl_bytes).white(),
+        ));
+    }
+
+    lines.join("\n")
+}
+
+/// Build the upload summary section.
+fn build_upload_summary(summary: &DashboardSummary, nc: bool) -> String {
+    if summary.ul_duration <= 0.0 {
+        return String::new();
+    }
+
+    let mut lines = Vec::new();
+    lines.push(section_divider("Upload Summary", nc));
+
+    let bar = metric_bar(summary.ul_mbps, 1000.0, BAR_WIDTH, nc);
+    if nc {
+        lines.push(format!(
+            "  {:<14} {:>8.2} Mb/s  {bar}",
+            "Speed:", summary.ul_mbps
+        ));
+    } else {
+        lines.push(format!(
+            "  {:<14} {}  {}",
+            "Speed:".dimmed(),
+            format!("{:.2} Mb/s", summary.ul_mbps).yellow().bold(),
+            bar,
+        ));
+    }
+
+    if summary.ul_peak_mbps > 0.0 {
         if nc {
             lines.push(format!(
-                "  Upload:   {:>8.2} Mb/s  {}  ({:.1}s, {})",
-                summary.ul_mbps,
-                bar,
-                summary.ul_duration,
-                common::format_data_size(summary.ul_bytes)
+                "  {:<14} {:.2} Mb/s",
+                "Peak:", summary.ul_peak_mbps
             ));
         } else {
             lines.push(format!(
-                "  {:>14}: {} {}  ({:.1}s, {})",
-                "Upload".dimmed(),
-                format!("{:.2} Mb/s", summary.ul_mbps).yellow(),
-                bar,
-                summary.ul_duration,
-                common::format_data_size(summary.ul_bytes).white(),
+                "  {:<14} {}",
+                "Peak:".dimmed(),
+                format!("{:.2} Mb/s", summary.ul_peak_mbps).bright_yellow(),
             ));
         }
-        if summary.ul_peak_mbps > 0.0 {
-            if nc {
-                lines.push(format!("  Peak:       {:.2} Mb/s", summary.ul_peak_mbps));
-            } else {
-                lines.push(format!(
-                    "  {:>14}: {}",
-                    "Peak".dimmed(),
-                    format!("{:.2} Mb/s", summary.ul_peak_mbps).bright_yellow()
-                ));
-            }
-        }
+    }
+
+    if nc {
+        lines.push(format!("  {:<14} {:.1}s", "Duration:", summary.ul_duration));
+    } else {
+        lines.push(format!(
+            "  {:<14} {}",
+            "Duration:".dimmed(),
+            format!("{:.1}s", summary.ul_duration).white(),
+        ));
+    }
+
+    if nc {
+        lines.push(format!(
+            "  {:<14} {}",
+            "Transferred:",
+            common::format_data_size(summary.ul_bytes)
+        ));
+    } else {
+        lines.push(format!(
+            "  {:<14} {}",
+            "Transferred:".dimmed(),
+            common::format_data_size(summary.ul_bytes).white(),
+        ));
     }
 
     lines.join("\n")
@@ -275,18 +364,9 @@ fn build_history(nc: bool) -> String {
     }
 
     let mut lines = Vec::new();
-    if nc {
-        lines.push(String::from(
-            "  ── History (recent tests) ───────────────────────────────",
-        ));
-    } else {
-        lines.push(format!(
-            "  {}",
-            "── History (recent tests) ───────────────────────────────".dimmed()
-        ));
-    }
+    lines.push(section_divider("History", nc));
 
-    // Build sparkline from download speeds
+    // Build sparkline from download and upload speeds
     let dl_values: Vec<f64> = recent.iter().map(|(_, dl, _)| *dl).collect();
     let ul_values: Vec<f64> = recent.iter().map(|(_, _, ul)| *ul).collect();
 
@@ -303,20 +383,29 @@ fn build_history(nc: bool) -> String {
 
     // Last 3 entries as text
     for (date, dl, ul) in recent.iter().rev().take(3) {
-        let rating = if *dl >= 200.0 {
+        let indicator = if *dl >= 200.0 {
             "⚡"
         } else if *dl >= 50.0 {
-            "🟢"
+            "●"
         } else if *dl >= 25.0 {
-            "🟡"
+            "◐"
         } else {
-            "🔴"
+            "○"
         };
         if nc {
             lines.push(format!("  {date}  {dl:>7.1}↓ / {ul:>6.1}↑ Mb/s"));
         } else {
+            let indicator_colored = if *dl >= 200.0 {
+                indicator.green().to_string()
+            } else if *dl >= 50.0 {
+                indicator.bright_green().to_string()
+            } else if *dl >= 25.0 {
+                indicator.yellow().to_string()
+            } else {
+                indicator.red().to_string()
+            };
             lines.push(format!(
-                "  {date}  {rating} {}↓ / {}↑ Mb/s",
+                "  {date}  {indicator_colored} {}↓ / {}↑ Mb/s",
                 format!("{dl:.1}").green(),
                 format!("{ul:.1}").yellow(),
             ));
@@ -349,10 +438,20 @@ pub fn format_dashboard(
     eprintln!();
     eprintln!("{}", build_header(result, nc));
     eprintln!();
+    eprintln!("{}", build_overall_rating(result, nc));
+    eprintln!();
     eprintln!("{}", build_metric_bars(result, nc));
     eprintln!();
-    eprintln!("{}", build_progress_summary(summary, nc));
-    eprintln!();
+    let dl_summary = build_download_summary(summary, nc);
+    if !dl_summary.is_empty() {
+        eprintln!("{dl_summary}");
+        eprintln!();
+    }
+    let ul_summary = build_upload_summary(summary, nc);
+    if !ul_summary.is_empty() {
+        eprintln!("{ul_summary}");
+        eprintln!();
+    }
     eprintln!("{}", build_history(nc));
     eprintln!();
     eprintln!("{}", build_footer());
@@ -413,6 +512,9 @@ mod tests {
         assert!(header.contains("netspeed-cli"));
         assert!(header.contains("TestISP"));
         assert!(header.contains("192.168.1.100"));
+        // Verify box structure
+        assert!(header.starts_with("╔"));
+        assert!(header.contains("╚"));
     }
 
     #[test]
@@ -426,7 +528,14 @@ mod tests {
     }
 
     #[test]
-    fn test_build_progress_summary() {
+    fn test_build_overall_rating() {
+        let result = make_result();
+        let rating = build_overall_rating(&result, true);
+        assert!(rating.contains("Overall"));
+    }
+
+    #[test]
+    fn test_build_download_summary() {
         let summary = DashboardSummary {
             dl_mbps: 150.0,
             dl_peak_mbps: 180.0,
@@ -437,10 +546,29 @@ mod tests {
             ul_bytes: 5_000_000,
             ul_duration: 2.1,
         };
-        let result = build_progress_summary(&summary, true);
-        assert!(result.contains("Download"));
-        assert!(result.contains("Upload"));
+        let result = build_download_summary(&summary, true);
+        assert!(result.contains("Download Summary"));
+        assert!(result.contains("Speed"));
+        assert!(result.contains("Peak"));
         assert!(result.contains("150.00"));
+    }
+
+    #[test]
+    fn test_build_upload_summary() {
+        let summary = DashboardSummary {
+            dl_mbps: 150.0,
+            dl_peak_mbps: 180.0,
+            dl_bytes: 15_000_000,
+            dl_duration: 3.2,
+            ul_mbps: 50.0,
+            ul_peak_mbps: 60.0,
+            ul_bytes: 5_000_000,
+            ul_duration: 2.1,
+        };
+        let result = build_upload_summary(&summary, true);
+        assert!(result.contains("Upload Summary"));
+        assert!(result.contains("Speed"));
+        assert!(result.contains("50.00"));
     }
 
     #[test]
@@ -499,5 +627,12 @@ mod tests {
         unsafe {
             std::env::remove_var("NO_COLOR");
         }
+    }
+
+    #[test]
+    fn test_section_divider() {
+        let div = section_divider("Speed", true);
+        assert!(div.contains("Speed"));
+        assert!(div.contains("─"));
     }
 }
