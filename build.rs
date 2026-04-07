@@ -1,5 +1,6 @@
 use clap::CommandFactory;
 use clap_complete::{Shell, generate_to};
+use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -7,6 +8,11 @@ use std::path::Path;
 include!("src/cli.rs");
 
 fn main() -> std::io::Result<()> {
+    // Skip file generation on docs.rs (read-only filesystem)
+    if env::var("DOCS_RS").is_ok() {
+        return Ok(());
+    }
+
     // Create completions directory
     let out_dir = Path::new("completions");
     fs::create_dir_all(out_dir)?;

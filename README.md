@@ -2,6 +2,9 @@
 
 Command line interface for testing internet bandwidth using speedtest.net
 
+[![Crates.io](https://img.shields.io/crates/v/netspeed-cli.svg)](https://crates.io/crates/netspeed-cli)
+[![GitHub Release](https://img.shields.io/github/v/release/mapleDevJS/netspeed-cli?label=github&sort=semver)](https://github.com/mapleDevJS/netspeed-cli/releases)
+[![Homebrew](https://img.shields.io/homebrew/v/netspeed-cli)](https://formulae.brew.sh/formula/netspeed-cli)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ## Overview

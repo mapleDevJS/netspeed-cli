@@ -7,7 +7,7 @@
 //! - IP validation (`common::is_valid_ipv4`)
 //! - URL construction (`download::build_test_url`, `upload::build_upload_url`)
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use netspeed_cli::common;
 
 mod bandwidth {
@@ -26,7 +26,12 @@ mod bandwidth {
                 BenchmarkId::from_parameter(format!("{bytes}B/{elapsed}s")),
                 &(bytes, elapsed),
                 |b, &(bytes, elapsed)| {
-                    b.iter(|| common::calculate_bandwidth(black_box(bytes), black_box(elapsed)));
+                    b.iter(|| {
+                        common::calculate_bandwidth(
+                            std::hint::black_box(bytes),
+                            std::hint::black_box(elapsed),
+                        )
+                    });
                 },
             );
         }
@@ -36,7 +41,12 @@ mod bandwidth {
 
     pub fn bench_calculate_bandwidth_zero_elapsed(c: &mut Criterion) {
         c.bench_function("bandwidth/zero_elapsed", |b| {
-            b.iter(|| common::calculate_bandwidth(black_box(1_000_000u64), black_box(0.0f64)));
+            b.iter(|| {
+                common::calculate_bandwidth(
+                    std::hint::black_box(1_000_000u64),
+                    std::hint::black_box(0.0f64),
+                )
+            });
         });
     }
 }
@@ -79,10 +89,10 @@ mod distance {
                 |b, &(lat1, lon1, lat2, lon2)| {
                     b.iter(|| {
                         netspeed_cli::servers::calculate_distance(
-                            black_box(lat1),
-                            black_box(lon1),
-                            black_box(lat2),
-                            black_box(lon2),
+                            std::hint::black_box(lat1),
+                            std::hint::black_box(lon1),
+                            std::hint::black_box(lat2),
+                            std::hint::black_box(lon2),
                         )
                     });
                 },
@@ -106,7 +116,7 @@ mod formatting {
             (5570.0f64, "long"),
         ] {
             group.bench_with_input(BenchmarkId::from_parameter(label), &value, |b, &value| {
-                b.iter(|| common::format_distance(black_box(value)));
+                b.iter(|| common::format_distance(std::hint::black_box(value)));
             });
         }
 
@@ -123,7 +133,7 @@ mod formatting {
             (4 * 1024 * 1024 * 1024, "gigabytes"),
         ] {
             group.bench_with_input(BenchmarkId::from_parameter(label), &bytes, |b, &bytes| {
-                b.iter(|| common::format_data_size(black_box(bytes)));
+                b.iter(|| common::format_data_size(std::hint::black_box(bytes)));
             });
         }
 
@@ -147,7 +157,7 @@ mod validation {
             ("abc", "not_ip"),
         ] {
             group.bench_with_input(BenchmarkId::from_parameter(label), &ip, |b, &ip| {
-                b.iter(|| common::is_valid_ipv4(black_box(ip)));
+                b.iter(|| common::is_valid_ipv4(std::hint::black_box(ip)));
             });
         }
 
@@ -156,7 +166,7 @@ mod validation {
 }
 
 mod url_construction {
-    use criterion::{BenchmarkId, Criterion, black_box};
+    use super::*;
     use netspeed_cli::download::{build_test_url, extract_base_url};
     use netspeed_cli::upload::build_upload_url;
 
@@ -170,7 +180,9 @@ mod url_construction {
                 BenchmarkId::from_parameter(format!("file_{index}")),
                 &(base, index),
                 |b, &(base, index)| {
-                    b.iter(|| build_test_url(black_box(base), black_box(index)));
+                    b.iter(|| {
+                        build_test_url(std::hint::black_box(base), std::hint::black_box(index))
+                    });
                 },
             );
         }
@@ -180,14 +192,18 @@ mod url_construction {
 
     pub fn bench_build_upload_url(c: &mut Criterion) {
         c.bench_function("url/build_upload_url", |b| {
-            b.iter(|| build_upload_url(black_box("http://server.example.com/speedtest")));
+            b.iter(|| {
+                build_upload_url(std::hint::black_box("http://server.example.com/speedtest"))
+            });
         });
     }
 
     pub fn bench_extract_base_url(c: &mut Criterion) {
         c.bench_function("url/extract_base_url", |b| {
             b.iter(|| {
-                extract_base_url(black_box("http://server.example.com/speedtest/upload.php"))
+                extract_base_url(std::hint::black_box(
+                    "http://server.example.com/speedtest/upload.php",
+                ))
             });
         });
     }
