@@ -120,9 +120,18 @@ impl SpeedTestOrchestrator {
     /// Whether verbose output should be shown.
     pub fn is_verbose(&self) -> bool {
         use crate::cli::OutputFormatType;
+        // Quiet mode suppresses all stderr output
+        if self.config.quiet {
+            return false;
+        }
         let format_non_verbose = matches!(
             self.args.format,
-            Some(OutputFormatType::Simple | OutputFormatType::Json | OutputFormatType::Csv)
+            Some(
+                OutputFormatType::Simple
+                    | OutputFormatType::Json
+                    | OutputFormatType::Csv
+                    | OutputFormatType::Dashboard
+            )
         );
         !self.config.simple
             && !self.config.json
@@ -290,11 +299,23 @@ impl SpeedTestOrchestrator {
                 header: self.config.csv_header,
             },
             Some(OutputFormatType::Simple) => OutputFormat::Simple,
+            Some(OutputFormatType::Dashboard) => OutputFormat::Dashboard {
+                dl_mbps: dl_result.avg_bps / 1_000_000.0,
+                dl_peak_mbps: dl_result.peak_bps / 1_000_000.0,
+                dl_bytes: dl_result.total_bytes,
+                dl_duration: dl_result.duration_secs,
+                ul_mbps: ul_result.avg_bps / 1_000_000.0,
+                ul_peak_mbps: ul_result.peak_bps / 1_000_000.0,
+                ul_bytes: ul_result.total_bytes,
+                ul_duration: ul_result.duration_secs,
+            },
             Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
                 dl_bytes: dl_result.total_bytes,
                 ul_bytes: ul_result.total_bytes,
                 dl_duration: dl_result.duration_secs,
                 ul_duration: ul_result.duration_secs,
+                dl_skipped: self.config.no_download,
+                ul_skipped: self.config.no_upload,
             },
             None => {
                 // Legacy boolean flag fallback
@@ -313,6 +334,8 @@ impl SpeedTestOrchestrator {
                         ul_bytes: ul_result.total_bytes,
                         dl_duration: dl_result.duration_secs,
                         ul_duration: ul_result.duration_secs,
+                        dl_skipped: self.config.no_download,
+                        ul_skipped: self.config.no_upload,
                     }
                 }
             }

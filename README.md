@@ -34,6 +34,18 @@ cargo build --release
 ./target/release/netspeed-cli
 ```
 
+## System Requirements
+
+| Requirement | Details |
+|-------------|---------|
+| **OS** | macOS 12+, Linux (kernel 5.4+) |
+| **Rust** | 1.85+ (for building from source) |
+| **Terminal** | Any Unicode-capable terminal (UTF-8) |
+| **Network** | Internet access to speedtest.net servers |
+| **Architecture** | x86_64, aarch64 (Apple Silicon, ARM Linux) |
+
+> **Note:** The CLI uses Unicode box-drawing characters (`═`, `─`, `╾`) and emoji indicators (⚡, 🟢, etc.). Set `NO_COLOR=1` in your environment for a plain-text fallback compatible with screen readers and limited terminals.
+
 ## Usage
 
 ```bash
@@ -87,20 +99,52 @@ netspeed-cli --history
 | `--single` | Use single connection |
 | `--bytes` | Display values in bytes instead of bits |
 | `--simple` | Show minimal output |
+| `--format TYPE` | Output format: `json`, `csv`, `simple`, `detailed`, `dashboard` (supersedes `--json`, `--csv`, `--simple`) |
 | `--csv` | Output in CSV format |
-| `--csv-delimiter CHAR` | CSV delimiter character (default: `,`) |
+| `--csv-delimiter CHAR` | CSV delimiter character: `,`, `;`, `\|`, or tab (default: `,`) |
 | `--csv-header` | Include CSV header row |
 | `--json` | Output in JSON format |
+| `--quiet` | Suppress all progress output (for cron jobs / CI) |
 | `--list` | List available servers |
 | `--server ID` | Test against specific server (can be used multiple times) |
 | `--exclude ID` | Exclude server from selection (can be used multiple times) |
 | `--source IP` | Bind to source IP address |
-| `--timeout SEC` | HTTP timeout in seconds (default: 10) |
+| `--timeout SEC` | HTTP timeout in seconds (default: 10, range: 1–300) |
 | `--history` | Show test history |
 | `--generate-completion SHELL` | Generate shell completion script |
 | `--version` | Show version |
 
 ## Output Formats
+
+### Dashboard
+
+```
+  ╔══════════════════ netspeed-cli v0.5.0 ═══════════════════╗
+  ║  Server: Rogers (Toronto) · CA · 12km                    ║
+  ║  Client IP: 192.168.1.1                                  ║
+  ╚══════════════════════════════════════════════════════════╝
+
+  Latency    ████████████████████████████████    5.2 ms  ⚡ Excellent
+  Download   ████████████████████░░░░░░░░       450.23 Mb/s  ⚡ Excellent
+  Upload     ██████████████░░░░░░░░░░░░         120.45 Mb/s  🟢 Good
+
+  ── Summary ──────────────────────────────────────────────────
+  Download:     450.23 Mb/s  ████████████████████░░░░░░░░  (3.2s, 14.6 MB)
+  Peak:         520.10 Mb/s
+  Upload:        50.45 Mb/s  ██████████████░░░░░░░░░░░░     (2.1s, 5.0 MB)
+  Peak:          60.00 Mb/s
+
+  ── History (recent tests) ───────────────────────────────
+  DL: ▃ ▅ ▄ ▇ █ ▆ ▅
+  UL: ▂ ▄ ▃ ▅ ▇ ▅ ▄
+  Apr 5  ⚡ 445.0↓ / 118.0↑ Mb/s
+  Apr 4  🟢 412.0↓ / 115.0↑ Mb/s
+  Apr 3  ⚡ 498.0↓ / 122.0↑ Mb/s
+
+  Tip: Use --list to see servers, --history for full history
+```
+
+Run with `netspeed-cli --format dashboard`.
 
 ### Detailed (default)
 
@@ -111,10 +155,10 @@ netspeed-cli --history
   Latency:        5.2 ms  (⚡ Excellent)
   Jitter:         1.3 ms
   ──────────────────────────────
-  Download:     450.23 Mb/s  (⚡ Excellent)
+  Download:     450.23 Mb/s  ████████████████████░░░░░░░░  (⚡ Excellent)
   Peak:         520.10 Mb/s
   Latency (load): 12.4 ms  +138% (significant)
-  Upload:       120.45 Mb/s  (🟢 Good)
+  Upload:       120.45 Mb/s  ██████████████░░░░░░░░░░░░    (🟢 Good)
   Peak:         145.80 Mb/s
   Latency (load):  8.1 ms  +56% (significant)
   ──────────────────────────────
@@ -131,10 +175,16 @@ netspeed-cli --history
   Completed at: 2026-04-04T12:00:00Z
 ```
 
+> **Tip:** Use `--no-download` or `--no-upload` to skip a phase. Skipped tests show `— (skipped)` in the output:
+> ```
+>   Download:     450.23 Mb/s  (⚡ Excellent)
+>   Upload:       — (skipped)
+> ```
+
 ### Simple
 
 ```
-5.2 ms | Download: 450.23 Mb/s | Upload: 120.45 Mb/s
+Latency: 5.2 ms | Download: 450.23 Mb/s | Upload: 120.45 Mb/s
 ```
 
 ### JSON
@@ -176,12 +226,12 @@ An overall rating combining all metrics:
 
 | Rating | Score | Description |
 |--------|-------|-------------|
-| Excellent | 90+ | Fiber-grade connection |
-| Great | 75-89 | Very good performance |
-| Good | 55-74 | Solid everyday connection |
-| Fair | 40-54 | Acceptable, some limitations |
-| Moderate | 25-39 | Noticeable performance issues |
-| Poor | <25 | Significant problems |
+| Excellent | 90+ | ⚡ Fiber-grade connection |
+| Great | 75-89 | 🔵 Very good performance |
+| Good | 55-74 | 🟢 Solid everyday connection |
+| Fair | 40-54 | 🟡 Acceptable, some limitations |
+| Moderate | 25-39 | 🟠 Noticeable performance issues |
+| Poor | <25 | 🔴 Significant problems |
 
 ### Latency Under Load
 
@@ -210,6 +260,20 @@ Results are automatically saved and can be viewed with `--history`.
 cargo build --release
 cargo test
 ```
+
+## Privacy
+
+netspeed-cli stores test results locally for historical comparison. The following data is saved:
+
+- **Server information**: name, sponsor, country, distance
+- **Test metrics**: ping, jitter, download/upload speeds, timestamps
+- **Client IP address**: discovered from speedtest.net during each test
+
+**Storage location**: Platform-specific data directory (via the `directories` crate). On Unix systems, the history file is created with `0o600` permissions (owner-only access).
+
+**No data is transmitted** to any server other than speedtest.net infrastructure. No analytics, telemetry, or crash reporting is included.
+
+**To disable history**: Results are only saved after a successful test. Use `--json` or `--csv` output to suppress history saving (these modes output to stdout only).
 
 ## License
 
