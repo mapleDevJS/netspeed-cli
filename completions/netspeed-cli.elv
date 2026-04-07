@@ -35,6 +35,7 @@ set edit:completion:arg-completer[netspeed-cli] = {|@words|
             cand --json 'Output in JSON format'
             cand --list 'Display a list of speedtest.net servers sorted by distance'
             cand --history 'Display test history'
+            cand --quiet 'Suppress all progress output (JSON/CSV still go to stdout)'
             cand -h 'Print help'
             cand --help 'Print help'
             cand -V 'Print version'

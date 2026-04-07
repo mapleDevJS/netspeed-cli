@@ -53,6 +53,7 @@ async fn test_upload_mocked_success() {
 async fn test_upload_mocked_all_failures() {
     let mock_server = MockServer::start().await;
 
+    // Mix of 500 (failure) and 200 (success) — verify bytes counted only on success
     Mock::given(method("POST"))
         .and(path("/upload"))
         .respond_with(ResponseTemplate::new(500))
@@ -77,11 +78,10 @@ async fn test_upload_mocked_all_failures() {
     ));
 
     let result = upload_test(&client, &server, true, progress).await;
-    // upload_test treats HTTP 500 as success (.is_ok()), so bytes are still counted
+    // All requests return 500 (not success), so total_bytes should be 0
     assert!(result.is_ok());
     let (_avg, _peak, total_bytes, _samples) = result.unwrap();
-    // 500 responses still count as "sent" bytes since we POST before checking status
-    assert!(total_bytes > 0);
+    assert_eq!(total_bytes, 0);
 }
 
 #[tokio::test]

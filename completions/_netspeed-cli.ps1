@@ -38,6 +38,7 @@ Register-ArgumentCompleter -Native -CommandName 'netspeed-cli' -ScriptBlock {
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'Output in JSON format')
             [CompletionResult]::new('--list', '--list', [CompletionResultType]::ParameterName, 'Display a list of speedtest.net servers sorted by distance')
             [CompletionResult]::new('--history', '--history', [CompletionResultType]::ParameterName, 'Display test history')
+            [CompletionResult]::new('--quiet', '--quiet', [CompletionResultType]::ParameterName, 'Suppress all progress output (JSON/CSV still go to stdout)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('-V', '-V ', [CompletionResultType]::ParameterName, 'Print version')

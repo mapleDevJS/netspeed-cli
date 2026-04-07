@@ -25,6 +25,7 @@
 //! - [`test_runner`] — Test orchestration with template method pattern
 //! - [`types`] — Shared data structures (Server, TestResult, etc.)
 
+pub mod bandwidth_loop;
 pub mod cli;
 pub mod common;
 pub mod config;
