@@ -96,6 +96,10 @@ pub struct CliArgs {
     /// Suppress all progress output (JSON/CSV still go to stdout)
     #[arg(long)]
     pub quiet: bool,
+
+    /// Validate configuration and exit without running tests
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 fn validate_csv_delimiter(s: &str) -> Result<char, String> {
