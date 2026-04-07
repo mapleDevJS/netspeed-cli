@@ -52,6 +52,11 @@ impl SpeedTestOrchestrator {
             return Ok(());
         }
 
+        // Dry-run: validate configuration and exit
+        if self.args.dry_run {
+            return self.run_dry_run();
+        }
+
         let is_verbose = self.is_verbose();
 
         // Print header
@@ -362,6 +367,79 @@ impl SpeedTestOrchestrator {
         let bin_name = "netspeed-cli";
         generate(shell_type, &mut cmd, bin_name, &mut io::stdout());
     }
+
+    /// Validate configuration and print confirmation without running tests.
+    fn run_dry_run(&self) -> Result<(), SpeedtestError> {
+        let nc = no_color();
+
+        if nc {
+            eprintln!("Configuration valid:");
+            eprintln!("  Timeout: {}s", self.config.timeout);
+            eprintln!("  Format: {}", self.format_description());
+            if self.config.quiet {
+                eprintln!("  Quiet: enabled");
+            }
+            if let Some(ref source) = self.config.source {
+                eprintln!("  Source IP: {source}");
+            }
+            if self.config.no_download {
+                eprintln!("  Download test: disabled");
+            }
+            if self.config.no_upload {
+                eprintln!("  Upload test: disabled");
+            }
+            if self.config.single {
+                eprintln!("  Streams: single");
+            }
+            eprintln!("\nDry run complete. Run without --dry-run to perform speed test.");
+        } else {
+            eprintln!("{}", "Configuration valid:".green().bold());
+            eprintln!(
+                "  {}: {}s",
+                "Timeout".dimmed(),
+                self.config.timeout.to_string().cyan()
+            );
+            eprintln!(
+                "  {}: {}",
+                "Format".dimmed(),
+                self.format_description().white()
+            );
+            if self.config.quiet {
+                eprintln!("  {}: {}", "Quiet".dimmed(), "enabled".green());
+            }
+            if let Some(ref source) = self.config.source {
+                eprintln!("  {}: {source}", "Source IP".dimmed());
+            }
+            if self.config.no_download {
+                eprintln!("  {}: {}", "Download test".dimmed(), "disabled".yellow());
+            }
+            if self.config.no_upload {
+                eprintln!("  {}: {}", "Upload test".dimmed(), "disabled".yellow());
+            }
+            if self.config.single {
+                eprintln!("  {}: {}", "Streams".dimmed(), "single".yellow());
+            }
+            eprintln!(
+                "\n{}",
+                "Dry run complete. Run without --dry-run to perform speed test.".bright_black()
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Return a human-readable description of the output format.
+    fn format_description(&self) -> &'static str {
+        use crate::cli::OutputFormatType;
+        match self.args.format {
+            Some(OutputFormatType::Json) => "JSON",
+            Some(OutputFormatType::Csv) => "CSV",
+            Some(OutputFormatType::Simple) => "Simple",
+            Some(OutputFormatType::Detailed) => "Detailed",
+            Some(OutputFormatType::Dashboard) => "Dashboard",
+            None => "Detailed (default)",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -418,5 +496,14 @@ mod tests {
         let args = CliArgs::parse_from(["netspeed-cli"]);
         let orch = SpeedTestOrchestrator::new(args);
         assert!(orch.is_ok());
+    }
+
+    #[test]
+    fn test_dry_run_succeeds() {
+        let args = CliArgs::parse_from(["netspeed-cli", "--dry-run"]);
+        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        // run_dry_run should not panic and should return Ok
+        let result = orch.run_dry_run();
+        assert!(result.is_ok());
     }
 }
