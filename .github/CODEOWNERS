@@ -1,0 +1,16 @@
+# CODEOWNERS for netspeed-cli
+# These owners will be requested for review on PRs touching these paths.
+
+# Overall project ownership
+* @mapleDevJS
+
+# Security-critical files — require maintainer review
+SECURITY.md @mapleDevJS
+deny.toml @mapleDevJS
+.github/workflows/ @mapleDevJS
+
+# Release and distribution
+Cargo.toml @mapleDevJS
+netspeed-cli.rb @mapleDevJS
+RELEASE.md @mapleDevJS
+HOMEBREW_PUBLISHING.md @mapleDevJS
