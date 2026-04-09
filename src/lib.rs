@@ -9,32 +9,53 @@
 //! under load. It connects to speedtest.net's server infrastructure to
 //! perform real-world bandwidth tests.
 //!
-//! ## Modules
+//! ## Public API
 //!
-//! - [`cli`] — Command-line argument parsing with clap
-//! - [`common`] — Shared utilities (bandwidth calculation, formatting, validation)
-//! - [`config`] — Configuration merging (CLI args + config file)
-//! - [`download`] — Multi-stream download bandwidth measurement
-//! - [`upload`] — Multi-stream upload bandwidth measurement
-//! - [`error`] — Unified error types
-//! - [`formatter`] — Output formatting (detailed, simple, JSON, CSV)
-//! - [`history`] — Persistent test result history
-//! - [`http`] — HTTP client creation and IP discovery
-//! - [`progress`] — Terminal progress bars and spinners
-//! - [`servers`] — Server discovery, distance calculation, and selection
-//! - [`test_runner`] — Test orchestration with template method pattern
-//! - [`types`] — Shared data structures (Server, TestResult, etc.)
+//! The stable public API consists of:
+//!
+//! - [`SpeedTestOrchestrator`] — Main entry point for running speed tests
+//! - [`Server`] — Speedtest server information
+//! - [`TestResult`] — Complete test result with all metrics
+//! - [`ServerInfo`] — Server metadata included in results
+//! - [`SpeedtestError`] — Unified error type
+//! - [`CliArgs`] — CLI argument definitions (for programmatic CLI construction)
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use netspeed_cli::{CliArgs, SpeedTestOrchestrator};
+//! use clap::Parser;
+//!
+//! # async fn example() -> Result<(), netspeed_cli::SpeedtestError> {
+//! let args = CliArgs::parse_from(["netspeed-cli", "--simple"]);
+//! let orchestrator = SpeedTestOrchestrator::new(args)?;
+//! orchestrator.run().await?;
+//! # Ok(())
+//! # }
+//! ```
 
+// ─── Module Declarations ─────────────────────────────────────────────
+mod cli;
+mod error;
+mod orchestrator;
+
+// ─── Stable Public API ───────────────────────────────────────────────
+pub use cli::CliArgs;
+pub use cli::OutputFormatType;
+pub use error::SpeedtestError;
+pub use orchestrator::SpeedTestOrchestrator;
+pub use types::{Server, ServerInfo, TestResult};
+
+// ─── Internal Modules (pub for integration tests, not part of stable API) ─
+// These modules are exposed for integration testing but are not considered
+// part of the stable public API. Breaking changes may occur between versions.
 pub mod bandwidth_loop;
-pub mod cli;
 pub mod common;
 pub mod config;
 pub mod download;
-pub mod error;
 pub mod formatter;
 pub mod history;
 pub mod http;
-pub mod orchestrator;
 pub mod progress;
 pub mod servers;
 pub mod test_runner;

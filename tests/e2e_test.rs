@@ -87,12 +87,17 @@ async fn test_e2e_full_speedtest_flow() {
     let dl_result = download_test(&client, &selected, true, progress.clone())
         .await
         .expect("Download should succeed");
-    let (avg_dl, peak_dl, total_dl_bytes, dl_samples) = dl_result;
-    assert!(avg_dl > 0.0, "Download speed should be positive");
-    assert!(total_dl_bytes > 0, "Should have downloaded some bytes");
-    assert!(!dl_samples.is_empty(), "Should have speed samples");
+    assert!(dl_result.avg_bps > 0.0, "Download speed should be positive");
+    assert!(
+        dl_result.total_bytes > 0,
+        "Should have downloaded some bytes"
+    );
+    assert!(
+        !dl_result.speed_samples.is_empty(),
+        "Should have speed samples"
+    );
     // Peak may be similar to average in mock environment (instant responses)
-    let _ = peak_dl;
+    let _ = dl_result.peak_bps;
 
     // Step 5: Run upload test
     let progress = Arc::new(SpeedProgress::with_target(
@@ -102,11 +107,13 @@ async fn test_e2e_full_speedtest_flow() {
     let ul_result = upload_test(&client, &selected, true, progress.clone())
         .await
         .expect("Upload should succeed");
-    let (avg_ul, peak_ul, total_ul_bytes, ul_samples) = ul_result;
-    assert!(avg_ul > 0.0, "Upload speed should be positive");
-    assert!(total_ul_bytes > 0, "Should have uploaded some bytes");
-    assert!(!ul_samples.is_empty(), "Should have speed samples");
-    let _ = peak_ul;
+    assert!(ul_result.avg_bps > 0.0, "Upload speed should be positive");
+    assert!(ul_result.total_bytes > 0, "Should have uploaded some bytes");
+    assert!(
+        !ul_result.speed_samples.is_empty(),
+        "Should have speed samples"
+    );
+    let _ = ul_result.peak_bps;
 }
 
 #[tokio::test]
@@ -133,10 +140,10 @@ async fn test_e2e_download_only() {
     ));
     let result = download_test(&client, &server, true, progress).await;
     assert!(result.is_ok());
-    let (avg, _peak, bytes, samples) = result.unwrap();
-    assert!(avg > 0.0);
-    assert!(bytes > 0);
-    assert!(!samples.is_empty());
+    let bw_result = result.unwrap();
+    assert!(bw_result.avg_bps > 0.0);
+    assert!(bw_result.total_bytes > 0);
+    assert!(!bw_result.speed_samples.is_empty());
 }
 
 #[tokio::test]
@@ -163,10 +170,10 @@ async fn test_e2e_upload_only() {
     ));
     let result = upload_test(&client, &server, true, progress).await;
     assert!(result.is_ok());
-    let (avg, _peak, bytes, samples) = result.unwrap();
-    assert!(avg > 0.0);
-    assert!(bytes > 0);
-    assert!(!samples.is_empty());
+    let bw_result = result.unwrap();
+    assert!(bw_result.avg_bps > 0.0);
+    assert!(bw_result.total_bytes > 0);
+    assert!(!bw_result.speed_samples.is_empty());
 }
 
 #[test]

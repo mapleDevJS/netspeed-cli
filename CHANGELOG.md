@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Architecture**: `download.rs` refactored to use shared `BandwidthLoopState` instead of inline throttle logic (~60 lines of duplicated measurement state eliminated)
+- **API stability**: `lib.rs` now documents a stable public API facade (`CliArgs`, `OutputFormatType`, `SpeedtestError`, `SpeedTestOrchestrator`, `Server`, `ServerInfo`, `TestResult`). Internal modules remain `pub` for integration tests but are marked as non-stable
+- **API consistency**: Both `download_test()` and `upload_test()` now return `BandwidthResult` instead of tuple types `(f64, f64, u64, Vec<f64>)`
 - **Dependencies**: Updated 6 dependencies to latest versions
   - `indicatif`: 0.17.11 → 0.18.4
   - `clap_mangen`: 0.2.33 → 0.3.0
@@ -22,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - docs.rs build failure: `build.rs` now skips file generation on docs.rs (read-only filesystem)
 - Added `[package.metadata.docs.rs]` configuration to `Cargo.toml`
 - Benchmark compatibility with criterion 0.8 (`std::hint::black_box`)
+- `main.rs` imports updated to use stable public API re-exports instead of internal module paths
 
 ### Pending
 

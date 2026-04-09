@@ -1,8 +1,6 @@
 use clap::Parser;
-use netspeed_cli::cli::CliArgs;
-use netspeed_cli::error::SpeedtestError;
-use netspeed_cli::orchestrator::SpeedTestOrchestrator;
 use netspeed_cli::progress::no_color;
+use netspeed_cli::{CliArgs, SpeedTestOrchestrator, SpeedtestError};
 use owo_colors::OwoColorize;
 
 #[tokio::main]

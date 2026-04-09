@@ -261,7 +261,15 @@ impl SpeedTestOrchestrator {
             "Download",
             is_verbose,
             |progress| async {
-                download::download_test(&self.client, server, self.config.single, progress).await
+                let result =
+                    download::download_test(&self.client, server, self.config.single, progress)
+                        .await?;
+                Ok((
+                    result.avg_bps,
+                    result.peak_bps,
+                    result.total_bytes,
+                    result.speed_samples,
+                ))
             },
         )
         .await
@@ -282,7 +290,14 @@ impl SpeedTestOrchestrator {
             "Upload",
             is_verbose,
             |progress| async {
-                upload::upload_test(&self.client, server, self.config.single, progress).await
+                let result =
+                    upload::upload_test(&self.client, server, self.config.single, progress).await?;
+                Ok((
+                    result.avg_bps,
+                    result.peak_bps,
+                    result.total_bytes,
+                    result.speed_samples,
+                ))
             },
         )
         .await

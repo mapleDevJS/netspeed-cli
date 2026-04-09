@@ -7,7 +7,7 @@
 //! - Real-time progress tracking with speed calculation
 //! - Peak speed detection through periodic sampling
 
-use crate::bandwidth_loop::BandwidthLoopState;
+use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult};
 use crate::common;
 use crate::error::SpeedtestError;
 use crate::progress::{SpeedProgress, no_color};
@@ -38,7 +38,7 @@ const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
 
 /// Run upload bandwidth test against the given server.
 ///
-/// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_uploaded, speed_samples)`.
+/// Returns [`BandwidthResult`] with average/peak speed, total bytes, and samples.
 ///
 /// # Errors
 ///
@@ -48,7 +48,7 @@ pub async fn upload_test(
     server: &Server,
     single: bool,
     progress: Arc<SpeedProgress>,
-) -> Result<(f64, f64, u64, Vec<f64>), SpeedtestError> {
+) -> Result<BandwidthResult, SpeedtestError> {
     let concurrent_uploads = common::determine_stream_count(single);
     let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
     let upload_data = generate_upload_data(200_000); // 200KB chunks
@@ -96,12 +96,7 @@ pub async fn upload_test(
     }
 
     let final_result = state.finish();
-    Ok((
-        final_result.avg_bps,
-        final_result.peak_bps,
-        final_result.total_bytes,
-        final_result.speed_samples,
-    ))
+    Ok(final_result)
 }
 
 #[cfg(test)]

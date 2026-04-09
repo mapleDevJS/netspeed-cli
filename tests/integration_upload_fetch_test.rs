@@ -42,11 +42,11 @@ async fn test_upload_mocked_success() {
 
     let result = upload_test(&client, &server, true, progress).await;
     assert!(result.is_ok());
-    let (avg, peak, total_bytes, samples) = result.unwrap();
-    assert!(avg > 0.0);
-    assert!(peak >= 0.0);
-    assert!(total_bytes > 0);
-    assert!(!samples.is_empty());
+    let bw_result = result.unwrap();
+    assert!(bw_result.avg_bps > 0.0);
+    assert!(bw_result.peak_bps >= 0.0);
+    assert!(bw_result.total_bytes > 0);
+    assert!(!bw_result.speed_samples.is_empty());
 }
 
 #[tokio::test]
@@ -80,8 +80,8 @@ async fn test_upload_mocked_all_failures() {
     let result = upload_test(&client, &server, true, progress).await;
     // All requests return 500 (not success), so total_bytes should be 0
     assert!(result.is_ok());
-    let (_avg, _peak, total_bytes, _samples) = result.unwrap();
-    assert_eq!(total_bytes, 0);
+    let bw_result = result.unwrap();
+    assert_eq!(bw_result.total_bytes, 0);
 }
 
 #[tokio::test]
