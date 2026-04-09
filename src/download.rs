@@ -16,8 +16,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult};
-use crate::common;
+use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult, determine_stream_count};
 use crate::error::SpeedtestError;
 use crate::progress::SpeedProgress;
 use crate::types::Server;
@@ -62,7 +61,7 @@ pub async fn download_test(
     single: bool,
     progress: Arc<SpeedProgress>,
 ) -> Result<BandwidthResult, SpeedtestError> {
-    let concurrent_streams = common::determine_stream_count(single);
+    let concurrent_streams = determine_stream_count(single);
     let state = Arc::new(BandwidthLoopState::new(ESTIMATED_DOWNLOAD_BYTES, progress));
 
     // Spawn streams that report progress
@@ -100,30 +99,30 @@ pub async fn download_test(
 
 #[cfg(test)]
 mod tests {
-    use crate::common;
+    use crate::bandwidth_loop::calculate_bandwidth;
 
     use super::*;
 
     #[test]
     fn test_download_bandwidth_calculation() {
-        let result = common::calculate_bandwidth(10_000_000, 2.0);
+        let result = calculate_bandwidth(10_000_000, 2.0);
         assert_eq!(result, 40_000_000.0);
     }
 
     #[test]
     fn test_download_bandwidth_zero_elapsed() {
-        let result = common::calculate_bandwidth(10_000_000, 0.0);
+        let result = calculate_bandwidth(10_000_000, 0.0);
         assert_eq!(result, 0.0);
     }
 
     #[test]
     fn test_download_concurrent_streams_single() {
-        assert_eq!(common::determine_stream_count(true), 1);
+        assert_eq!(determine_stream_count(true), 1);
     }
 
     #[test]
     fn test_download_concurrent_streams_multiple() {
-        assert_eq!(common::determine_stream_count(false), 4);
+        assert_eq!(determine_stream_count(false), 4);
     }
 
     #[test]

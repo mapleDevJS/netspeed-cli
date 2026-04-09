@@ -12,7 +12,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::common;
+use crate::formatter::formatting::format_data_size;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::sync::Arc;
@@ -74,7 +74,7 @@ impl SpeedProgress {
             format!("{:.2} Gb/s", speed_mbps / 1000.0)
         };
 
-        let data_str = common::format_data_size(bytes);
+        let data_str = format_data_size(bytes);
 
         let msg = if no_color() {
             format!("{data_str} @ {speed_str}")
@@ -95,7 +95,7 @@ impl SpeedProgress {
             format!("{:.2} Gb/s", final_speed_mbps / 1000.0)
         };
 
-        let data_str = common::format_data_size(total_bytes);
+        let data_str = format_data_size(total_bytes);
 
         self.bar.set_position(100);
         let msg = if no_color() {

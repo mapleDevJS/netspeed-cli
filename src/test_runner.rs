@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 
 /// Result from a bandwidth test (download or upload).
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct TestRunResult {
     /// Average speed in bits per second
     pub avg_bps: f64,

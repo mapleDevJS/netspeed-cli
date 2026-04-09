@@ -1,6 +1,7 @@
 //! Output formatting for speed test results.
 //!
 //! This module is organized into submodules:
+//! - [`formatting`] — Formatting primitives (distance, data size, bar charts)
 //! - [`ratings`] — Rating helper functions (ping, speed, connection, bufferbloat)
 //! - [`sections`] — Output section formatters (latency, download, upload, etc.)
 //! - [`stability`] — Speed stability analysis and latency percentiles
@@ -8,6 +9,7 @@
 
 use crate::error::SpeedtestError;
 use crate::progress::no_color;
+use crate::test_runner::TestRunResult;
 use crate::types::{CsvOutput, TestResult};
 use owo_colors::OwoColorize;
 
@@ -21,22 +23,12 @@ pub enum OutputFormat {
     },
     Simple,
     Detailed {
-        dl_bytes: u64,
-        ul_bytes: u64,
-        dl_duration: f64,
-        ul_duration: f64,
-        dl_skipped: bool,
-        ul_skipped: bool,
+        dl: TestRunResult,
+        ul: TestRunResult,
     },
     Dashboard {
-        dl_mbps: f64,
-        dl_peak_mbps: f64,
-        dl_bytes: u64,
-        dl_duration: f64,
-        ul_mbps: f64,
-        ul_peak_mbps: f64,
-        ul_bytes: u64,
-        ul_duration: f64,
+        dl: TestRunResult,
+        ul: TestRunResult,
     },
 }
 
@@ -51,50 +43,23 @@ impl OutputFormat {
             OutputFormat::Json => format_json(result),
             OutputFormat::Csv { delimiter, header } => format_csv(result, *delimiter, *header),
             OutputFormat::Simple => format_simple(result, bytes),
-            OutputFormat::Detailed {
-                dl_bytes,
-                ul_bytes,
-                dl_duration,
-                ul_duration,
-                dl_skipped,
-                ul_skipped,
-            } => {
+            OutputFormat::Detailed { dl, ul } => {
                 format_detailed(
                     result,
                     bytes,
-                    *dl_bytes,
-                    *ul_bytes,
-                    *dl_duration,
-                    *ul_duration,
-                    *dl_skipped,
-                    *ul_skipped,
+                    dl.total_bytes,
+                    ul.total_bytes,
+                    dl.duration_secs,
+                    ul.duration_secs,
+                    dl.avg_bps == 0.0 && dl.total_bytes == 0,
+                    ul.avg_bps == 0.0 && ul.total_bytes == 0,
                 )?;
                 format_verbose_sections(result);
                 Ok(())
             }
-            OutputFormat::Dashboard {
-                dl_mbps,
-                dl_peak_mbps,
-                dl_bytes,
-                dl_duration,
-                ul_mbps,
-                ul_peak_mbps,
-                ul_bytes,
-                ul_duration,
-            } => {
-                dashboard::format_dashboard(
-                    result,
-                    &dashboard::DashboardSummary {
-                        dl_mbps: *dl_mbps,
-                        dl_peak_mbps: *dl_peak_mbps,
-                        dl_bytes: *dl_bytes,
-                        dl_duration: *dl_duration,
-                        ul_mbps: *ul_mbps,
-                        ul_peak_mbps: *ul_peak_mbps,
-                        ul_bytes: *ul_bytes,
-                        ul_duration: *ul_duration,
-                    },
-                )?;
+            OutputFormat::Dashboard { dl, ul } => {
+                let history_data = crate::history::get_recent_sparkline();
+                dashboard::format_dashboard(result, dl, ul, history_data)?;
                 Ok(())
             }
         }
@@ -103,6 +68,7 @@ impl OutputFormat {
 
 pub mod dashboard;
 pub mod estimates;
+pub mod formatting;
 pub mod ratings;
 pub mod sections;
 pub mod stability;
@@ -374,17 +340,26 @@ mod tests {
 
     #[test]
     fn test_format_data_kb() {
-        assert_eq!(crate::common::format_data_size(5120), "5.0 KB");
+        assert_eq!(
+            crate::formatter::formatting::format_data_size(5120),
+            "5.0 KB"
+        );
     }
 
     #[test]
     fn test_format_data_mb() {
-        assert_eq!(crate::common::format_data_size(5_242_880), "5.0 MB");
+        assert_eq!(
+            crate::formatter::formatting::format_data_size(5_242_880),
+            "5.0 MB"
+        );
     }
 
     #[test]
     fn test_format_data_gb() {
-        assert_eq!(crate::common::format_data_size(1_073_741_824), "1.00 GB");
+        assert_eq!(
+            crate::formatter::formatting::format_data_size(1_073_741_824),
+            "1.00 GB"
+        );
     }
 
     #[test]

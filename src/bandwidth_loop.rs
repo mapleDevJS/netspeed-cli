@@ -10,7 +10,6 @@
 //! Each I/O operation (download chunk, upload round) calls `record_bytes()`
 //! to update shared state. Call `finish()` at the end to compute final results.
 
-use crate::common;
 use crate::progress::SpeedProgress;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -19,6 +18,22 @@ use std::time::Instant;
 
 /// Throttle interval for speed sampling (20 Hz max).
 const SAMPLE_INTERVAL_MS: u64 = 50;
+
+/// Calculate bandwidth in bits per second from bytes transferred and elapsed time.
+#[must_use]
+pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
+    if elapsed_secs > 0.0 {
+        (total_bytes as f64 * 8.0) / elapsed_secs
+    } else {
+        0.0
+    }
+}
+
+/// Determine number of concurrent streams based on single connection flag.
+#[must_use]
+pub fn determine_stream_count(single: bool) -> usize {
+    if single { 1 } else { 4 }
+}
 
 /// Shared state for a bandwidth test (download or upload).
 ///
@@ -79,7 +94,7 @@ impl BandwidthLoopState {
     fn sample_now(&self) {
         let total = self.total_bytes.load(Ordering::Acquire);
         let elapsed = self.start.elapsed().as_secs_f64();
-        let speed = common::calculate_bandwidth(total, elapsed);
+        let speed = calculate_bandwidth(total, elapsed);
 
         let current_peak = self.peak_bps.load(Ordering::Relaxed);
         if speed > current_peak as f64 {
@@ -101,7 +116,7 @@ impl BandwidthLoopState {
         let peak = self.peak_bps.load(Ordering::Relaxed) as f64;
         let duration = self.start.elapsed().as_secs_f64();
         let samples = self.speed_samples.lock().unwrap().to_vec();
-        let avg = common::calculate_bandwidth(total, duration);
+        let avg = calculate_bandwidth(total, duration);
 
         BandwidthResult {
             avg_bps: avg,

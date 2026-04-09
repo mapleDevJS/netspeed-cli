@@ -4,17 +4,16 @@
 //! unit testing of the test flow independent of the binary entry point.
 
 use crate::cli::{CliArgs, ShellType};
-use crate::common;
 use crate::config::Config;
 use crate::error::SpeedtestError;
+use crate::formatter::formatting::format_distance;
 use crate::formatter::{OutputFormat, format_list};
 use crate::history;
 use crate::http;
 use crate::progress::{create_spinner, finish_ok, no_color};
 use crate::servers::{fetch_servers, ping_test, select_best_server};
 use crate::test_runner::{self, TestRunResult};
-use crate::types::Server;
-use crate::types::{self, TestResult};
+use crate::types::{BandwidthMetrics, Server, ServerInfo, TestResult};
 use crate::{download, upload};
 
 use owo_colors::OwoColorize;
@@ -94,20 +93,16 @@ impl SpeedTestOrchestrator {
         let ul_result = self.run_upload_test(&server, is_verbose).await?;
 
         // Build result
+        let dl_metrics = BandwidthMetrics::from(&dl_result);
+        let ul_metrics = BandwidthMetrics::from(&ul_result);
         let result = TestResult::from_test_runs(
-            types::ServerInfo {
-                id: server.id.clone(),
-                name: server.name.clone(),
-                sponsor: server.sponsor.clone(),
-                country: server.country.clone(),
-                distance: server.distance,
-            },
+            ServerInfo::from(&server),
             ping,
             jitter,
             packet_loss,
             ping_samples,
-            &dl_result,
-            &ul_result,
+            &dl_metrics,
+            &ul_metrics,
             client_ip,
         );
 
@@ -157,7 +152,7 @@ impl SpeedTestOrchestrator {
     }
 
     fn print_server_info(server: &Server) {
-        let dist = common::format_distance(server.distance);
+        let dist = format_distance(server.distance);
         eprintln!();
         if no_color() {
             eprintln!("  Server:   {} ({})", server.sponsor, server.name);
@@ -320,22 +315,12 @@ impl SpeedTestOrchestrator {
             },
             Some(OutputFormatType::Simple) => OutputFormat::Simple,
             Some(OutputFormatType::Dashboard) => OutputFormat::Dashboard {
-                dl_mbps: dl_result.avg_bps / 1_000_000.0,
-                dl_peak_mbps: dl_result.peak_bps / 1_000_000.0,
-                dl_bytes: dl_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_mbps: ul_result.avg_bps / 1_000_000.0,
-                ul_peak_mbps: ul_result.peak_bps / 1_000_000.0,
-                ul_bytes: ul_result.total_bytes,
-                ul_duration: ul_result.duration_secs,
+                dl: dl_result.clone(),
+                ul: ul_result.clone(),
             },
             Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
-                dl_bytes: dl_result.total_bytes,
-                ul_bytes: ul_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_duration: ul_result.duration_secs,
-                dl_skipped: self.config.no_download,
-                ul_skipped: self.config.no_upload,
+                dl: dl_result.clone(),
+                ul: ul_result.clone(),
             },
             None => {
                 // Legacy boolean flag fallback
@@ -350,12 +335,8 @@ impl SpeedTestOrchestrator {
                     OutputFormat::Simple
                 } else {
                     OutputFormat::Detailed {
-                        dl_bytes: dl_result.total_bytes,
-                        ul_bytes: ul_result.total_bytes,
-                        dl_duration: dl_result.duration_secs,
-                        ul_duration: ul_result.duration_secs,
-                        dl_skipped: self.config.no_download,
-                        ul_skipped: self.config.no_upload,
+                        dl: dl_result.clone(),
+                        ul: ul_result.clone(),
                     }
                 }
             }

@@ -1,6 +1,6 @@
 //! Output section formatters for detailed test results.
 
-use crate::common;
+use crate::formatter::formatting::{bar_chart, format_data_size, format_distance};
 use crate::progress::no_color;
 use crate::types::{Server, TestResult};
 use owo_colors::OwoColorize;
@@ -29,7 +29,7 @@ fn build_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) -> St
         format_speed_colored(speed_bps, bytes)
     };
     let rating = colorize_rating(speed_rating_mbps(speed_bps / 1_000_000.0), nc);
-    let bar = crate::common::bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
+    let bar = bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
     let bar_display = if nc {
         bar
     } else {
@@ -248,7 +248,7 @@ pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool, skipped
 }
 
 pub fn build_connection_info(result: &TestResult, nc: bool) -> String {
-    let dist = common::format_distance(result.server.distance);
+    let dist = format_distance(result.server.distance);
     let mut lines = Vec::new();
 
     if nc {
@@ -318,7 +318,7 @@ pub fn build_test_summary(
         lines.push(format!(
             "  {:>14}:   {} in {}",
             "Download",
-            common::format_data_size(dl_bytes),
+            format_data_size(dl_bytes),
             format_duration(dl_duration)
         ));
     }
@@ -326,7 +326,7 @@ pub fn build_test_summary(
         lines.push(format!(
             "  {:>14}:   {} in {}",
             "Upload",
-            common::format_data_size(ul_bytes),
+            format_data_size(ul_bytes),
             format_duration(ul_duration)
         ));
     }
@@ -336,7 +336,7 @@ pub fn build_test_summary(
         lines.push(format!(
             "  {:>14}:   {} in {}",
             "Total",
-            common::format_data_size(total),
+            format_data_size(total),
             format_duration(total_dur)
         ));
     }
@@ -432,7 +432,7 @@ pub fn build_list(servers: &[Server]) -> String {
     }
 
     for server in servers {
-        let dist = common::format_distance(server.distance);
+        let dist = format_distance(server.distance);
         if nc {
             lines.push(format!(
                 "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",

@@ -7,8 +7,7 @@
 //! - Real-time progress tracking with speed calculation
 //! - Peak speed detection through periodic sampling
 
-use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult};
-use crate::common;
+use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult, determine_stream_count};
 use crate::error::SpeedtestError;
 use crate::progress::{SpeedProgress, no_color};
 use crate::types::Server;
@@ -49,7 +48,7 @@ pub async fn upload_test(
     single: bool,
     progress: Arc<SpeedProgress>,
 ) -> Result<BandwidthResult, SpeedtestError> {
-    let concurrent_uploads = common::determine_stream_count(single);
+    let concurrent_uploads = determine_stream_count(single);
     let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
     let upload_data = generate_upload_data(200_000); // 200KB chunks
 
@@ -101,30 +100,30 @@ pub async fn upload_test(
 
 #[cfg(test)]
 mod tests {
-    use crate::common;
+    use crate::bandwidth_loop::calculate_bandwidth;
 
     use super::*;
 
     #[test]
     fn test_upload_bandwidth_calculation() {
-        let result = common::calculate_bandwidth(1_000_000, 2.0);
+        let result = calculate_bandwidth(1_000_000, 2.0);
         assert_eq!(result, 4_000_000.0);
     }
 
     #[test]
     fn test_upload_bandwidth_zero_elapsed() {
-        let result = common::calculate_bandwidth(1_000_000, 0.0);
+        let result = calculate_bandwidth(1_000_000, 0.0);
         assert_eq!(result, 0.0);
     }
 
     #[test]
     fn test_upload_concurrent_count_single() {
-        assert_eq!(common::determine_stream_count(true), 1);
+        assert_eq!(determine_stream_count(true), 1);
     }
 
     #[test]
     fn test_upload_concurrent_count_multiple() {
-        assert_eq!(common::determine_stream_count(false), 4);
+        assert_eq!(determine_stream_count(false), 4);
     }
 
     #[test]

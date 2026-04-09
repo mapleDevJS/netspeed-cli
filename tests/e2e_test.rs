@@ -3,7 +3,7 @@
 //! Tests the complete pipeline: server selection, ping test, and
 //! bandwidth measurement against a mock server.
 
-use netspeed_cli::common;
+use netspeed_cli::bandwidth_loop::calculate_bandwidth;
 use netspeed_cli::download::{build_test_url, download_test, extract_base_url};
 use netspeed_cli::progress::SpeedProgress;
 use netspeed_cli::servers::{ping_test, select_best_server};
@@ -191,6 +191,6 @@ fn test_bandwidth_calculation_e2e() {
     // Verify that bandwidth calculation is consistent
     let bytes = 1_000_000u64;
     let secs = 1.0f64;
-    let bps = common::calculate_bandwidth(bytes, secs);
+    let bps = calculate_bandwidth(bytes, secs);
     assert_eq!(bps, 8_000_000.0); // 1MB in 1s = 8Mbps
 }

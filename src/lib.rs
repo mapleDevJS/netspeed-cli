@@ -44,11 +44,16 @@ pub use cli::CliArgs;
 pub use cli::OutputFormatType;
 pub use error::SpeedtestError;
 pub use orchestrator::SpeedTestOrchestrator;
-pub use types::{Server, ServerInfo, TestResult};
+pub use types::{BandwidthMetrics, Server, ServerInfo, TestResult};
 
 // ─── Internal Modules (pub for integration tests, not part of stable API) ─
 // These modules are exposed for integration testing but are not considered
 // part of the stable public API. Breaking changes may occur between versions.
+//
+// Module cohesion notes:
+// - `bandwidth_loop`: bandwidth math + concurrent measurement state
+// - `common`: input validation only (is_valid_ipv4)
+// - `formatter/formatting`: formatting primitives (distance, data size, bar charts)
 pub mod bandwidth_loop;
 pub mod common;
 pub mod config;

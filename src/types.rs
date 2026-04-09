@@ -40,7 +40,10 @@ pub struct TestResult {
 }
 
 impl TestResult {
-    /// Build a `TestResult` from ping test output and download/upload test runs.
+    /// Build a `TestResult` from ping test output and download/upload metrics.
+    ///
+    /// Takes `BandwidthMetrics` tuples instead of internal `TestRunResult` to
+    /// decouple the public API from unstable implementation details.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn from_test_runs(
@@ -49,8 +52,8 @@ impl TestResult {
         jitter: Option<f64>,
         packet_loss: Option<f64>,
         ping_samples: Vec<f64>,
-        dl: &crate::test_runner::TestRunResult,
-        ul: &crate::test_runner::TestRunResult,
+        dl: &BandwidthMetrics,
+        ul: &BandwidthMetrics,
         client_ip: Option<String>,
     ) -> Self {
         fn opt_samples(v: &[f64]) -> Option<Vec<f64>> {
@@ -80,6 +83,30 @@ impl TestResult {
     }
 }
 
+/// Bandwidth test metrics — decouples `TestResult` from internal `test_runner`.
+#[derive(Debug, Clone)]
+pub struct BandwidthMetrics {
+    pub avg_bps: f64,
+    pub peak_bps: f64,
+    pub total_bytes: u64,
+    pub duration_secs: f64,
+    pub speed_samples: Vec<f64>,
+    pub latency_under_load: Option<f64>,
+}
+
+impl From<&crate::test_runner::TestRunResult> for BandwidthMetrics {
+    fn from(r: &crate::test_runner::TestRunResult) -> Self {
+        Self {
+            avg_bps: r.avg_bps,
+            peak_bps: r.peak_bps,
+            total_bytes: r.total_bytes,
+            duration_secs: r.duration_secs,
+            speed_samples: r.speed_samples.clone(),
+            latency_under_load: r.latency_under_load,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ServerInfo {
     pub id: String,
@@ -87,6 +114,18 @@ pub struct ServerInfo {
     pub sponsor: String,
     pub country: String,
     pub distance: f64,
+}
+
+impl From<&Server> for ServerInfo {
+    fn from(server: &Server) -> Self {
+        Self {
+            id: server.id.clone(),
+            name: server.name.clone(),
+            sponsor: server.sponsor.clone(),
+            country: server.country.clone(),
+            distance: server.distance,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

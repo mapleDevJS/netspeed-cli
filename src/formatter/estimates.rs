@@ -6,7 +6,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::common;
+use crate::formatter::formatting::format_data_size;
 use owo_colors::OwoColorize;
 
 // ── Target benchmarks ────────────────────────────────────────────────
@@ -161,11 +161,7 @@ pub fn build_estimates(download_bps: Option<f64>, nc: bool) -> String {
         let time_str = format_time_estimate(secs, nc);
         let label = format!(
             "{:<24} ~{time_str}",
-            format!(
-                "{} ({})",
-                file.name,
-                common::format_data_size(file.size_bytes)
-            )
+            format!("{} ({})", file.name, format_data_size(file.size_bytes))
         );
         if nc {
             lines.push(format!("  {label}"));

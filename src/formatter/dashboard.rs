@@ -4,19 +4,24 @@
 //! terminal display. It uses only existing dependencies (`owo_colors`, `common`,
 //! `history`, `ratings`) — no new crates.
 
-use crate::common;
+use crate::formatter::formatting::{bar_chart, format_data_size, format_distance};
 use crate::formatter::ratings;
 use crate::history;
 use crate::progress::no_color;
+use crate::test_runner::TestRunResult;
 use crate::types::TestResult;
 use owo_colors::OwoColorize;
+
+/// Pre-loaded history data for dashboard sparkline rendering.
+/// Each entry: (date_string, download_mbps, upload_mbps).
+pub type HistoryData = Vec<(String, f64, f64)>;
 
 const BOX_WIDTH: usize = 60;
 const BAR_WIDTH: usize = 28;
 
 /// Render a horizontal bar scaled to the metric's typical range.
 fn metric_bar(value: f64, max: f64, width: usize, nc: bool) -> String {
-    let bar = common::bar_chart(value, max, width);
+    let bar = bar_chart(value, max, width);
     if nc {
         bar
     } else {
@@ -29,18 +34,6 @@ fn metric_bar(value: f64, max: f64, width: usize, nc: bool) -> String {
             bar.red().to_string()
         }
     }
-}
-
-/// Summary data extracted from test runs for dashboard display.
-pub struct DashboardSummary {
-    pub dl_mbps: f64,
-    pub dl_peak_mbps: f64,
-    pub dl_bytes: u64,
-    pub dl_duration: f64,
-    pub ul_mbps: f64,
-    pub ul_peak_mbps: f64,
-    pub ul_bytes: u64,
-    pub ul_duration: f64,
 }
 
 /// Build a section separator line.
@@ -69,7 +62,7 @@ fn build_header(result: &TestResult, nc: bool) -> String {
         result.server.sponsor,
         result.server.name,
         result.server.country,
-        common::format_distance(result.server.distance)
+        format_distance(result.server.distance)
     );
 
     let ip_line = result
@@ -218,51 +211,48 @@ fn build_metric_bars(result: &TestResult, nc: bool) -> String {
 }
 
 /// Build the download summary section.
-fn build_download_summary(summary: &DashboardSummary, nc: bool) -> String {
-    if summary.dl_duration <= 0.0 {
+fn build_download_summary(dl: &TestRunResult, nc: bool) -> String {
+    if dl.duration_secs <= 0.0 {
         return String::new();
     }
+
+    let dl_mbps = dl.avg_bps / 1_000_000.0;
+    let dl_peak_mbps = dl.peak_bps / 1_000_000.0;
 
     let mut lines = Vec::new();
     lines.push(section_divider("Download Summary", nc));
 
-    let bar = metric_bar(summary.dl_mbps, 1000.0, BAR_WIDTH, nc);
+    let bar = metric_bar(dl_mbps, 1000.0, BAR_WIDTH, nc);
     if nc {
-        lines.push(format!(
-            "  {:<14} {:>8.2} Mb/s  {bar}",
-            "Speed:", summary.dl_mbps
-        ));
+        lines.push(format!("  {:<14} {:>8.2} Mb/s  {bar}", "Speed:", dl_mbps));
     } else {
         lines.push(format!(
             "  {:<14} {}  {}",
             "Speed:".dimmed(),
-            format!("{:.2} Mb/s", summary.dl_mbps).cyan().bold(),
+            format!("{dl_mbps:.2} Mb/s").cyan().bold(),
             bar,
         ));
     }
 
-    if summary.dl_peak_mbps > 0.0 {
+    if dl_peak_mbps > 0.0 {
         if nc {
-            lines.push(format!(
-                "  {:<14} {:.2} Mb/s",
-                "Peak:", summary.dl_peak_mbps
-            ));
+            lines.push(format!("  {:<14} {dl_peak_mbps:.2} Mb/s", "Peak:"));
         } else {
             lines.push(format!(
                 "  {:<14} {}",
                 "Peak:".dimmed(),
-                format!("{:.2} Mb/s", summary.dl_peak_mbps).bright_cyan(),
+                format!("{dl_peak_mbps:.2} Mb/s").bright_cyan(),
             ));
         }
     }
 
     if nc {
-        lines.push(format!("  {:<14} {:.1}s", "Duration:", summary.dl_duration));
+        lines.push(format!("  {:<14} {:.1}s", "Duration:", dl.duration_secs));
     } else {
         lines.push(format!(
             "  {:<14} {}",
             "Duration:".dimmed(),
-            format!("{:.1}s", summary.dl_duration).white(),
+            format!("{:.1}s", dl.duration_secs).white(),
         ));
     }
 
@@ -270,13 +260,13 @@ fn build_download_summary(summary: &DashboardSummary, nc: bool) -> String {
         lines.push(format!(
             "  {:<14} {}",
             "Transferred:",
-            common::format_data_size(summary.dl_bytes)
+            format_data_size(dl.total_bytes)
         ));
     } else {
         lines.push(format!(
             "  {:<14} {}",
             "Transferred:".dimmed(),
-            common::format_data_size(summary.dl_bytes).white(),
+            format_data_size(dl.total_bytes).white(),
         ));
     }
 
@@ -284,51 +274,48 @@ fn build_download_summary(summary: &DashboardSummary, nc: bool) -> String {
 }
 
 /// Build the upload summary section.
-fn build_upload_summary(summary: &DashboardSummary, nc: bool) -> String {
-    if summary.ul_duration <= 0.0 {
+fn build_upload_summary(ul: &TestRunResult, nc: bool) -> String {
+    if ul.duration_secs <= 0.0 {
         return String::new();
     }
+
+    let ul_mbps = ul.avg_bps / 1_000_000.0;
+    let ul_peak_mbps = ul.peak_bps / 1_000_000.0;
 
     let mut lines = Vec::new();
     lines.push(section_divider("Upload Summary", nc));
 
-    let bar = metric_bar(summary.ul_mbps, 1000.0, BAR_WIDTH, nc);
+    let bar = metric_bar(ul_mbps, 1000.0, BAR_WIDTH, nc);
     if nc {
-        lines.push(format!(
-            "  {:<14} {:>8.2} Mb/s  {bar}",
-            "Speed:", summary.ul_mbps
-        ));
+        lines.push(format!("  {:<14} {:>8.2} Mb/s  {bar}", "Speed:", ul_mbps));
     } else {
         lines.push(format!(
             "  {:<14} {}  {}",
             "Speed:".dimmed(),
-            format!("{:.2} Mb/s", summary.ul_mbps).yellow().bold(),
+            format!("{ul_mbps:.2} Mb/s").yellow().bold(),
             bar,
         ));
     }
 
-    if summary.ul_peak_mbps > 0.0 {
+    if ul_peak_mbps > 0.0 {
         if nc {
-            lines.push(format!(
-                "  {:<14} {:.2} Mb/s",
-                "Peak:", summary.ul_peak_mbps
-            ));
+            lines.push(format!("  {:<14} {ul_peak_mbps:.2} Mb/s", "Peak:"));
         } else {
             lines.push(format!(
                 "  {:<14} {}",
                 "Peak:".dimmed(),
-                format!("{:.2} Mb/s", summary.ul_peak_mbps).bright_yellow(),
+                format!("{ul_peak_mbps:.2} Mb/s").bright_yellow(),
             ));
         }
     }
 
     if nc {
-        lines.push(format!("  {:<14} {:.1}s", "Duration:", summary.ul_duration));
+        lines.push(format!("  {:<14} {:.1}s", "Duration:", ul.duration_secs));
     } else {
         lines.push(format!(
             "  {:<14} {}",
             "Duration:".dimmed(),
-            format!("{:.1}s", summary.ul_duration).white(),
+            format!("{:.1}s", ul.duration_secs).white(),
         ));
     }
 
@@ -336,13 +323,13 @@ fn build_upload_summary(summary: &DashboardSummary, nc: bool) -> String {
         lines.push(format!(
             "  {:<14} {}",
             "Transferred:",
-            common::format_data_size(summary.ul_bytes)
+            format_data_size(ul.total_bytes)
         ));
     } else {
         lines.push(format!(
             "  {:<14} {}",
             "Transferred:".dimmed(),
-            common::format_data_size(summary.ul_bytes).white(),
+            format_data_size(ul.total_bytes).white(),
         ));
     }
 
@@ -350,8 +337,7 @@ fn build_upload_summary(summary: &DashboardSummary, nc: bool) -> String {
 }
 
 /// Build history section with sparkline.
-fn build_history(nc: bool) -> String {
-    let recent = history::get_recent_sparkline();
+fn build_history(recent: &HistoryData, nc: bool) -> String {
     if recent.is_empty() {
         if nc {
             return String::from("  History:  No history available");
@@ -425,13 +411,17 @@ fn build_footer() -> String {
 
 /// Format the full dashboard output.
 ///
+/// `history_data` is pre-loaded by the caller so this function has no I/O side effects.
+///
 /// # Errors
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
 pub fn format_dashboard(
     result: &TestResult,
-    summary: &DashboardSummary,
+    dl: &TestRunResult,
+    ul: &TestRunResult,
+    history_data: HistoryData,
 ) -> Result<(), crate::error::SpeedtestError> {
     let nc = no_color();
 
@@ -442,17 +432,17 @@ pub fn format_dashboard(
     eprintln!();
     eprintln!("{}", build_metric_bars(result, nc));
     eprintln!();
-    let dl_summary = build_download_summary(summary, nc);
+    let dl_summary = build_download_summary(dl, nc);
     if !dl_summary.is_empty() {
         eprintln!("{dl_summary}");
         eprintln!();
     }
-    let ul_summary = build_upload_summary(summary, nc);
+    let ul_summary = build_upload_summary(ul, nc);
     if !ul_summary.is_empty() {
         eprintln!("{ul_summary}");
         eprintln!();
     }
-    eprintln!("{}", build_history(nc));
+    eprintln!("{}", build_history(&history_data, nc));
     eprintln!();
     eprintln!("{}", build_footer());
     eprintln!();
@@ -536,17 +526,15 @@ mod tests {
 
     #[test]
     fn test_build_download_summary() {
-        let summary = DashboardSummary {
-            dl_mbps: 150.0,
-            dl_peak_mbps: 180.0,
-            dl_bytes: 15_000_000,
-            dl_duration: 3.2,
-            ul_mbps: 50.0,
-            ul_peak_mbps: 60.0,
-            ul_bytes: 5_000_000,
-            ul_duration: 2.1,
+        let dl = TestRunResult {
+            avg_bps: 150_000_000.0,
+            peak_bps: 180_000_000.0,
+            total_bytes: 15_000_000,
+            duration_secs: 3.2,
+            speed_samples: vec![150_000_000.0],
+            latency_under_load: None,
         };
-        let result = build_download_summary(&summary, true);
+        let result = build_download_summary(&dl, true);
         assert!(result.contains("Download Summary"));
         assert!(result.contains("Speed"));
         assert!(result.contains("Peak"));
@@ -555,17 +543,15 @@ mod tests {
 
     #[test]
     fn test_build_upload_summary() {
-        let summary = DashboardSummary {
-            dl_mbps: 150.0,
-            dl_peak_mbps: 180.0,
-            dl_bytes: 15_000_000,
-            dl_duration: 3.2,
-            ul_mbps: 50.0,
-            ul_peak_mbps: 60.0,
-            ul_bytes: 5_000_000,
-            ul_duration: 2.1,
+        let ul = TestRunResult {
+            avg_bps: 50_000_000.0,
+            peak_bps: 60_000_000.0,
+            total_bytes: 5_000_000,
+            duration_secs: 2.1,
+            speed_samples: vec![50_000_000.0],
+            latency_under_load: None,
         };
-        let result = build_upload_summary(&summary, true);
+        let result = build_upload_summary(&ul, true);
         assert!(result.contains("Upload Summary"));
         assert!(result.contains("Speed"));
         assert!(result.contains("50.00"));
@@ -573,10 +559,11 @@ mod tests {
 
     #[test]
     fn test_build_history_no_data() {
-        // History section renders regardless of actual data
-        let section = build_history(true);
-        // Should always contain the sparkline header
+        // History section renders even with empty data
+        let section = build_history(&Vec::new(), true);
+        // Should always contain the no-data message
         assert!(section.contains("History"));
+        assert!(section.contains("No history available"));
     }
 
     #[test]
@@ -586,42 +573,48 @@ mod tests {
         assert!(footer.contains("--history"));
     }
 
+    fn make_dl_result() -> TestRunResult {
+        TestRunResult {
+            avg_bps: 150_000_000.0,
+            peak_bps: 180_000_000.0,
+            total_bytes: 15_000_000,
+            duration_secs: 3.2,
+            speed_samples: vec![150_000_000.0],
+            latency_under_load: None,
+        }
+    }
+
+    fn make_ul_result() -> TestRunResult {
+        TestRunResult {
+            avg_bps: 50_000_000.0,
+            peak_bps: 60_000_000.0,
+            total_bytes: 5_000_000,
+            duration_secs: 2.1,
+            speed_samples: vec![50_000_000.0],
+            latency_under_load: None,
+        }
+    }
+
     #[test]
     fn test_format_dashboard_integration() {
         let result = make_result();
-        let summary = DashboardSummary {
-            dl_mbps: 150.0,
-            dl_peak_mbps: 180.0,
-            dl_bytes: 15_000_000,
-            dl_duration: 3.2,
-            ul_mbps: 50.0,
-            ul_peak_mbps: 60.0,
-            ul_bytes: 5_000_000,
-            ul_duration: 2.1,
-        };
+        let dl = make_dl_result();
+        let ul = make_ul_result();
         // Should not panic
-        format_dashboard(&result, &summary).unwrap();
+        format_dashboard(&result, &dl, &ul, Vec::new()).unwrap();
     }
 
     #[test]
     fn test_format_dashboard_no_color() {
         let result = make_result();
-        let summary = DashboardSummary {
-            dl_mbps: 150.0,
-            dl_peak_mbps: 180.0,
-            dl_bytes: 15_000_000,
-            dl_duration: 3.2,
-            ul_mbps: 50.0,
-            ul_peak_mbps: 60.0,
-            ul_bytes: 5_000_000,
-            ul_duration: 2.1,
-        };
+        let dl = make_dl_result();
+        let ul = make_ul_result();
         // SAFETY: test context, no concurrent env access
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("NO_COLOR", "1");
         }
-        format_dashboard(&result, &summary).unwrap();
+        format_dashboard(&result, &dl, &ul, Vec::new()).unwrap();
         // SAFETY: test context, no concurrent env access
         #[allow(unsafe_code)]
         unsafe {
