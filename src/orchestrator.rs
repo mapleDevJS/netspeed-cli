@@ -10,12 +10,11 @@ use crate::formatter::{OutputFormat, format_list};
 use crate::history;
 use crate::http;
 use crate::presentation;
-use crate::progress::{create_spinner, finish_ok, no_color};
+use crate::progress::{create_spinner, finish_ok};
 use crate::servers::{fetch_servers, ping_test, select_best_server};
 use crate::test_runner::{self, TestRunResult, create_latency_monitor};
 use crate::types::{Server, ServerInfo, TestResult};
 use crate::{download, upload};
-use owo_colors::OwoColorize;
 
 /// Orchestrates the full speed test lifecycle.
 pub struct SpeedTestOrchestrator {
@@ -202,14 +201,7 @@ impl SpeedTestOrchestrator {
         };
         let ping_result = ping_test(&self.client, server).await?;
         if let Some(ref pb) = ping_spinner {
-            let msg = if no_color() {
-                format!("Latency: {:.2} ms", ping_result.0)
-            } else {
-                format!(
-                    "Latency: {}",
-                    format!("{:.2} ms", ping_result.0).cyan().bold()
-                )
-            };
+            let msg = presentation::format_ping_result(ping_result.0);
             finish_ok(pb, &msg);
         }
         Ok((
