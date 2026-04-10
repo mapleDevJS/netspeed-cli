@@ -11,8 +11,8 @@ use crate::formatter::{OutputFormat, format_list};
 use crate::history;
 use crate::http;
 use crate::progress::{create_spinner, finish_ok, no_color};
-use crate::servers::{create_latency_monitor, fetch_servers, ping_test, select_best_server};
-use crate::test_runner::{self, TestRunResult};
+use crate::servers::{fetch_servers, ping_test, select_best_server};
+use crate::test_runner::{self, TestRunResult, create_latency_monitor};
 use crate::types::{BandwidthMetrics, Server, ServerInfo, TestResult};
 use crate::{download, upload};
 
@@ -323,6 +323,7 @@ impl SpeedTestOrchestrator {
             Some(OutputFormatType::Dashboard) => OutputFormat::Dashboard {
                 dl: dl_result.clone(),
                 ul: ul_result.clone(),
+                history_data: history::get_recent_sparkline(),
             },
             Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
                 dl: dl_result.clone(),

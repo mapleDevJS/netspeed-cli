@@ -54,14 +54,21 @@ pub use types::{BandwidthMetrics, Server, ServerInfo, TestResult};
 // - `bandwidth_loop`: bandwidth math + concurrent measurement state
 // - `common`: input validation only (is_valid_ipv4)
 // - `formatter/formatting`: formatting primitives (distance, data size, bar charts)
+// - `geo`: Haversine distance formula (pure math)
+// - `server_fetch`: HTTP/XML server discovery
+// - `ping`: latency/jitter/packet-loss measurement
+// - `servers`: backward-compat re-exports from geo, server_fetch, ping
 pub mod bandwidth_loop;
 pub mod common;
 pub mod config;
 pub mod download;
 pub mod formatter;
+pub mod geo;
 pub mod history;
 pub mod http;
+pub mod ping;
 pub mod progress;
+pub mod server_fetch;
 pub mod servers;
 pub mod test_runner;
 pub mod types;

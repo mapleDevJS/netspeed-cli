@@ -4,9 +4,8 @@
 //! terminal display. It uses only existing dependencies (`owo_colors`, `common`,
 //! `history`, `ratings`) — no new crates.
 
-use crate::formatter::formatting::{bar_chart, format_data_size, format_distance};
+use crate::formatter::formatting::{bar_chart, format_data_size, format_distance, sparkline};
 use crate::formatter::ratings;
-use crate::history;
 use crate::progress::no_color;
 use crate::test_runner::TestRunResult;
 use crate::types::TestResult;
@@ -356,8 +355,8 @@ fn build_history(recent: &HistoryData, nc: bool) -> String {
     let dl_values: Vec<f64> = recent.iter().map(|(_, dl, _)| *dl).collect();
     let ul_values: Vec<f64> = recent.iter().map(|(_, _, ul)| *ul).collect();
 
-    let dl_spark = history::sparkline(&dl_values);
-    let ul_spark = history::sparkline(&ul_values);
+    let dl_spark = sparkline(&dl_values);
+    let ul_spark = sparkline(&ul_values);
 
     if nc {
         lines.push(format!("  DL sparkline:  {dl_spark}"));
@@ -421,7 +420,7 @@ pub fn format_dashboard(
     result: &TestResult,
     dl: &TestRunResult,
     ul: &TestRunResult,
-    history_data: HistoryData,
+    history_data: &HistoryData,
 ) -> Result<(), crate::error::SpeedtestError> {
     let nc = no_color();
 
@@ -442,7 +441,7 @@ pub fn format_dashboard(
         eprintln!("{ul_summary}");
         eprintln!();
     }
-    eprintln!("{}", build_history(&history_data, nc));
+    eprintln!("{}", build_history(history_data, nc));
     eprintln!();
     eprintln!("{}", build_footer());
     eprintln!();
@@ -601,7 +600,7 @@ mod tests {
         let dl = make_dl_result();
         let ul = make_ul_result();
         // Should not panic
-        format_dashboard(&result, &dl, &ul, Vec::new()).unwrap();
+        format_dashboard(&result, &dl, &ul, &Vec::new()).unwrap();
     }
 
     #[test]
@@ -614,7 +613,7 @@ mod tests {
         unsafe {
             std::env::set_var("NO_COLOR", "1");
         }
-        format_dashboard(&result, &dl, &ul, Vec::new()).unwrap();
+        format_dashboard(&result, &dl, &ul, &Vec::new()).unwrap();
         // SAFETY: test context, no concurrent env access
         #[allow(unsafe_code)]
         unsafe {

@@ -29,6 +29,7 @@ pub enum OutputFormat {
     Dashboard {
         dl: TestRunResult,
         ul: TestRunResult,
+        history_data: dashboard::HistoryData,
     },
 }
 
@@ -57,8 +58,11 @@ impl OutputFormat {
                 format_verbose_sections(result);
                 Ok(())
             }
-            OutputFormat::Dashboard { dl, ul } => {
-                let history_data = crate::history::get_recent_sparkline();
+            OutputFormat::Dashboard {
+                dl,
+                ul,
+                history_data,
+            } => {
                 dashboard::format_dashboard(result, dl, ul, history_data)?;
                 Ok(())
             }

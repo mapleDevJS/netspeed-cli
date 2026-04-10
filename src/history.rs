@@ -239,37 +239,6 @@ pub fn format_comparison(download_mbps: f64, upload_mbps: f64, nc: bool) -> Opti
     Some(display)
 }
 
-/// Render a sparkline from a slice of numeric values using Unicode block chars.
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::history::sparkline;
-/// let line = sparkline(&[10.0, 20.0, 30.0]);
-/// assert_eq!(line.chars().count(), 3); // one char per value
-/// ```
-#[must_use]
-pub fn sparkline(values: &[f64]) -> String {
-    const CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-    if values.is_empty() {
-        return String::new();
-    }
-    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-    let range = max - min;
-    if range <= 0.0 {
-        // All same value — show middle bar
-        return CHARS[3].to_string().repeat(values.len());
-    }
-    values
-        .iter()
-        .map(|v| {
-            let idx = (((v - min) / range) * 7.0).round() as usize;
-            CHARS[idx.min(7)]
-        })
-        .collect::<String>()
-}
-
 /// Get recent download/upload speeds as paired tuples for sparkline display.
 /// Returns up to the last 7 entries as `(date_label, dl_mbps, ul_mbps)`.
 #[must_use]
@@ -508,36 +477,5 @@ mod tests {
         assert_eq!(history.len(), 100);
         // Should have dropped the first 5
         assert_eq!(history[0].timestamp, "2026-01-05T00:00:00Z");
-    }
-
-    #[test]
-    fn test_sparkline_increasing() {
-        let line = sparkline(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]);
-        assert_eq!(line.chars().count(), 8);
-        // Should produce ascending bars
-        assert_eq!(line, "▁▂▃▄▅▆▇█");
-    }
-
-    #[test]
-    fn test_sparkline_decreasing() {
-        let line = sparkline(&[80.0, 60.0, 40.0, 20.0]);
-        assert_eq!(line.chars().count(), 4);
-    }
-
-    #[test]
-    fn test_sparkline_empty() {
-        assert_eq!(sparkline(&[]), "");
-    }
-
-    #[test]
-    fn test_sparkline_single_value() {
-        let line = sparkline(&[42.0]);
-        assert_eq!(line, "▄"); // single value → middle bar
-    }
-
-    #[test]
-    fn test_sparkline_identical_values() {
-        let line = sparkline(&[50.0, 50.0, 50.0]);
-        assert_eq!(line, "▄▄▄"); // all same → middle bar
     }
 }

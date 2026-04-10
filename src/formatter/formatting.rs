@@ -64,6 +64,36 @@ pub fn bar_chart(value: f64, max: f64, width: usize) -> String {
     format!("{}{}", "█".repeat(filled), "░".repeat(empty))
 }
 
+/// Render a sparkline from a slice of numeric values using Unicode block chars.
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::formatter::formatting::sparkline;
+/// let line = sparkline(&[10.0, 20.0, 30.0]);
+/// assert_eq!(line.chars().count(), 3); // one char per value
+/// ```
+#[must_use]
+pub fn sparkline(values: &[f64]) -> String {
+    const CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if values.is_empty() {
+        return String::new();
+    }
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let range = max - min;
+    if range <= 0.0 {
+        return CHARS[3].to_string().repeat(values.len());
+    }
+    values
+        .iter()
+        .map(|v| {
+            let idx = (((v - min) / range) * 7.0).round() as usize;
+            CHARS[idx.min(7)]
+        })
+        .collect::<String>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +166,23 @@ mod tests {
     fn test_bar_chart_over_max() {
         let bar = bar_chart(150.0, 100.0, 10);
         assert_eq!(bar, "██████████"); // clamped to 100%
+    }
+
+    #[test]
+    fn test_sparkline_increasing() {
+        let line = sparkline(&[10.0, 20.0, 30.0]);
+        assert_eq!(line.chars().count(), 3);
+    }
+
+    #[test]
+    fn test_sparkline_empty() {
+        assert_eq!(sparkline(&[]), "");
+    }
+
+    #[test]
+    fn test_sparkline_identical_values() {
+        let line = sparkline(&[5.0, 5.0, 5.0]);
+        assert_eq!(line.chars().count(), 3);
+        assert!(line.chars().all(|c| c == '▄'));
     }
 }
