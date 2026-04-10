@@ -301,10 +301,68 @@ pub fn format_verbose_sections(result: &TestResult) {
     // Historical comparison
     let dl_mbps = result.download.map(|d| d / 1_000_000.0).unwrap_or(0.0);
     let ul_mbps = result.upload.map(|u| u / 1_000_000.0).unwrap_or(0.0);
-    if let Some(comparison) = crate::history::format_comparison(dl_mbps, ul_mbps, nc) {
+    if let Some(comparison) = format_history_comparison(dl_mbps, ul_mbps, nc) {
         eprintln!();
         eprintln!("  {comparison}");
     }
+}
+
+/// Format historical comparison as a string for display.
+/// Returns None if insufficient history data.
+fn format_history_comparison(download_mbps: f64, upload_mbps: f64, nc: bool) -> Option<String> {
+    let history = crate::history::load_history().ok()?;
+    let recent: Vec<_> = history.iter().rev().take(20).collect();
+    let dl_entries: Vec<f64> = recent
+        .iter()
+        .filter_map(|e| e.download.map(|d| d / 1_000_000.0))
+        .collect();
+    let ul_entries: Vec<f64> = recent
+        .iter()
+        .filter_map(|e| e.upload.map(|u| u / 1_000_000.0))
+        .collect();
+
+    if dl_entries.is_empty() || ul_entries.is_empty() {
+        return None;
+    }
+
+    let avg_dl = dl_entries.iter().sum::<f64>() / dl_entries.len() as f64;
+    let avg_ul = ul_entries.iter().sum::<f64>() / ul_entries.len() as f64;
+
+    let current_score = download_mbps + upload_mbps;
+    let avg_score = avg_dl + avg_ul;
+
+    if avg_score <= 0.0 {
+        return None;
+    }
+
+    let pct_change = ((current_score / avg_score) - 1.0) * 100.0;
+
+    let display = if pct_change.abs() < 3.0 {
+        if nc {
+            "~ On par with your average".to_string()
+        } else {
+            "~ On par with your average".bright_black().to_string()
+        }
+    } else if pct_change > 0.0 {
+        if nc {
+            format!("↑ {pct_change:.0}% faster than your average")
+        } else {
+            format!("↑ {pct_change:.0}% faster than your average")
+                .green()
+                .to_string()
+        }
+    } else {
+        let abs_pct = pct_change.abs();
+        if nc {
+            format!("↓ {abs_pct:.0}% slower than your average")
+        } else {
+            format!("↓ {abs_pct:.0}% slower than your average")
+                .red()
+                .to_string()
+        }
+    };
+
+    Some(display)
 }
 
 #[cfg(test)]
