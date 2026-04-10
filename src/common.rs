@@ -1,8 +1,17 @@
 //! Leaf-level utilities — no internal dependencies.
 //!
 //! Contains validation and unit-conversion functions used across the crate.
-//! Note: `is_valid_ipv4` is duplicated in `validate.rs` (included by `cli.rs`
-//! and `build.rs`) because the build script cannot depend on crate modules.
+//!
+//! ## Known Duplication: `is_valid_ipv4`
+//!
+//! The `is_valid_ipv4` function exists identically in both `common.rs` and
+//! `validate.rs`. This is structurally required because:
+//! - `validate.rs` is `include!()`-ed by `build.rs` (via `cli.rs`) for
+//!   completion/man page generation. Build scripts cannot depend on crate
+//!   modules, so `validate.rs` must be fully self-contained.
+//! - `common.rs::is_valid_ipv4` is used by `http.rs` at runtime.
+//! Both copies must remain in sync. If validation logic changes (e.g., IPv6),
+//! update both files.
 
 /// Validate an IPv4 address string.
 ///
