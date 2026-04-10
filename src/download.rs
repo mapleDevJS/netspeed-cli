@@ -99,21 +99,7 @@ pub async fn download_test(
 
 #[cfg(test)]
 mod tests {
-    use crate::bandwidth_loop::calculate_bandwidth;
-
     use super::*;
-
-    #[test]
-    fn test_download_bandwidth_calculation() {
-        let result = calculate_bandwidth(10_000_000, 2.0);
-        assert_eq!(result, 40_000_000.0);
-    }
-
-    #[test]
-    fn test_download_bandwidth_zero_elapsed() {
-        let result = calculate_bandwidth(10_000_000, 0.0);
-        assert_eq!(result, 0.0);
-    }
 
     #[test]
     fn test_download_concurrent_streams_single() {

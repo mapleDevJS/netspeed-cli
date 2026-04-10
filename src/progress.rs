@@ -12,7 +12,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::formatter::formatting::format_data_size;
+use crate::common::format_data_size;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::sync::Arc;

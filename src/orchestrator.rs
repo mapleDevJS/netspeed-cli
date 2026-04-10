@@ -47,7 +47,7 @@ impl SpeedTestOrchestrator {
 
         // History display early-exit
         if self.args.history {
-            history::print_history()?;
+            self.print_history()?;
             return Ok(());
         }
 
@@ -167,6 +167,62 @@ impl SpeedTestOrchestrator {
             eprintln!("  {} {} ({dist})", "Location:".dimmed(), server.country);
         }
         eprintln!();
+    }
+
+    /// Print formatted test history to stdout.
+    fn print_history(&self) -> Result<(), SpeedtestError> {
+        let entries = history::load_history()?;
+
+        if entries.is_empty() {
+            eprintln!("No test history found.");
+            return Ok(());
+        }
+
+        let nc = no_color();
+        if nc {
+            eprintln!("\n  TEST HISTORY");
+        } else {
+            eprintln!("\n  {}", "TEST HISTORY".bold().underline());
+        }
+        eprintln!(
+            "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
+            "Date", "Sponsor", "Ping", "Download", "Upload"
+        );
+
+        for entry in entries.iter().rev() {
+            let date = &entry.timestamp[0..10];
+            let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
+            let dl = entry
+                .download
+                .map_or("-".to_string(), |d| format!("{:.2} Mb/s", d / 1_000_000.0));
+            let ul = entry
+                .upload
+                .map_or("-".to_string(), |u| format!("{:.2} Mb/s", u / 1_000_000.0));
+
+            let sponsor_display = if entry.sponsor.len() > 15 {
+                &entry.sponsor[0..12]
+            } else {
+                &entry.sponsor
+            };
+
+            if nc {
+                eprintln!(
+                    "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
+                    date, sponsor_display, ping, dl, ul
+                );
+            } else {
+                eprintln!(
+                    "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
+                    date,
+                    sponsor_display,
+                    ping.cyan(),
+                    dl.green(),
+                    ul.yellow()
+                );
+            }
+        }
+
+        Ok(())
     }
 
     async fn fetch_and_filter_servers(

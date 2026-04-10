@@ -2,6 +2,10 @@
 //!
 //! Pure text functions — callers apply color via `owo_colors`.
 
+// Re-export from common to avoid layer inversion (progress.rs → formatting).
+// See `common::format_data_size` for docs and examples.
+pub use crate::common::format_data_size;
+
 /// Format distance consistently: 1 decimal for < 100 km, 0 decimals for >= 100 km.
 ///
 /// # Examples
@@ -17,27 +21,6 @@ pub fn format_distance(km: f64) -> String {
         format!("{km:.1} km")
     } else {
         format!("{km:.0} km")
-    }
-}
-
-/// Format byte count into a human-readable string (KB, MB, GB).
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::formatter::formatting::format_data_size;
-/// assert!(format_data_size(512).contains("KB"));
-/// assert!(format_data_size(1_048_576).contains("MB"));
-/// assert!(format_data_size(1_073_741_824).contains("GB"));
-/// ```
-#[must_use]
-pub fn format_data_size(bytes: u64) -> String {
-    if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 
@@ -108,26 +91,6 @@ mod tests {
     fn test_format_distance_100_plus() {
         assert_eq!(format_distance(100.0), "100 km");
         assert_eq!(format_distance(150.5), "150 km");
-    }
-
-    #[test]
-    fn test_format_data_size_bytes() {
-        assert!(format_data_size(512).contains("KB"));
-    }
-
-    #[test]
-    fn test_format_data_size_kilobytes() {
-        assert!(format_data_size(500 * 1024).contains("KB"));
-    }
-
-    #[test]
-    fn test_format_data_size_megabytes() {
-        assert!(format_data_size(10 * 1024 * 1024).contains("MB"));
-    }
-
-    #[test]
-    fn test_format_data_size_gigabytes() {
-        assert!(format_data_size(4 * 1024 * 1024 * 1024).contains("GB"));
     }
 
     #[test]

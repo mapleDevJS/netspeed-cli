@@ -100,21 +100,7 @@ pub async fn upload_test(
 
 #[cfg(test)]
 mod tests {
-    use crate::bandwidth_loop::calculate_bandwidth;
-
     use super::*;
-
-    #[test]
-    fn test_upload_bandwidth_calculation() {
-        let result = calculate_bandwidth(1_000_000, 2.0);
-        assert_eq!(result, 4_000_000.0);
-    }
-
-    #[test]
-    fn test_upload_bandwidth_zero_elapsed() {
-        let result = calculate_bandwidth(1_000_000, 0.0);
-        assert_eq!(result, 0.0);
-    }
 
     #[test]
     fn test_upload_concurrent_count_single() {

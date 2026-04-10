@@ -122,57 +122,6 @@ pub fn load_history() -> Result<Vec<HistoryEntry>, SpeedtestError> {
     load_history_from_path(&path)
 }
 
-/// Print formatted test history to stdout.
-///
-/// # Errors
-///
-/// Returns [`SpeedtestError::IoError`] if reading the history file fails.
-/// Returns [`SpeedtestError::ParseJson`] if the history file contains invalid JSON.
-pub fn print_history() -> Result<(), SpeedtestError> {
-    let history = load_history()?;
-
-    if history.is_empty() {
-        println!("No test history found.");
-        return Ok(());
-    }
-
-    println!("\n  {}", "TEST HISTORY".bold().underline());
-    println!(
-        "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-        "Date".dimmed(),
-        "Sponsor".dimmed(),
-        "Ping".dimmed(),
-        "Download".dimmed(),
-        "Upload".dimmed()
-    );
-
-    for entry in history.iter().rev() {
-        let date = &entry.timestamp[0..10]; // Simple YYYY-MM-DD
-        let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
-        let dl = entry
-            .download
-            .map_or("-".to_string(), |d| format!("{:.2} Mb/s", d / 1_000_000.0));
-        let ul = entry
-            .upload
-            .map_or("-".to_string(), |u| format!("{:.2} Mb/s", u / 1_000_000.0));
-
-        println!(
-            "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-            date,
-            if entry.sponsor.len() > 15 {
-                &entry.sponsor[0..12]
-            } else {
-                &entry.sponsor
-            },
-            ping.cyan(),
-            dl.green(),
-            ul.yellow()
-        );
-    }
-
-    Ok(())
-}
-
 /// Compute average download and upload speeds from history (last 20 entries).
 /// Returns (avg_dl_mbps, avg_ul_mbps) or None if insufficient data.
 pub fn get_averages() -> Option<(f64, f64)> {
