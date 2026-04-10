@@ -52,7 +52,16 @@ impl SpeedTestOrchestrator {
 
         // Dry-run: validate configuration and exit
         if self.args.dry_run {
-            return self.run_dry_run();
+            let dry_run_config = presentation::DryRunConfig {
+                timeout: self.config.timeout,
+                format_description: presentation::dry_run_description(self.args.format.as_ref()),
+                quiet: self.config.quiet,
+                source_ip: self.config.source.clone(),
+                no_download: self.config.no_download,
+                no_upload: self.config.no_upload,
+                single_stream: self.config.single,
+            };
+            return presentation::print_dry_run(&dry_run_config);
         }
 
         let is_verbose = self.is_verbose();
@@ -340,79 +349,6 @@ impl SpeedTestOrchestrator {
         let bin_name = "netspeed-cli";
         generate(shell_type, &mut cmd, bin_name, &mut io::stdout());
     }
-
-    /// Validate configuration and print confirmation without running tests.
-    fn run_dry_run(&self) -> Result<(), SpeedtestError> {
-        let nc = no_color();
-
-        if nc {
-            eprintln!("Configuration valid:");
-            eprintln!("  Timeout: {}s", self.config.timeout);
-            eprintln!("  Format: {}", self.format_description());
-            if self.config.quiet {
-                eprintln!("  Quiet: enabled");
-            }
-            if let Some(ref source) = self.config.source {
-                eprintln!("  Source IP: {source}");
-            }
-            if self.config.no_download {
-                eprintln!("  Download test: disabled");
-            }
-            if self.config.no_upload {
-                eprintln!("  Upload test: disabled");
-            }
-            if self.config.single {
-                eprintln!("  Streams: single");
-            }
-            eprintln!("\nDry run complete. Run without --dry-run to perform speed test.");
-        } else {
-            eprintln!("{}", "Configuration valid:".green().bold());
-            eprintln!(
-                "  {}: {}s",
-                "Timeout".dimmed(),
-                self.config.timeout.to_string().cyan()
-            );
-            eprintln!(
-                "  {}: {}",
-                "Format".dimmed(),
-                self.format_description().white()
-            );
-            if self.config.quiet {
-                eprintln!("  {}: {}", "Quiet".dimmed(), "enabled".green());
-            }
-            if let Some(ref source) = self.config.source {
-                eprintln!("  {}: {source}", "Source IP".dimmed());
-            }
-            if self.config.no_download {
-                eprintln!("  {}: {}", "Download test".dimmed(), "disabled".yellow());
-            }
-            if self.config.no_upload {
-                eprintln!("  {}: {}", "Upload test".dimmed(), "disabled".yellow());
-            }
-            if self.config.single {
-                eprintln!("  {}: {}", "Streams".dimmed(), "single".yellow());
-            }
-            eprintln!(
-                "\n{}",
-                "Dry run complete. Run without --dry-run to perform speed test.".bright_black()
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Return a human-readable description of the output format.
-    fn format_description(&self) -> &'static str {
-        use crate::cli::OutputFormatType;
-        match self.args.format {
-            Some(OutputFormatType::Json) => "JSON",
-            Some(OutputFormatType::Csv) => "CSV",
-            Some(OutputFormatType::Simple) => "Simple",
-            Some(OutputFormatType::Detailed) => "Detailed",
-            Some(OutputFormatType::Dashboard) => "Dashboard",
-            None => "Detailed (default)",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -475,8 +411,16 @@ mod tests {
     fn test_dry_run_succeeds() {
         let args = CliArgs::parse_from(["netspeed-cli", "--dry-run"]);
         let orch = SpeedTestOrchestrator::new(args).unwrap();
-        // run_dry_run should not panic and should return Ok
-        let result = orch.run_dry_run();
+        // Dry run uses presentation::print_dry_run internally; verify it returns Ok
+        let result = presentation::print_dry_run(&presentation::DryRunConfig {
+            timeout: orch.config.timeout,
+            format_description: presentation::dry_run_description(orch.args.format.as_ref()),
+            quiet: orch.config.quiet,
+            source_ip: orch.config.source.clone(),
+            no_download: orch.config.no_download,
+            no_upload: orch.config.no_upload,
+            single_stream: orch.config.single,
+        });
         assert!(result.is_ok());
     }
 }

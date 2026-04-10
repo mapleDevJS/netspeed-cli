@@ -10,6 +10,89 @@ use crate::progress::no_color;
 use crate::types::Server;
 use owo_colors::OwoColorize;
 
+/// Dry-run configuration data, extracted from the orchestrator.
+pub struct DryRunConfig {
+    pub timeout: u64,
+    pub format_description: &'static str,
+    pub quiet: bool,
+    pub source_ip: Option<String>,
+    pub no_download: bool,
+    pub no_upload: bool,
+    pub single_stream: bool,
+}
+
+/// Return a human-readable description of the output format.
+pub fn dry_run_description(format: Option<&crate::cli::OutputFormatType>) -> &'static str {
+    match format {
+        Some(crate::cli::OutputFormatType::Json) => "JSON",
+        Some(crate::cli::OutputFormatType::Csv) => "CSV",
+        Some(crate::cli::OutputFormatType::Simple) => "Simple",
+        Some(crate::cli::OutputFormatType::Detailed) => "Detailed",
+        Some(crate::cli::OutputFormatType::Dashboard) => "Dashboard",
+        None => "Detailed (default)",
+    }
+}
+
+/// Print dry-run configuration confirmation to stdout.
+pub fn print_dry_run(config: &DryRunConfig) -> Result<(), SpeedtestError> {
+    let nc = no_color();
+
+    if nc {
+        eprintln!("Configuration valid:");
+        eprintln!("  Timeout: {}s", config.timeout);
+        eprintln!("  Format: {}", config.format_description);
+        if config.quiet {
+            eprintln!("  Quiet: enabled");
+        }
+        if let Some(ref source) = config.source_ip {
+            eprintln!("  Source IP: {source}");
+        }
+        if config.no_download {
+            eprintln!("  Download test: disabled");
+        }
+        if config.no_upload {
+            eprintln!("  Upload test: disabled");
+        }
+        if config.single_stream {
+            eprintln!("  Streams: single");
+        }
+        eprintln!("\nDry run complete. Run without --dry-run to perform speed test.");
+    } else {
+        eprintln!("{}", "Configuration valid:".green().bold());
+        eprintln!(
+            "  {}: {}s",
+            "Timeout".dimmed(),
+            config.timeout.to_string().cyan()
+        );
+        eprintln!(
+            "  {}: {}",
+            "Format".dimmed(),
+            config.format_description.white()
+        );
+        if config.quiet {
+            eprintln!("  {}: {}", "Quiet".dimmed(), "enabled".green());
+        }
+        if let Some(ref source) = config.source_ip {
+            eprintln!("  {}: {source}", "Source IP".dimmed());
+        }
+        if config.no_download {
+            eprintln!("  {}: {}", "Download test".dimmed(), "disabled".yellow());
+        }
+        if config.no_upload {
+            eprintln!("  {}: {}", "Upload test".dimmed(), "disabled".yellow());
+        }
+        if config.single_stream {
+            eprintln!("  {}: {}", "Streams".dimmed(), "single".yellow());
+        }
+        eprintln!(
+            "\n{}",
+            "Dry run complete. Run without --dry-run to perform speed test.".bright_black()
+        );
+    }
+
+    Ok(())
+}
+
 /// Print the CLI header with version info.
 pub fn print_header() {
     eprintln!(
