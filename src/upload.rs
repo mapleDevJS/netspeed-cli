@@ -9,9 +9,8 @@
 
 use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult, determine_stream_count};
 use crate::error::SpeedtestError;
-use crate::progress::{SpeedProgress, no_color};
+use crate::progress::SpeedProgress;
 use crate::types::Server;
-use owo_colors::OwoColorize;
 use reqwest::Client;
 use std::sync::Arc;
 
@@ -85,12 +84,7 @@ pub async fn upload_test(
     // Bytes are already counted via atomic counters, so we don't need the return values.
     for (i, handle) in handles.into_iter().enumerate() {
         if let Err(e) = handle.await {
-            let msg = format!("Warning: upload task {i} failed: {e}");
-            if no_color() {
-                eprintln!("\n{msg}");
-            } else {
-                eprintln!("\n{}", msg.yellow().bold());
-            }
+            eprintln!("\nWarning: upload task {i} failed: {e}");
         }
     }
 

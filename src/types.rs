@@ -84,6 +84,7 @@ impl TestResult {
 }
 
 /// Bandwidth test metrics — decouples `TestResult` from internal `test_runner`.
+/// Created via `TestRunResult::into_bandwidth_metrics()`.
 #[derive(Debug, Clone)]
 pub struct BandwidthMetrics {
     pub avg_bps: f64,
@@ -92,19 +93,6 @@ pub struct BandwidthMetrics {
     pub duration_secs: f64,
     pub speed_samples: Vec<f64>,
     pub latency_under_load: Option<f64>,
-}
-
-impl From<&crate::test_runner::TestRunResult> for BandwidthMetrics {
-    fn from(r: &crate::test_runner::TestRunResult) -> Self {
-        Self {
-            avg_bps: r.avg_bps,
-            peak_bps: r.peak_bps,
-            total_bytes: r.total_bytes,
-            duration_secs: r.duration_secs,
-            speed_samples: r.speed_samples.clone(),
-            latency_under_load: r.latency_under_load,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

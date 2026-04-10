@@ -6,16 +6,15 @@
 use crate::cli::{CliArgs, ShellType};
 use crate::config::Config;
 use crate::error::SpeedtestError;
-use crate::formatter::formatting::format_distance;
 use crate::formatter::{OutputFormat, format_list};
 use crate::history;
 use crate::http;
+use crate::presentation;
 use crate::progress::{create_spinner, finish_ok, no_color};
 use crate::servers::{fetch_servers, ping_test, select_best_server};
 use crate::test_runner::{self, TestRunResult, create_latency_monitor};
-use crate::types::{BandwidthMetrics, Server, ServerInfo, TestResult};
+use crate::types::{Server, ServerInfo, TestResult};
 use crate::{download, upload};
-
 use owo_colors::OwoColorize;
 
 /// Orchestrates the full speed test lifecycle.
@@ -47,7 +46,7 @@ impl SpeedTestOrchestrator {
 
         // History display early-exit
         if self.args.history {
-            self.print_history()?;
+            presentation::print_history()?;
             return Ok(());
         }
 
@@ -60,7 +59,7 @@ impl SpeedTestOrchestrator {
 
         // Print header
         if is_verbose {
-            Self::print_header();
+            presentation::print_header();
         }
 
         // Fetch and filter servers
@@ -76,7 +75,7 @@ impl SpeedTestOrchestrator {
 
         // Server info
         if is_verbose {
-            Self::print_server_info(&server);
+            presentation::print_server_info(&server);
         }
 
         // Discover client IP
@@ -93,8 +92,8 @@ impl SpeedTestOrchestrator {
         let ul_result = self.run_upload_test(&server, is_verbose).await?;
 
         // Build result
-        let dl_metrics = BandwidthMetrics::from(&dl_result);
-        let ul_metrics = BandwidthMetrics::from(&ul_result);
+        let dl_metrics = dl_result.into_bandwidth_metrics();
+        let ul_metrics = ul_result.into_bandwidth_metrics();
         let result = TestResult::from_test_runs(
             ServerInfo::from(&server),
             ping,
@@ -138,91 +137,6 @@ impl SpeedTestOrchestrator {
             && !self.config.csv
             && !self.config.list
             && !format_non_verbose
-    }
-
-    fn print_header() {
-        eprintln!(
-            "{}",
-            format!("  ═══  NetSpeed CLI v{}  ═══", env!("CARGO_PKG_VERSION"))
-                .dimmed()
-                .bold()
-        );
-        eprintln!("{}", "  Bandwidth test · speedtest.net".dimmed());
-        eprintln!();
-    }
-
-    fn print_server_info(server: &Server) {
-        let dist = format_distance(server.distance);
-        eprintln!();
-        if no_color() {
-            eprintln!("  Server:   {} ({})", server.sponsor, server.name);
-            eprintln!("  Location: {} ({dist})", server.country);
-        } else {
-            eprintln!(
-                "  {}   {} ({})",
-                "Server:".dimmed(),
-                server.sponsor.white().bold(),
-                server.name
-            );
-            eprintln!("  {} {} ({dist})", "Location:".dimmed(), server.country);
-        }
-        eprintln!();
-    }
-
-    /// Print formatted test history to stdout.
-    fn print_history(&self) -> Result<(), SpeedtestError> {
-        let entries = history::load_history()?;
-
-        if entries.is_empty() {
-            eprintln!("No test history found.");
-            return Ok(());
-        }
-
-        let nc = no_color();
-        if nc {
-            eprintln!("\n  TEST HISTORY");
-        } else {
-            eprintln!("\n  {}", "TEST HISTORY".bold().underline());
-        }
-        eprintln!(
-            "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-            "Date", "Sponsor", "Ping", "Download", "Upload"
-        );
-
-        for entry in entries.iter().rev() {
-            let date = &entry.timestamp[0..10];
-            let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
-            let dl = entry
-                .download
-                .map_or("-".to_string(), |d| format!("{:.2} Mb/s", d / 1_000_000.0));
-            let ul = entry
-                .upload
-                .map_or("-".to_string(), |u| format!("{:.2} Mb/s", u / 1_000_000.0));
-
-            let sponsor_display = if entry.sponsor.len() > 15 {
-                &entry.sponsor[0..12]
-            } else {
-                &entry.sponsor
-            };
-
-            if nc {
-                eprintln!(
-                    "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-                    date, sponsor_display, ping, dl, ul
-                );
-            } else {
-                eprintln!(
-                    "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-                    date,
-                    sponsor_display,
-                    ping.cyan(),
-                    dl.green(),
-                    ul.yellow()
-                );
-            }
-        }
-
-        Ok(())
     }
 
     async fn fetch_and_filter_servers(

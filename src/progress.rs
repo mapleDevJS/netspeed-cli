@@ -13,16 +13,11 @@
 )]
 
 use crate::common::format_data_size;
+pub use crate::common::no_color;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Detect if `NO_COLOR` environment variable is set
-#[must_use]
-pub fn no_color() -> bool {
-    std::env::var("NO_COLOR").is_ok()
-}
 
 /// A progress tracker for download/upload tests.
 /// Updates a single shared progress bar with live speed.

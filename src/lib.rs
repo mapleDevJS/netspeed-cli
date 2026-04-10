@@ -38,6 +38,7 @@
 mod cli;
 mod error;
 mod orchestrator;
+mod presentation;
 
 // ─── Stable Public API ───────────────────────────────────────────────
 pub use cli::CliArgs;

@@ -14,6 +14,12 @@
 //! Both copies must remain in sync. If validation logic changes (e.g., IPv6),
 //! update both files.
 
+/// Detect if `NO_COLOR` environment variable is set.
+#[must_use]
+pub fn no_color() -> bool {
+    std::env::var("NO_COLOR").is_ok()
+}
+
 /// Validate an IPv4 address string.
 ///
 /// # Examples

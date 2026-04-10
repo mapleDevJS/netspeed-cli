@@ -47,6 +47,28 @@ impl Default for TestRunResult {
     }
 }
 
+impl TestRunResult {
+    /// Convert to domain-level bandwidth metrics.
+    /// Breaks the dependency from `types::BandwidthMetrics` back to this module.
+    #[must_use]
+    pub fn into_bandwidth_metrics(&self) -> crate::types::BandwidthMetrics {
+        crate::types::BandwidthMetrics {
+            avg_bps: self.avg_bps,
+            peak_bps: self.peak_bps,
+            total_bytes: self.total_bytes,
+            duration_secs: self.duration_secs,
+            speed_samples: self.speed_samples.clone(),
+            latency_under_load: self.latency_under_load,
+        }
+    }
+
+    /// Whether this test was skipped (no bytes transferred and zero speed).
+    #[must_use]
+    pub fn is_skipped(&self) -> bool {
+        self.avg_bps == 0.0 && self.total_bytes == 0
+    }
+}
+
 /// Background monitor handle — returned when a monitor is started.
 /// Call `stop()` to signal the monitor to shut down.
 pub trait BackgroundMonitor: Send + Sync {
