@@ -10,6 +10,7 @@
 //!   completion/man page generation. Build scripts cannot depend on crate
 //!   modules, so `validate.rs` must be fully self-contained.
 //! - `common.rs::is_valid_ipv4` is used by `http.rs` at runtime.
+//!
 //! Both copies must remain in sync. If validation logic changes (e.g., IPv6),
 //! update both files.
 
