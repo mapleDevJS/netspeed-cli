@@ -5,6 +5,7 @@
 )]
 
 use crate::error::SpeedtestError;
+use crate::test_runner::BackgroundMonitor;
 use crate::types::Server;
 use quick_xml::de::from_str;
 use reqwest::Client;
@@ -213,27 +214,69 @@ pub async fn ping_test(
     Ok((avg, jitter, packet_loss, latencies))
 }
 
-pub async fn measure_latency_under_load(
-    client: Client,
-    server_url: String,
+/// Background monitor for latency under load.
+/// Spawns a tokio task that pings the server's latency.txt endpoint
+/// every 100ms until `stop()` is called.
+pub struct LatencyUnderLoadMonitor {
+    stop_signal: Arc<AtomicBool>,
     samples: Arc<std::sync::Mutex<Vec<f64>>>,
-    stop: Arc<AtomicBool>,
-) {
-    while !stop.load(Ordering::Relaxed) {
-        let start = std::time::Instant::now();
-        let response = client.get(format!("{server_url}/latency.txt")).send().await;
+}
 
-        if let Ok(resp) = response {
-            if resp.status().is_success() {
-                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-                if let Ok(mut lock) = samples.lock() {
-                    lock.push(elapsed);
+impl LatencyUnderLoadMonitor {
+    /// Start monitoring latency under load for the given server URL.
+    pub fn start(client: &Client, server_url: &str) -> Self {
+        let samples: Arc<std::sync::Mutex<Vec<f64>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stop_signal = Arc::new(AtomicBool::new(false));
+
+        let client = client.clone();
+        let url = format!("{server_url}/latency.txt");
+        let samples_clone = Arc::clone(&samples);
+        let stop_clone = Arc::clone(&stop_signal);
+
+        tokio::spawn(async move {
+            while !stop_clone.load(Ordering::Relaxed) {
+                let start = std::time::Instant::now();
+                let response = client.get(&url).send().await;
+
+                if let Ok(resp) = response {
+                    if resp.status().is_success() {
+                        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                        if let Ok(mut lock) = samples_clone.lock() {
+                            lock.push(elapsed);
+                        }
+                    }
                 }
-            }
-        }
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
+
+        Self {
+            stop_signal,
+            samples,
+        }
     }
+}
+
+impl BackgroundMonitor for LatencyUnderLoadMonitor {
+    fn stop(&self) {
+        self.stop_signal.store(true, Ordering::Relaxed);
+    }
+
+    fn average(&self) -> Option<f64> {
+        let lock = self.samples.lock().ok()?;
+        if lock.is_empty() {
+            None
+        } else {
+            Some(lock.iter().sum::<f64>() / lock.len() as f64)
+        }
+    }
+}
+
+/// Factory function to create a LatencyUnderLoadMonitor.
+/// Used as the monitor_factory parameter in run_bandwidth_test.
+pub fn create_latency_monitor(client: &Client, server_url: &str) -> Box<dyn BackgroundMonitor> {
+    Box::new(LatencyUnderLoadMonitor::start(client, server_url))
 }
 
 #[cfg(test)]

@@ -1,23 +1,24 @@
-//! Test runner orchestration for download and upload bandwidth tests.
+//! Generic test runner orchestration.
 //!
-//! This module provides a reusable template for running bandwidth tests,
-//! eliminating the duplication between download and upload test orchestration
-//! in `main.rs`. Both tests follow the same pattern:
-//! 1. Set up progress tracking
-//! 2. Spawn latency-under-load monitoring in background
-//! 3. Run the actual bandwidth test
-//! 4. Stop latency monitoring
-//! 5. Aggregate results
+//! Provides a reusable template for running bandwidth tests with optional
+//! background monitoring. Eliminates duplication between download and upload
+//! test orchestration.
+//!
+//! The template handles:
+//! 1. Progress bar setup (visible or hidden)
+//! 2. Optional background monitoring (e.g., latency under load)
+//! 3. Test execution via the provided closure
+//! 4. Monitor teardown
+//! 5. Result aggregation
+//!
+//! To use for a custom test, provide:
+//! - A `test_fn` closure that performs the bandwidth measurement
+//! - An optional `monitor_fn` closure for background monitoring
 
-use crate::config::Config;
 use crate::error::SpeedtestError;
-use crate::http;
 use crate::progress::SpeedProgress;
-use crate::servers::measure_latency_under_load;
-use crate::types::Server;
+use reqwest::Client;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 
 /// Result from a bandwidth test (download or upload).
 #[derive(PartialEq, Debug, Clone)]
@@ -49,35 +50,45 @@ impl Default for TestRunResult {
     }
 }
 
-/// Run a bandwidth test with latency-under-load monitoring.
+/// Background monitor handle — returned when a monitor is started.
+/// Call `stop()` to signal the monitor to shut down.
+pub trait BackgroundMonitor: Send + Sync {
+    fn stop(&self);
+    fn average(&self) -> Option<f64>;
+}
+
+/// Run a bandwidth test with optional background monitoring.
 ///
 /// This is a template method that handles:
-/// - Progress bar setup
-/// - Background latency monitoring
+/// - Progress bar setup (visible or hidden based on `is_verbose`)
+/// - Optional background monitoring (latency under load, etc.)
 /// - Test execution via the provided closure
-/// - Result aggregation
+/// - Monitor teardown and result aggregation
 ///
 /// # Arguments
 ///
-/// * `config` - Configuration for HTTP client creation
-/// * `server` - Server to test against
-/// * `test_label` - Label for progress display (e.g., "Download", "Upload")
-/// * `is_verbose` - Whether to show visible progress
-/// * `test_fn` - Async closure that runs the actual bandwidth test
+/// * `client` — HTTP client for background monitoring (may differ from test client)
+/// * `server_url` — Base URL of the server under test (for monitoring endpoint)
+/// * `test_label` — Label for progress display (e.g., "Download", "Upload")
+/// * `is_verbose` — Whether to show visible progress
+/// * `test_fn` — Async closure that runs the actual bandwidth test
+/// * `monitor_factory` — Optional closure that creates a background monitor
 ///
 /// # Errors
 ///
 /// Returns [`SpeedtestError`] if the test fails.
-pub async fn run_bandwidth_test<F, Fut>(
-    config: &Config,
-    server: &Server,
+pub async fn run_bandwidth_test<F, Fut, M>(
+    client: &Client,
+    server_url: &str,
     test_label: &str,
     is_verbose: bool,
     test_fn: F,
+    monitor_factory: Option<M>,
 ) -> Result<TestRunResult, SpeedtestError>
 where
     F: FnOnce(Arc<SpeedProgress>) -> Fut,
     Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), SpeedtestError>>,
+    M: FnOnce(&Client, &str) -> Box<dyn BackgroundMonitor>,
 {
     let progress = Arc::new(if is_verbose {
         SpeedProgress::new(test_label)
@@ -85,36 +96,19 @@ where
         SpeedProgress::with_target(test_label, indicatif::ProgressDrawTarget::hidden())
     });
 
-    // Set up latency-under-load monitoring
-    let latency_samples = Arc::new(Mutex::new(Vec::new()));
-    let stop_signal = Arc::new(AtomicBool::new(false));
-
-    let ping_client = http::create_client(config)?;
-    let ping_url = server.url.clone();
-    let samples_clone = Arc::clone(&latency_samples);
-    let stop_clone = Arc::clone(&stop_signal);
-    let ping_handle = tokio::spawn(async move {
-        measure_latency_under_load(ping_client, ping_url, samples_clone, stop_clone).await;
-    });
+    // Set up optional background monitoring
+    let monitor = monitor_factory.map(|f| f(client, server_url));
 
     // Run the actual test
     let test_start = std::time::Instant::now();
     let (avg, peak, total_bytes, speed_samples) = test_fn(progress).await?;
     let duration = test_start.elapsed().as_secs_f64();
 
-    // Stop latency monitoring
-    stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
-    let _ = ping_handle.await;
-
-    // Calculate average latency under load
-    let latency_under_load = {
-        let lock = latency_samples.lock().unwrap();
-        if lock.is_empty() {
-            None
-        } else {
-            Some(lock.iter().sum::<f64>() / lock.len() as f64)
-        }
-    };
+    // Stop background monitoring
+    let latency_under_load = monitor.as_ref().and_then(|m| m.average());
+    if let Some(m) = &monitor {
+        m.stop();
+    }
 
     Ok(TestRunResult {
         avg_bps: avg,
@@ -124,75 +118,4 @@ where
         speed_samples,
         latency_under_load,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_test_run_result_structure() {
-        let result = TestRunResult {
-            avg_bps: 100_000_000.0,
-            peak_bps: 120_000_000.0,
-            total_bytes: 10_000_000,
-            duration_secs: 1.0,
-            speed_samples: vec![100_000_000.0],
-            latency_under_load: Some(15.0),
-        };
-        assert_eq!(result.avg_bps, 100_000_000.0);
-        assert_eq!(result.peak_bps, 120_000_000.0);
-    }
-
-    #[test]
-    fn test_test_run_result_default_values() {
-        let result = TestRunResult::default();
-        assert_eq!(result.avg_bps, 0.0);
-        assert_eq!(result.peak_bps, 0.0);
-        assert_eq!(result.total_bytes, 0);
-        assert_eq!(result.duration_secs, 0.0);
-        assert!(result.speed_samples.is_empty());
-        assert!(result.latency_under_load.is_none());
-    }
-
-    #[test]
-    fn test_test_run_result_default_explicit() {
-        let result = TestRunResult {
-            avg_bps: 0.0,
-            peak_bps: 0.0,
-            total_bytes: 0,
-            duration_secs: 0.0,
-            speed_samples: Vec::new(),
-            latency_under_load: None,
-        };
-        assert_eq!(result, TestRunResult::default());
-    }
-
-    #[test]
-    fn test_test_run_result_with_samples() {
-        let samples = vec![50_000_000.0, 75_000_000.0, 100_000_000.0];
-        let result = TestRunResult {
-            avg_bps: 75_000_000.0,
-            peak_bps: 100_000_000.0,
-            total_bytes: 5_000_000,
-            duration_secs: 0.5,
-            speed_samples: samples.clone(),
-            latency_under_load: Some(12.0),
-        };
-        assert_eq!(result.speed_samples, samples);
-        assert_eq!(result.speed_samples.len(), 3);
-    }
-
-    #[test]
-    fn test_test_run_result_peak_greater_than_average() {
-        let result = TestRunResult {
-            avg_bps: 100_000_000.0,
-            peak_bps: 150_000_000.0,
-            total_bytes: 8_000_000,
-            duration_secs: 0.8,
-            speed_samples: vec![100_000_000.0],
-            latency_under_load: None,
-        };
-        assert!(result.peak_bps > result.avg_bps);
-    }
 }

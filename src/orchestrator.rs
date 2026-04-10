@@ -11,7 +11,7 @@ use crate::formatter::{OutputFormat, format_list};
 use crate::history;
 use crate::http;
 use crate::progress::{create_spinner, finish_ok, no_color};
-use crate::servers::{fetch_servers, ping_test, select_best_server};
+use crate::servers::{create_latency_monitor, fetch_servers, ping_test, select_best_server};
 use crate::test_runner::{self, TestRunResult};
 use crate::types::{BandwidthMetrics, Server, ServerInfo, TestResult};
 use crate::{download, upload};
@@ -251,8 +251,8 @@ impl SpeedTestOrchestrator {
         }
 
         test_runner::run_bandwidth_test(
-            &self.config,
-            server,
+            &self.client,
+            &server.url,
             "Download",
             is_verbose,
             |progress| async {
@@ -266,6 +266,9 @@ impl SpeedTestOrchestrator {
                     result.speed_samples,
                 ))
             },
+            Some(|client: &reqwest::Client, server_url: &str| {
+                create_latency_monitor(client, server_url)
+            }),
         )
         .await
     }
@@ -280,8 +283,8 @@ impl SpeedTestOrchestrator {
         }
 
         test_runner::run_bandwidth_test(
-            &self.config,
-            server,
+            &self.client,
+            &server.url,
             "Upload",
             is_verbose,
             |progress| async {
@@ -294,6 +297,9 @@ impl SpeedTestOrchestrator {
                     result.speed_samples,
                 ))
             },
+            Some(|client: &reqwest::Client, server_url: &str| {
+                create_latency_monitor(client, server_url)
+            }),
         )
         .await
     }
