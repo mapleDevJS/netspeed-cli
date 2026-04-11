@@ -1,26 +1,24 @@
-//! Test runner orchestration for download and upload bandwidth tests.
+//! Generic test runner orchestration.
 //!
-//! This module provides a reusable template for running bandwidth tests,
-//! eliminating the duplication between download and upload test orchestration
-//! in `main.rs`. Both tests follow the same pattern:
-//! 1. Set up progress tracking
-//! 2. Spawn latency-under-load monitoring in background
-//! 3. Run the actual bandwidth test
-//! 4. Stop latency monitoring
-//! 5. Aggregate results
+//! Provides a reusable template for running bandwidth tests with optional
+//! background monitoring. Eliminates duplication between download and upload
+//! test orchestration.
+//!
+//! The template handles:
+//! 1. Progress bar setup (visible or hidden)
+//! 2. Optional background monitoring (e.g., latency under load)
+//! 3. Test execution via the provided closure
+//! 4. Monitor teardown
+//! 5. Result aggregation
 
-use crate::config::Config;
 use crate::error::SpeedtestError;
-use crate::http;
 use crate::progress::SpeedProgress;
-use crate::servers::measure_latency_under_load;
-use crate::types::Server;
+use reqwest::Client;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Result from a bandwidth test (download or upload).
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct TestRunResult {
     /// Average speed in bits per second
     pub avg_bps: f64,
@@ -49,72 +47,154 @@ impl Default for TestRunResult {
     }
 }
 
-/// Run a bandwidth test with latency-under-load monitoring.
+impl TestRunResult {
+    /// Convert to domain-level bandwidth metrics.
+    /// Breaks the dependency from `types::BandwidthMetrics` back to this module.
+    #[must_use]
+    pub fn into_bandwidth_metrics(&self) -> crate::types::BandwidthMetrics {
+        crate::types::BandwidthMetrics {
+            avg_bps: self.avg_bps,
+            peak_bps: self.peak_bps,
+            total_bytes: self.total_bytes,
+            duration_secs: self.duration_secs,
+            speed_samples: self.speed_samples.clone(),
+            latency_under_load: self.latency_under_load,
+        }
+    }
+
+    /// Whether this test was skipped (no bytes transferred and zero speed).
+    #[must_use]
+    pub fn is_skipped(&self) -> bool {
+        self.avg_bps == 0.0 && self.total_bytes == 0
+    }
+}
+
+/// Background monitor handle — returned when a monitor is started.
+/// Call `stop()` to signal the monitor to shut down.
+pub trait BackgroundMonitor: Send + Sync {
+    fn stop(&self);
+    fn average(&self) -> Option<f64>;
+}
+
+/// Background monitor for latency under load.
+/// Spawns a tokio task that pings the server's latency.txt endpoint
+/// every 100ms until `stop()` is called.
+pub struct LatencyUnderLoadMonitor {
+    stop_signal: Arc<AtomicBool>,
+    samples: Arc<std::sync::Mutex<Vec<f64>>>,
+}
+
+impl LatencyUnderLoadMonitor {
+    /// Start monitoring latency under load for the given server URL.
+    pub fn start(client: &Client, server_url: &str) -> Self {
+        let samples: Arc<std::sync::Mutex<Vec<f64>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stop_signal = Arc::new(AtomicBool::new(false));
+
+        let client = client.clone();
+        let url = format!("{server_url}/latency.txt");
+        let samples_clone = Arc::clone(&samples);
+        let stop_clone = Arc::clone(&stop_signal);
+
+        tokio::spawn(async move {
+            while !stop_clone.load(Ordering::Relaxed) {
+                let start = std::time::Instant::now();
+                let response = client.get(&url).send().await;
+
+                if let Ok(resp) = response {
+                    if resp.status().is_success() {
+                        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                        if let Ok(mut lock) = samples_clone.lock() {
+                            lock.push(elapsed);
+                        }
+                    }
+                }
+
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
+
+        Self {
+            stop_signal,
+            samples,
+        }
+    }
+}
+
+impl BackgroundMonitor for LatencyUnderLoadMonitor {
+    fn stop(&self) {
+        self.stop_signal.store(true, Ordering::Relaxed);
+    }
+
+    fn average(&self) -> Option<f64> {
+        let lock = self.samples.lock().ok()?;
+        if lock.is_empty() {
+            None
+        } else {
+            Some(lock.iter().sum::<f64>() / lock.len() as f64)
+        }
+    }
+}
+
+/// Factory function to create a LatencyUnderLoadMonitor.
+/// Used as the monitor_factory parameter in `run_bandwidth_test`.
+pub fn create_latency_monitor(client: &Client, server_url: &str) -> Box<dyn BackgroundMonitor> {
+    Box::new(LatencyUnderLoadMonitor::start(client, server_url))
+}
+
+/// Run a bandwidth test with optional background monitoring.
 ///
 /// This is a template method that handles:
-/// - Progress bar setup
-/// - Background latency monitoring
+/// - Progress bar setup (visible or hidden based on `is_verbose`)
+/// - Optional background monitoring (latency under load, etc.)
 /// - Test execution via the provided closure
-/// - Result aggregation
+/// - Monitor teardown and result aggregation
 ///
 /// # Arguments
 ///
-/// * `config` - Configuration for HTTP client creation
-/// * `server` - Server to test against
-/// * `test_label` - Label for progress display (e.g., "Download", "Upload")
-/// * `is_verbose` - Whether to show visible progress
-/// * `test_fn` - Async closure that runs the actual bandwidth test
+/// * `client` — HTTP client for background monitoring (may differ from test client)
+/// * `server_url` — Base URL of the server under test (for monitoring endpoint)
+/// * `test_label` — Label for progress display (e.g., "Download", "Upload")
+/// * `is_verbose` — Whether to show visible progress
+/// * `bytes` — Whether to display speed in bytes (MB/s) instead of bits (Mb/s)
+/// * `test_fn` — Async closure that runs the actual bandwidth test
+/// * `monitor_factory` — Optional closure that creates a background monitor
 ///
 /// # Errors
 ///
 /// Returns [`SpeedtestError`] if the test fails.
-pub async fn run_bandwidth_test<F, Fut>(
-    config: &Config,
-    server: &Server,
+pub async fn run_bandwidth_test<F, Fut, M>(
+    client: &Client,
+    server_url: &str,
     test_label: &str,
     is_verbose: bool,
+    bytes: bool,
     test_fn: F,
+    monitor_factory: Option<M>,
 ) -> Result<TestRunResult, SpeedtestError>
 where
     F: FnOnce(Arc<SpeedProgress>) -> Fut,
     Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), SpeedtestError>>,
+    M: FnOnce(&Client, &str) -> Box<dyn BackgroundMonitor>,
 {
     let progress = Arc::new(if is_verbose {
-        SpeedProgress::new(test_label)
+        SpeedProgress::new(test_label, bytes)
     } else {
-        SpeedProgress::with_target(test_label, indicatif::ProgressDrawTarget::hidden())
+        SpeedProgress::with_target(test_label, bytes, indicatif::ProgressDrawTarget::hidden())
     });
 
-    // Set up latency-under-load monitoring
-    let latency_samples = Arc::new(Mutex::new(Vec::new()));
-    let stop_signal = Arc::new(AtomicBool::new(false));
-
-    let ping_client = http::create_client(config)?;
-    let ping_url = server.url.clone();
-    let samples_clone = Arc::clone(&latency_samples);
-    let stop_clone = Arc::clone(&stop_signal);
-    let ping_handle = tokio::spawn(async move {
-        measure_latency_under_load(ping_client, ping_url, samples_clone, stop_clone).await;
-    });
+    // Set up optional background monitoring
+    let monitor = monitor_factory.map(|f| f(client, server_url));
 
     // Run the actual test
     let test_start = std::time::Instant::now();
     let (avg, peak, total_bytes, speed_samples) = test_fn(progress).await?;
     let duration = test_start.elapsed().as_secs_f64();
 
-    // Stop latency monitoring
-    stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
-    let _ = ping_handle.await;
-
-    // Calculate average latency under load
-    let latency_under_load = {
-        let lock = latency_samples.lock().unwrap();
-        if lock.is_empty() {
-            None
-        } else {
-            Some(lock.iter().sum::<f64>() / lock.len() as f64)
-        }
-    };
+    // Stop background monitoring
+    let latency_under_load = monitor.as_ref().and_then(|m| m.average());
+    if let Some(m) = &monitor {
+        m.stop();
+    }
 
     Ok(TestRunResult {
         avg_bps: avg,

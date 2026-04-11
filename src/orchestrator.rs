@@ -4,20 +4,26 @@
 //! unit testing of the test flow independent of the binary entry point.
 
 use crate::cli::{CliArgs, ShellType};
-use crate::common;
 use crate::config::Config;
 use crate::error::SpeedtestError;
 use crate::formatter::{OutputFormat, format_list};
 use crate::history;
 use crate::http;
-use crate::progress::{create_spinner, finish_ok, no_color};
+use crate::presentation;
+use crate::progress::{create_spinner, finish_ok};
 use crate::servers::{fetch_servers, ping_test, select_best_server};
-use crate::test_runner::{self, TestRunResult};
-use crate::types::Server;
-use crate::types::{self, TestResult};
+use crate::test_runner::{self, TestRunResult, create_latency_monitor};
+use crate::types::{Server, ServerInfo, TestResult};
 use crate::{download, upload};
 
-use owo_colors::OwoColorize;
+/// Reason the orchestrator exited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitReason {
+    /// Normal completion -- speed test ran and results were displayed.
+    Success,
+    /// `--list` flag was used; server list was printed and no test was run.
+    ListDisplayed,
+}
 
 /// Orchestrates the full speed test lifecycle.
 pub struct SpeedTestOrchestrator {
@@ -39,24 +45,55 @@ impl SpeedTestOrchestrator {
     }
 
     /// Run the full speed test workflow.
-    pub async fn run(&self) -> Result<(), SpeedtestError> {
+    pub async fn run(&self) -> Result<ExitReason, SpeedtestError> {
+        // Set NO_COLOR and NO_EMOJI env vars so formatters can detect them
+        if self.config.no_color {
+            // SAFETY: single-threaded context at startup, no concurrent env access
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var("NO_COLOR", "1");
+            }
+        }
+        if self.config.no_emoji {
+            // SAFETY: single-threaded context at startup, no concurrent env access
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var("NO_EMOJI", "1");
+            }
+        }
+
         // Shell completion early-exit
         if let Some(shell) = self.args.generate_completion {
             Self::generate_shell_completion(shell);
-            return Ok(());
+            return Ok(ExitReason::Success);
         }
 
         // History display early-exit
         if self.args.history {
-            history::print_history()?;
-            return Ok(());
+            presentation::print_history()?;
+            return Ok(ExitReason::Success);
+        }
+
+        // Dry-run: validate configuration and exit
+        if self.args.dry_run {
+            let dry_run_config = presentation::DryRunConfig {
+                timeout: self.config.timeout,
+                format_description: presentation::dry_run_description(self.args.format.as_ref()),
+                quiet: self.config.quiet,
+                source_ip: self.config.source.clone(),
+                no_download: self.config.no_download,
+                no_upload: self.config.no_upload,
+                single_stream: self.config.single,
+            };
+            presentation::print_dry_run(&dry_run_config)?;
+            return Ok(ExitReason::Success);
         }
 
         let is_verbose = self.is_verbose();
 
         // Print header
         if is_verbose {
-            Self::print_header();
+            presentation::print_header();
         }
 
         // Fetch and filter servers
@@ -64,7 +101,7 @@ impl SpeedTestOrchestrator {
 
         // Handle --list: format_list already printed, signal completion
         if self.config.list {
-            return Ok(());
+            return Ok(ExitReason::ListDisplayed);
         }
 
         // Select best server
@@ -72,7 +109,7 @@ impl SpeedTestOrchestrator {
 
         // Server info
         if is_verbose {
-            Self::print_server_info(&server);
+            presentation::print_server_info(&server);
         }
 
         // Discover client IP
@@ -89,20 +126,16 @@ impl SpeedTestOrchestrator {
         let ul_result = self.run_upload_test(&server, is_verbose).await?;
 
         // Build result
+        let dl_metrics = dl_result.into_bandwidth_metrics();
+        let ul_metrics = ul_result.into_bandwidth_metrics();
         let result = TestResult::from_test_runs(
-            types::ServerInfo {
-                id: server.id.clone(),
-                name: server.name.clone(),
-                sponsor: server.sponsor.clone(),
-                country: server.country.clone(),
-                distance: server.distance,
-            },
+            ServerInfo::from(&server),
             ping,
             jitter,
             packet_loss,
             ping_samples,
-            &dl_result,
-            &ul_result,
+            &dl_metrics,
+            &ul_metrics,
             client_ip,
         );
 
@@ -114,7 +147,7 @@ impl SpeedTestOrchestrator {
         // Output — Strategy pattern dispatch
         self.output_results(&result, &dl_result, &ul_result)?;
 
-        Ok(())
+        Ok(ExitReason::Success)
     }
 
     /// Whether verbose output should be shown.
@@ -138,35 +171,6 @@ impl SpeedTestOrchestrator {
             && !self.config.csv
             && !self.config.list
             && !format_non_verbose
-    }
-
-    fn print_header() {
-        eprintln!(
-            "{}",
-            format!("  ═══  NetSpeed CLI v{}  ═══", env!("CARGO_PKG_VERSION"))
-                .dimmed()
-                .bold()
-        );
-        eprintln!("{}", "  Bandwidth test · speedtest.net".dimmed());
-        eprintln!();
-    }
-
-    fn print_server_info(server: &Server) {
-        let dist = common::format_distance(server.distance);
-        eprintln!();
-        if no_color() {
-            eprintln!("  Server:   {} ({})", server.sponsor, server.name);
-            eprintln!("  Location: {} ({dist})", server.country);
-        } else {
-            eprintln!(
-                "  {}   {} ({})",
-                "Server:".dimmed(),
-                server.sponsor.white().bold(),
-                server.name
-            );
-            eprintln!("  {} {} ({dist})", "Location:".dimmed(), server.country);
-        }
-        eprintln!();
     }
 
     async fn fetch_and_filter_servers(
@@ -223,14 +227,7 @@ impl SpeedTestOrchestrator {
         };
         let ping_result = ping_test(&self.client, server).await?;
         if let Some(ref pb) = ping_spinner {
-            let msg = if no_color() {
-                format!("Latency: {:.2} ms", ping_result.0)
-            } else {
-                format!(
-                    "Latency: {}",
-                    format!("{:.2} ms", ping_result.0).cyan().bold()
-                )
-            };
+            let msg = presentation::format_ping_result(ping_result.0);
             finish_ok(pb, &msg);
         }
         Ok((
@@ -251,13 +248,25 @@ impl SpeedTestOrchestrator {
         }
 
         test_runner::run_bandwidth_test(
-            &self.config,
-            server,
+            &self.client,
+            &server.url,
             "Download",
             is_verbose,
+            self.config.bytes,
             |progress| async {
-                download::download_test(&self.client, server, self.config.single, progress).await
+                let result =
+                    download::download_test(&self.client, server, self.config.single, progress)
+                        .await?;
+                Ok((
+                    result.avg_bps,
+                    result.peak_bps,
+                    result.total_bytes,
+                    result.speed_samples,
+                ))
             },
+            Some(|client: &reqwest::Client, server_url: &str| {
+                create_latency_monitor(client, server_url)
+            }),
         )
         .await
     }
@@ -272,13 +281,24 @@ impl SpeedTestOrchestrator {
         }
 
         test_runner::run_bandwidth_test(
-            &self.config,
-            server,
+            &self.client,
+            &server.url,
             "Upload",
             is_verbose,
+            self.config.bytes,
             |progress| async {
-                upload::upload_test(&self.client, server, self.config.single, progress).await
+                let result =
+                    upload::upload_test(&self.client, server, self.config.single, progress).await?;
+                Ok((
+                    result.avg_bps,
+                    result.peak_bps,
+                    result.total_bytes,
+                    result.speed_samples,
+                ))
             },
+            Some(|client: &reqwest::Client, server_url: &str| {
+                create_latency_monitor(client, server_url)
+            }),
         )
         .await
     }
@@ -300,22 +320,13 @@ impl SpeedTestOrchestrator {
             },
             Some(OutputFormatType::Simple) => OutputFormat::Simple,
             Some(OutputFormatType::Dashboard) => OutputFormat::Dashboard {
-                dl_mbps: dl_result.avg_bps / 1_000_000.0,
-                dl_peak_mbps: dl_result.peak_bps / 1_000_000.0,
-                dl_bytes: dl_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_mbps: ul_result.avg_bps / 1_000_000.0,
-                ul_peak_mbps: ul_result.peak_bps / 1_000_000.0,
-                ul_bytes: ul_result.total_bytes,
-                ul_duration: ul_result.duration_secs,
+                dl: dl_result.clone(),
+                ul: ul_result.clone(),
+                history_data: history::get_recent_sparkline(),
             },
             Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
-                dl_bytes: dl_result.total_bytes,
-                ul_bytes: ul_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_duration: ul_result.duration_secs,
-                dl_skipped: self.config.no_download,
-                ul_skipped: self.config.no_upload,
+                dl: dl_result.clone(),
+                ul: ul_result.clone(),
             },
             None => {
                 // Legacy boolean flag fallback
@@ -330,12 +341,8 @@ impl SpeedTestOrchestrator {
                     OutputFormat::Simple
                 } else {
                     OutputFormat::Detailed {
-                        dl_bytes: dl_result.total_bytes,
-                        ul_bytes: ul_result.total_bytes,
-                        dl_duration: dl_result.duration_secs,
-                        ul_duration: ul_result.duration_secs,
-                        dl_skipped: self.config.no_download,
-                        ul_skipped: self.config.no_upload,
+                        dl: dl_result.clone(),
+                        ul: ul_result.clone(),
                     }
                 }
             }
@@ -418,5 +425,22 @@ mod tests {
         let args = CliArgs::parse_from(["netspeed-cli"]);
         let orch = SpeedTestOrchestrator::new(args);
         assert!(orch.is_ok());
+    }
+
+    #[test]
+    fn test_dry_run_succeeds() {
+        let args = CliArgs::parse_from(["netspeed-cli", "--dry-run"]);
+        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        // Dry run uses presentation::print_dry_run internally; verify it returns Ok
+        let result = presentation::print_dry_run(&presentation::DryRunConfig {
+            timeout: orch.config.timeout,
+            format_description: presentation::dry_run_description(orch.args.format.as_ref()),
+            quiet: orch.config.quiet,
+            source_ip: orch.config.source.clone(),
+            no_download: orch.config.no_download,
+            no_upload: orch.config.no_upload,
+            single_stream: orch.config.single,
+        });
+        assert!(result.is_ok());
     }
 }

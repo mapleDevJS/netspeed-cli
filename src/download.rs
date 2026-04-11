@@ -3,9 +3,12 @@
 //! This module handles downloading test files from speedtest.net servers
 //! to measure download bandwidth. It supports:
 //! - Multi-stream concurrent downloads (4 streams by default, 1 with `--single`)
-//! - Dynamic test URL construction from server base URL
+//! - Dynamic test file URL construction from server base URL
 //! - Real-time progress tracking with speed calculation
 //! - Peak speed detection through periodic sampling
+//!
+//! Uses [`BandwidthLoopState`] for throttled speed sampling (20 Hz max),
+//! shared with the upload module for consistent bandwidth measurement.
 
 #![allow(
     clippy::cast_precision_loss,
@@ -13,24 +16,12 @@
     clippy::cast_sign_loss
 )]
 
-use crate::common;
+use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult, determine_stream_count};
 use crate::error::SpeedtestError;
 use crate::progress::SpeedProgress;
 use crate::types::Server;
 use reqwest::Client;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
-
-/// Estimated total bytes for progress bar initialization.
-/// This is a rough estimate; the bar will adjust as actual data is downloaded.
-const ESTIMATED_DOWNLOAD_BYTES: u64 = 15_000_000; // 15 MB estimate
-
-/// Interval between speed samples in milliseconds.
-/// Throttling prevents excessive sampling overhead on all hot-path operations.
-/// Uses 0 as initial value so the first chunk always triggers a sample.
-const SAMPLE_INTERVAL_MS: u64 = 50; // 50ms between samples (20 Hz max)
 
 /// Number of download rounds per stream (each round fetches a different test file).
 const DOWNLOAD_TEST_ROUNDS: usize = 4;
@@ -50,17 +41,11 @@ pub fn build_test_url(server_url: &str, file_index: usize) -> String {
     format!("{base}/random{size}.jpg")
 }
 
-/// Result from a single download stream
-struct StreamResult {
-    bytes: u64,
-    elapsed_secs: f64,
-}
-
 use futures_util::StreamExt;
 
 /// Run download bandwidth test against the given server.
 ///
-/// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_downloaded, speed_samples)`.
+/// Returns [`BandwidthResult`] with average/peak speed, total bytes, and samples.
 ///
 /// # Errors
 ///
@@ -71,35 +56,18 @@ pub async fn download_test(
     server: &Server,
     single: bool,
     progress: Arc<SpeedProgress>,
-) -> Result<(f64, f64, u64, Vec<f64>), SpeedtestError> {
-    let concurrent_streams = common::determine_stream_count(single);
-    let total_bytes = Arc::new(AtomicU64::new(0));
-    let peak_bps = Arc::new(AtomicU64::new(0));
-    let speed_samples = Arc::new(Mutex::new(Vec::new()));
-    let start = Instant::now();
-
-    // Estimated total: progress bar will update dynamically as data is downloaded
-    let estimated_total: u64 = ESTIMATED_DOWNLOAD_BYTES;
-
-    // Throttle gate: tracks last sample time in millis to limit all expensive ops to 20 Hz.
-    // Initialized to 0 so the first chunk always triggers a sample (any elapsed > 0 fires).
-    let last_sample_ms = Arc::new(AtomicU64::new(0));
+) -> Result<BandwidthResult, SpeedtestError> {
+    let concurrent_streams = determine_stream_count(single);
+    let state = Arc::new(BandwidthLoopState::new(progress));
 
     // Spawn streams that report progress
     let mut handles = Vec::new();
     for _ in 0..concurrent_streams {
         let client = client.clone();
         let server_url = server.url.clone();
-        let total_ref = Arc::clone(&total_bytes);
-        let peak_ref = Arc::clone(&peak_bps);
-        let samples_ref = Arc::clone(&speed_samples);
-        let start_ref = start;
-        let prog = Arc::clone(&progress);
-        let throttle_ref = Arc::clone(&last_sample_ms);
+        let state_ref = Arc::clone(&state);
 
         let handle = tokio::spawn(async move {
-            let mut stream_bytes = 0u64;
-
             for j in 0..DOWNLOAD_TEST_ROUNDS {
                 let test_url = build_test_url(&server_url, j);
 
@@ -107,105 +75,36 @@ pub async fn download_test(
                     let mut stream = response.bytes_stream();
                     while let Some(item) = stream.next().await {
                         if let Ok(chunk) = item {
-                            let len = chunk.len() as u64;
-                            stream_bytes += len;
-                            // Cheap atomic add — runs on every chunk
-                            total_ref.fetch_add(len, Ordering::Relaxed);
-
-                            // Throttle gate: only run expensive ops every 50ms.
-                            // First sample always fires (last_sample_ms == 0 means "never sampled").
-                            let elapsed_ms = start_ref.elapsed().as_millis() as u64;
-                            let last_ms = throttle_ref.load(Ordering::Relaxed);
-                            let should_sample = last_ms == 0
-                                || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
-                            if should_sample {
-                                // Update throttle timestamp
-                                throttle_ref.store(elapsed_ms, Ordering::Relaxed);
-
-                                // All expensive ops now run at most every 50ms:
-                                // Acquire ensures we see the latest fetch_add results on ARM64.
-                                let total_so_far = total_ref.load(Ordering::Acquire);
-                                let elapsed = start_ref.elapsed().as_secs_f64();
-                                let speed = common::calculate_bandwidth(total_so_far, elapsed);
-
-                                // Peak tracking (cheap compare-and-swap)
-                                let current_peak = peak_ref.load(Ordering::Relaxed);
-                                if speed > current_peak as f64 {
-                                    peak_ref.store(speed as u64, Ordering::Relaxed);
-                                }
-
-                                // Record speed sample (throttled, no need for additional check)
-                                if let Ok(mut samples) = samples_ref.lock() {
-                                    samples.push(speed);
-                                }
-
-                                let pct = (total_so_far as f64 / estimated_total as f64).min(1.0);
-                                prog.update(speed / 1_000_000.0, pct, total_so_far);
-                            }
+                            state_ref.record_bytes(chunk.len() as u64);
                         }
                     }
                 }
-            }
-
-            StreamResult {
-                bytes: stream_bytes,
-                elapsed_secs: start_ref.elapsed().as_secs_f64(),
             }
         });
 
         handles.push(handle);
     }
 
-    // Collect results
-    let mut results = Vec::new();
+    // Wait for all streams to complete
     for handle in handles {
-        if let Ok(result) = handle.await {
-            results.push(result);
-        }
+        let _ = handle.await;
     }
 
-    if results.is_empty() {
-        return Ok((0.0, 0.0, 0, Vec::new()));
-    }
-
-    let total_bandwidth: f64 = results
-        .iter()
-        .map(|r| common::calculate_bandwidth(r.bytes, r.elapsed_secs))
-        .sum();
-
-    let final_total_bytes = total_bytes.load(Ordering::Relaxed);
-    let final_peak_speed = peak_bps.load(Ordering::Relaxed) as f64;
-    let avg_bandwidth = total_bandwidth / results.len() as f64;
-    let samples = speed_samples.lock().unwrap().to_vec();
-    Ok((avg_bandwidth, final_peak_speed, final_total_bytes, samples))
+    Ok(state.finish())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::common;
-
     use super::*;
 
     #[test]
-    fn test_download_bandwidth_calculation() {
-        let result = common::calculate_bandwidth(10_000_000, 2.0);
-        assert_eq!(result, 40_000_000.0);
-    }
-
-    #[test]
-    fn test_download_bandwidth_zero_elapsed() {
-        let result = common::calculate_bandwidth(10_000_000, 0.0);
-        assert_eq!(result, 0.0);
-    }
-
-    #[test]
     fn test_download_concurrent_streams_single() {
-        assert_eq!(common::determine_stream_count(true), 1);
+        assert_eq!(determine_stream_count(true), 1);
     }
 
     #[test]
     fn test_download_concurrent_streams_multiple() {
-        assert_eq!(common::determine_stream_count(false), 4);
+        assert_eq!(determine_stream_count(false), 4);
     }
 
     #[test]
@@ -260,18 +159,5 @@ mod tests {
     fn test_extract_base_url_different_path() {
         let url = "https://cdn.speedtest.net/upload.php";
         assert_eq!(extract_base_url(url), "https://cdn.speedtest.net");
-    }
-
-    #[test]
-    fn test_estimated_download_bytes_constant() {
-        // Verify the constant is reasonable (around 15 MB)
-        const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES > 10_000_000);
-        const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES < 20_000_000);
-    }
-
-    #[test]
-    fn test_sample_interval_constant() {
-        // Verify sample interval is 50ms (20 Hz)
-        const _: () = assert!(SAMPLE_INTERVAL_MS == 50);
     }
 }

@@ -7,12 +7,10 @@
 //! - Real-time progress tracking with speed calculation
 //! - Peak speed detection through periodic sampling
 
-use crate::bandwidth_loop::BandwidthLoopState;
-use crate::common;
+use crate::bandwidth_loop::{BandwidthLoopState, BandwidthResult, determine_stream_count};
 use crate::error::SpeedtestError;
-use crate::progress::{SpeedProgress, no_color};
+use crate::progress::SpeedProgress;
 use crate::types::Server;
-use owo_colors::OwoColorize;
 use reqwest::Client;
 use std::sync::Arc;
 
@@ -33,12 +31,9 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
 /// Number of upload rounds per stream (each round uploads a chunk of test data).
 const UPLOAD_TEST_ROUNDS: usize = 4;
 
-/// Estimated total bytes for progress bar initialization.
-const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
-
 /// Run upload bandwidth test against the given server.
 ///
-/// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_uploaded, speed_samples)`.
+/// Returns [`BandwidthResult`] with average/peak speed, total bytes, and samples.
 ///
 /// # Errors
 ///
@@ -48,9 +43,9 @@ pub async fn upload_test(
     server: &Server,
     single: bool,
     progress: Arc<SpeedProgress>,
-) -> Result<(f64, f64, u64, Vec<f64>), SpeedtestError> {
-    let concurrent_uploads = common::determine_stream_count(single);
-    let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
+) -> Result<BandwidthResult, SpeedtestError> {
+    let concurrent_uploads = determine_stream_count(single);
+    let state = Arc::new(BandwidthLoopState::new(progress));
     let upload_data = generate_upload_data(200_000); // 200KB chunks
 
     let mut handles = Vec::new();
@@ -84,52 +79,39 @@ pub async fn upload_test(
 
     // Collect results — log any task panics so failures aren't silently swallowed.
     // Bytes are already counted via atomic counters, so we don't need the return values.
+    let nc = crate::progress::no_color();
     for (i, handle) in handles.into_iter().enumerate() {
         if let Err(e) = handle.await {
-            let msg = format!("Warning: upload task {i} failed: {e}");
-            if no_color() {
-                eprintln!("\n{msg}");
+            let task_num = i + 1;
+            let msg = if nc {
+                format!("\nWarning: upload task {task_num} failed: {e}")
             } else {
-                eprintln!("\n{}", msg.yellow().bold());
-            }
+                use owo_colors::OwoColorize;
+                format!(
+                    "\n{}",
+                    format!("Warning: upload task {task_num} failed: {e}").yellow()
+                )
+            };
+            eprintln!("{msg}");
         }
     }
 
     let final_result = state.finish();
-    Ok((
-        final_result.avg_bps,
-        final_result.peak_bps,
-        final_result.total_bytes,
-        final_result.speed_samples,
-    ))
+    Ok(final_result)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::common;
-
     use super::*;
 
     #[test]
-    fn test_upload_bandwidth_calculation() {
-        let result = common::calculate_bandwidth(1_000_000, 2.0);
-        assert_eq!(result, 4_000_000.0);
-    }
-
-    #[test]
-    fn test_upload_bandwidth_zero_elapsed() {
-        let result = common::calculate_bandwidth(1_000_000, 0.0);
-        assert_eq!(result, 0.0);
-    }
-
-    #[test]
     fn test_upload_concurrent_count_single() {
-        assert_eq!(common::determine_stream_count(true), 1);
+        assert_eq!(determine_stream_count(true), 1);
     }
 
     #[test]
     fn test_upload_concurrent_count_multiple() {
-        assert_eq!(common::determine_stream_count(false), 4);
+        assert_eq!(determine_stream_count(false), 4);
     }
 
     #[test]

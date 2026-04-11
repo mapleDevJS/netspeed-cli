@@ -16,6 +16,8 @@ pub struct ConfigFile {
     pub csv_header: Option<bool>,
     pub json: Option<bool>,
     pub timeout: Option<u64>,
+    pub no_emoji: Option<bool>,
+    pub no_color: Option<bool>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -35,6 +37,8 @@ pub struct Config {
     pub source: Option<String>,
     pub timeout: u64,
     pub quiet: bool,
+    pub no_emoji: bool,
+    pub no_color: bool,
 }
 
 impl Config {
@@ -82,6 +86,8 @@ impl Config {
             source: args.source.clone(),
             timeout: merge_u64(args.timeout, file_config.timeout, 10),
             quiet: merge_bool(args.quiet, None),
+            no_emoji: merge_bool(args.no_emoji, file_config.no_emoji),
+            no_color: merge_bool(args.no_color, file_config.no_color),
         }
     }
 }
