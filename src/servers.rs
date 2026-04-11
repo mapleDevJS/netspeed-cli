@@ -1,9 +1,9 @@
 //! Server discovery, selection, and ping testing.
 //!
 //! This module re-exports from focused sub-modules for backward compatibility:
-//! - [`calculate_distance`] from [`geo`] — Haversine distance formula
-//! - [`fetch_servers`] from [`server_fetch`] — HTTP/XML server list fetching
-//! - [`ping_test`] from [`ping`] — Latency/jitter/packet-loss measurement
+//! - [`calculate_distance`] from [`crate::geo`] — Haversine distance formula
+//! - [`fetch_servers`] from [`crate::server_fetch`] — HTTP/XML server list fetching
+//! - [`ping_test`] from [`crate::ping`] — Latency/jitter/packet-loss measurement
 //!
 //! New code should import directly from the specific sub-module.
 
