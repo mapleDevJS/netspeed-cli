@@ -44,17 +44,13 @@ impl SpeedProgress {
         let nc = no_color();
         let no_emoji = crate::common::no_emoji();
         let style = if no_emoji {
-            ProgressStyle::with_template(
-                "  {prefix} {spinner}  {elapsed_precise} | {msg}",
-            )
-            .unwrap()
-            .tick_strings(&["—", "\\", "|", "/"])
+            ProgressStyle::with_template("  {prefix} {spinner}  {elapsed_precise} | {msg}")
+                .unwrap()
+                .tick_strings(&["—", "\\", "|", "/"])
         } else {
-            ProgressStyle::with_template(
-                "  {prefix} {spinner}  {elapsed_precise} | {msg}",
-            )
-            .unwrap()
-            .tick_strings(&["━", "╾", "━", "╾"])
+            ProgressStyle::with_template("  {prefix} {spinner}  {elapsed_precise} | {msg}")
+                .unwrap()
+                .tick_strings(&["━", "╾", "━", "╾"])
         };
 
         bar.set_style(style);
