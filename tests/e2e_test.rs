@@ -82,6 +82,7 @@ async fn test_e2e_full_speedtest_flow() {
     // Step 4: Run download test
     let progress = Arc::new(SpeedProgress::with_target(
         "Download",
+        true,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let dl_result = download_test(&client, &selected, true, progress.clone())
@@ -102,6 +103,7 @@ async fn test_e2e_full_speedtest_flow() {
     // Step 5: Run upload test
     let progress = Arc::new(SpeedProgress::with_target(
         "Upload",
+        false,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let ul_result = upload_test(&client, &selected, true, progress.clone())
@@ -136,6 +138,7 @@ async fn test_e2e_download_only() {
 
     let progress = Arc::new(SpeedProgress::with_target(
         "Download",
+        true,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let result = download_test(&client, &server, true, progress).await;
@@ -166,6 +169,7 @@ async fn test_e2e_upload_only() {
 
     let progress = Arc::new(SpeedProgress::with_target(
         "Upload",
+        false,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let result = upload_test(&client, &server, true, progress).await;

@@ -37,6 +37,7 @@ async fn test_upload_mocked_success() {
 
     let progress = Arc::new(progress::SpeedProgress::with_target(
         "Upload",
+        false,
         indicatif::ProgressDrawTarget::hidden(),
     ));
 
@@ -74,6 +75,7 @@ async fn test_upload_mocked_all_failures() {
 
     let progress = Arc::new(progress::SpeedProgress::with_target(
         "Upload",
+        false,
         indicatif::ProgressDrawTarget::hidden(),
     ));
 
