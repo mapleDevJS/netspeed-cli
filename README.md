@@ -39,7 +39,7 @@ cargo build --release
 | Requirement | Details |
 |-------------|---------|
 | **OS** | macOS 12+, Linux (kernel 5.4+) |
-| **Rust** | 1.85+ (for building from source) |
+| **Rust** | 1.86+ (for building from source) |
 | **Terminal** | Any Unicode-capable terminal (UTF-8) |
 | **Network** | Internet access to speedtest.net servers |
 | **Architecture** | x86_64, aarch64 (Apple Silicon, ARM Linux) |
@@ -253,7 +253,7 @@ Results are automatically saved and can be viewed with `--history`.
 
 ### Requirements
 
-- Rust 1.85+
+- Rust 1.86+
 - cargo
 
 ```bash
