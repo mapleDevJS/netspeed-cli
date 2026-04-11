@@ -2,7 +2,7 @@ class NetspeedCli < Formula
   desc "Command-line interface for testing internet bandwidth using speedtest.net"
   homepage "https://github.com/mapleDevJS/netspeed-cli"
   url "https://github.com/mapleDevJS/netspeed-cli/releases/download/v0.7.0/netspeed-cli-0.7.0.tar.gz"
-  sha256 "UPDATE_AFTER_RELEASE"
+  sha256 "51e6829d795a18cf1e7aba2ec7d2a05d19ec2890889232474a5e984046bb15f1"
 
   license "MIT"
 

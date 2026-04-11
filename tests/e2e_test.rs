@@ -3,7 +3,7 @@
 //! Tests the complete pipeline: server selection, ping test, and
 //! bandwidth measurement against a mock server.
 
-use netspeed_cli::common;
+use netspeed_cli::bandwidth_loop::calculate_bandwidth;
 use netspeed_cli::download::{build_test_url, download_test, extract_base_url};
 use netspeed_cli::progress::SpeedProgress;
 use netspeed_cli::servers::{ping_test, select_best_server};
@@ -82,31 +82,40 @@ async fn test_e2e_full_speedtest_flow() {
     // Step 4: Run download test
     let progress = Arc::new(SpeedProgress::with_target(
         "Download",
+        true,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let dl_result = download_test(&client, &selected, true, progress.clone())
         .await
         .expect("Download should succeed");
-    let (avg_dl, peak_dl, total_dl_bytes, dl_samples) = dl_result;
-    assert!(avg_dl > 0.0, "Download speed should be positive");
-    assert!(total_dl_bytes > 0, "Should have downloaded some bytes");
-    assert!(!dl_samples.is_empty(), "Should have speed samples");
+    assert!(dl_result.avg_bps > 0.0, "Download speed should be positive");
+    assert!(
+        dl_result.total_bytes > 0,
+        "Should have downloaded some bytes"
+    );
+    assert!(
+        !dl_result.speed_samples.is_empty(),
+        "Should have speed samples"
+    );
     // Peak may be similar to average in mock environment (instant responses)
-    let _ = peak_dl;
+    let _ = dl_result.peak_bps;
 
     // Step 5: Run upload test
     let progress = Arc::new(SpeedProgress::with_target(
         "Upload",
+        false,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let ul_result = upload_test(&client, &selected, true, progress.clone())
         .await
         .expect("Upload should succeed");
-    let (avg_ul, peak_ul, total_ul_bytes, ul_samples) = ul_result;
-    assert!(avg_ul > 0.0, "Upload speed should be positive");
-    assert!(total_ul_bytes > 0, "Should have uploaded some bytes");
-    assert!(!ul_samples.is_empty(), "Should have speed samples");
-    let _ = peak_ul;
+    assert!(ul_result.avg_bps > 0.0, "Upload speed should be positive");
+    assert!(ul_result.total_bytes > 0, "Should have uploaded some bytes");
+    assert!(
+        !ul_result.speed_samples.is_empty(),
+        "Should have speed samples"
+    );
+    let _ = ul_result.peak_bps;
 }
 
 #[tokio::test]
@@ -129,14 +138,15 @@ async fn test_e2e_download_only() {
 
     let progress = Arc::new(SpeedProgress::with_target(
         "Download",
+        true,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let result = download_test(&client, &server, true, progress).await;
     assert!(result.is_ok());
-    let (avg, _peak, bytes, samples) = result.unwrap();
-    assert!(avg > 0.0);
-    assert!(bytes > 0);
-    assert!(!samples.is_empty());
+    let bw_result = result.unwrap();
+    assert!(bw_result.avg_bps > 0.0);
+    assert!(bw_result.total_bytes > 0);
+    assert!(!bw_result.speed_samples.is_empty());
 }
 
 #[tokio::test]
@@ -159,14 +169,15 @@ async fn test_e2e_upload_only() {
 
     let progress = Arc::new(SpeedProgress::with_target(
         "Upload",
+        false,
         indicatif::ProgressDrawTarget::hidden(),
     ));
     let result = upload_test(&client, &server, true, progress).await;
     assert!(result.is_ok());
-    let (avg, _peak, bytes, samples) = result.unwrap();
-    assert!(avg > 0.0);
-    assert!(bytes > 0);
-    assert!(!samples.is_empty());
+    let bw_result = result.unwrap();
+    assert!(bw_result.avg_bps > 0.0);
+    assert!(bw_result.total_bytes > 0);
+    assert!(!bw_result.speed_samples.is_empty());
 }
 
 #[test]
@@ -184,6 +195,6 @@ fn test_bandwidth_calculation_e2e() {
     // Verify that bandwidth calculation is consistent
     let bytes = 1_000_000u64;
     let secs = 1.0f64;
-    let bps = common::calculate_bandwidth(bytes, secs);
+    let bps = calculate_bandwidth(bytes, secs);
     assert_eq!(bps, 8_000_000.0); // 1MB in 1s = 8Mbps
 }

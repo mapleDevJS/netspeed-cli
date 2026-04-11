@@ -1,6 +1,6 @@
 //! Output section formatters for detailed test results.
 
-use crate::common;
+use crate::formatter::formatting::{bar_chart, format_data_size, format_distance};
 use crate::progress::no_color;
 use crate::types::{Server, TestResult};
 use owo_colors::OwoColorize;
@@ -9,6 +9,18 @@ use super::ratings::{
     bufferbloat_colorized, bufferbloat_grade, colorize_rating, degradation_str, format_duration,
     format_speed_colored, format_speed_plain, ping_rating, speed_rating_mbps,
 };
+
+/// Build a section separator line for detailed output.
+pub(crate) fn section_divider(title: &str, nc: bool) -> String {
+    let title_with_spaces = format!(" {title} ");
+    let dash_count = 60usize.saturating_sub(title_with_spaces.len());
+    let dashes = "─".repeat(dash_count);
+    if nc {
+        format!("  {title_with_spaces}{dashes}")
+    } else {
+        format!("  {title_with_spaces}{}", dashes.dimmed())
+    }
+}
 
 fn build_skipped_line(label: &str, nc: bool) -> String {
     if nc {
@@ -29,7 +41,7 @@ fn build_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool) -> St
         format_speed_colored(speed_bps, bytes)
     };
     let rating = colorize_rating(speed_rating_mbps(speed_bps / 1_000_000.0), nc);
-    let bar = crate::common::bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
+    let bar = bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
     let bar_display = if nc {
         bar
     } else {
@@ -69,12 +81,12 @@ fn build_latency_load_line(lat_load: f64, idle_ping: Option<f64>, nc: bool) -> S
     let degradation = degradation_str(lat_load, idle_ping, nc);
     if nc {
         format!(
-            "  {:>14}:   {:>8.1} ms{degradation}",
+            "  {:>14}:   {:>8.1} ms {degradation}",
             "Latency (load)", lat_load
         )
     } else {
         format!(
-            "  {:>14}:   {}{degradation}",
+            "  {:>14}:   {} {degradation}",
             "Latency (load)".dimmed(),
             format!("{lat_load:.1} ms").yellow(),
         )
@@ -126,7 +138,8 @@ pub fn build_latency_section(result: &TestResult, nc: bool) -> String {
         if nc {
             lines.push(format!("  {:>14}:   {:>8}", "Packet Loss", loss_str));
         } else {
-            let display = if loss == 0.0 {
+            let show_checkmark = loss == 0.0 && !crate::common::no_emoji();
+            let display = if show_checkmark {
                 format!("{} {}", loss_str.green(), "✓".green())
             } else {
                 match loss_color {
@@ -248,7 +261,7 @@ pub fn format_upload_section(result: &TestResult, bytes: bool, nc: bool, skipped
 }
 
 pub fn build_connection_info(result: &TestResult, nc: bool) -> String {
-    let dist = common::format_distance(result.server.distance);
+    let dist = format_distance(result.server.distance);
     let mut lines = Vec::new();
 
     if nc {
@@ -318,7 +331,7 @@ pub fn build_test_summary(
         lines.push(format!(
             "  {:>14}:   {} in {}",
             "Download",
-            common::format_data_size(dl_bytes),
+            format_data_size(dl_bytes),
             format_duration(dl_duration)
         ));
     }
@@ -326,7 +339,7 @@ pub fn build_test_summary(
         lines.push(format!(
             "  {:>14}:   {} in {}",
             "Upload",
-            common::format_data_size(ul_bytes),
+            format_data_size(ul_bytes),
             format_duration(ul_duration)
         ));
     }
@@ -336,7 +349,7 @@ pub fn build_test_summary(
         lines.push(format!(
             "  {:>14}:   {} in {}",
             "Total",
-            common::format_data_size(total),
+            format_data_size(total),
             format_duration(total_dur)
         ));
     }
@@ -376,22 +389,36 @@ pub fn format_footer(timestamp: &str, nc: bool) {
 /// Format a list of available servers.
 pub fn build_list(servers: &[Server]) -> String {
     let nc = no_color();
+    const MAX_SPONSOR: usize = 35;
+    const MAX_NAME: usize = 40;
 
     let (max_id_len, max_sponsor_len, max_name_len) =
         servers
             .iter()
             .fold((3, 7, 24), |(max_id, max_sponsor, max_name), s| {
-                let name_len = s.name.len() + s.country.len() + 3;
+                let name_len =
+                    (s.name.chars().count() + s.country.chars().count() + 3).min(MAX_NAME);
                 (
-                    max_id.max(s.id.len()),
-                    max_sponsor.max(s.sponsor.len()),
+                    max_id.max(s.id.chars().count()),
+                    max_sponsor.max(s.sponsor.chars().count().min(MAX_SPONSOR)),
                     max_name.max(name_len),
                 )
             });
 
     let idw = max_id_len.max(3);
-    let sw = max_sponsor_len.max(7);
-    let nw = max_name_len.max(24);
+    let sw = max_sponsor_len.clamp(7, MAX_SPONSOR);
+    let nw = max_name_len.clamp(24, MAX_NAME);
+
+    /// Truncate a string with ellipsis if it exceeds max_chars.
+    fn ellipsis(s: &str, max_chars: usize) -> String {
+        let char_count = s.chars().count();
+        if char_count <= max_chars {
+            s.to_string()
+        } else {
+            let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+            format!("{truncated}…")
+        }
+    }
 
     let mut lines = Vec::new();
 
@@ -432,24 +459,33 @@ pub fn build_list(servers: &[Server]) -> String {
     }
 
     for server in servers {
-        let dist = common::format_distance(server.distance);
+        let dist = format_distance(server.distance);
+        let sponsor_display = ellipsis(&server.sponsor, MAX_SPONSOR);
+        let name_display = ellipsis(&format!("{} ({})", server.name, server.country), MAX_NAME);
         if nc {
             lines.push(format!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
-                server.id,
-                server.sponsor,
-                format!("{} ({})", server.name, server.country),
-                dist,
+                "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
+                server.id, sponsor_display, name_display, dist,
             ));
         } else {
             lines.push(format!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
+                "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
                 server.id,
-                server.sponsor.white().bold(),
-                format!("{} ({})", server.name, server.country),
+                sponsor_display.white().bold(),
+                name_display,
                 dist.bright_black(),
             ));
         }
+    }
+
+    lines.push(String::new());
+    if nc {
+        lines.push(format!("  {} server(s) found", servers.len()));
+    } else {
+        lines.push(format!(
+            "  {} server(s) found",
+            servers.len().to_string().green().bold()
+        ));
     }
 
     lines.join("\n")

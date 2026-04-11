@@ -1,61 +1,26 @@
-//! Common shared utilities used across download, upload, formatting, and progress modules.
+//! Leaf-level utilities — no internal dependencies.
 //!
-//! This module consolidates duplicated functionality to follow DRY principles:
-//! - Bandwidth calculation
-//! - Stream count determination
-//! - Distance formatting
-//! - Data size formatting
+//! Contains validation and unit-conversion functions used across the crate.
+//!
+//! ## Validation
+//!
+//! IP validation functions are shared via `include!("validate.rs")`, which is
+//! also `include!()`-ed by `cli.rs` for build-time CLI argument validation.
+//! This ensures a single source of truth for `is_valid_ipv4`.
 
-/// Calculate bandwidth in bits per second from bytes transferred and elapsed time.
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::common::calculate_bandwidth;
-/// let bps = calculate_bandwidth(10_000_000, 2.0);
-/// assert_eq!(bps, 40_000_000.0);
-/// ```
+// Shared validation functions (single source of truth, also used by cli.rs/build.rs)
+include!("validate.rs");
+
+/// Detect if `NO_COLOR` environment variable is set.
 #[must_use]
-pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
-    if elapsed_secs > 0.0 {
-        (total_bytes as f64 * 8.0) / elapsed_secs
-    } else {
-        0.0
-    }
+pub fn no_color() -> bool {
+    std::env::var("NO_COLOR").is_ok()
 }
 
-/// Determine number of concurrent streams based on single connection flag.
-///
-/// Returns 1 for single connection mode, 4 for multi-stream mode.
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::common::determine_stream_count;
-/// assert_eq!(determine_stream_count(true), 1);
-/// assert_eq!(determine_stream_count(false), 4);
-/// ```
+/// Detect if `NO_EMOJI` environment variable is set (set by `--no-emoji` flag).
 #[must_use]
-pub fn determine_stream_count(single: bool) -> usize {
-    if single { 1 } else { 4 }
-}
-
-/// Format distance consistently: 1 decimal for < 100 km, 0 decimals for >= 100 km.
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::common::format_distance;
-/// assert_eq!(format_distance(50.5), "50.5 km");
-/// assert_eq!(format_distance(150.5), "150 km");
-/// ```
-#[must_use]
-pub fn format_distance(km: f64) -> String {
-    if km < 100.0 {
-        format!("{km:.1} km")
-    } else {
-        format!("{km:.0} km")
-    }
+pub fn no_emoji() -> bool {
+    std::env::var("NO_EMOJI").is_ok()
 }
 
 /// Format byte count into a human-readable string (KB, MB, GB).
@@ -64,13 +29,16 @@ pub fn format_distance(km: f64) -> String {
 ///
 /// ```
 /// # use netspeed_cli::common::format_data_size;
-/// assert!(format_data_size(512).contains("KB"));
+/// assert!(format_data_size(512).contains(" B"));
+/// assert!(format_data_size(500 * 1024).contains("KB"));
 /// assert!(format_data_size(1_048_576).contains("MB"));
 /// assert!(format_data_size(1_073_741_824).contains("GB"));
 /// ```
 #[must_use]
 pub fn format_data_size(bytes: u64) -> String {
-    if bytes < 1024 * 1024 {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else if bytes < 1024 * 1024 * 1024 {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
@@ -79,87 +47,23 @@ pub fn format_data_size(bytes: u64) -> String {
     }
 }
 
-/// Validate an IPv4 address string.
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::common::is_valid_ipv4;
-/// assert!(is_valid_ipv4("192.168.1.1"));
-/// assert!(!is_valid_ipv4("999.999.999.999"));
-/// ```
-#[must_use]
-pub fn is_valid_ipv4(s: &str) -> bool {
-    let parts: Vec<&str> = s.split('.').collect();
-    if parts.len() != 4 {
-        return false;
-    }
-    parts.iter().all(|p| p.parse::<u8>().is_ok())
-}
-
-/// Render a horizontal bar chart using Unicode block characters.
-///
-/// `value` and `max` define the proportion. `width` is the bar length in chars.
-/// Returns filled (`█`) and empty (`░`) segments. Pure text — callers apply
-/// color via `owo_colors` for consistency.
-///
-/// # Examples
-///
-/// ```
-/// # use netspeed_cli::common::bar_chart;
-/// let bar = bar_chart(50.0, 100.0, 10);
-/// assert_eq!(bar.chars().count(), 10);
-/// ```
-#[must_use]
-pub fn bar_chart(value: f64, max: f64, width: usize) -> String {
-    if max <= 0.0 || width == 0 {
-        return "░".repeat(width);
-    }
-    let pct = (value / max).clamp(0.0, 1.0);
-    let filled = (pct * width as f64).round() as usize;
-    let empty = width.saturating_sub(filled);
-    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_bandwidth_normal() {
-        assert_eq!(calculate_bandwidth(10_000_000, 2.0), 40_000_000.0);
-    }
-
-    #[test]
-    fn test_calculate_bandwidth_zero_elapsed() {
-        assert_eq!(calculate_bandwidth(10_000_000, 0.0), 0.0);
-    }
-
-    #[test]
-    fn test_determine_stream_count_single() {
-        assert_eq!(determine_stream_count(true), 1);
-    }
-
-    #[test]
-    fn test_determine_stream_count_multi() {
-        assert_eq!(determine_stream_count(false), 4);
-    }
-
-    #[test]
-    fn test_format_distance_under_100() {
-        assert_eq!(format_distance(50.5), "50.5 km");
-        assert_eq!(format_distance(99.9), "99.9 km");
-    }
-
-    #[test]
-    fn test_format_distance_100_plus() {
-        assert_eq!(format_distance(100.0), "100 km");
-        assert_eq!(format_distance(150.5), "150 km");
+    fn test_format_data_size_zero() {
+        assert_eq!(format_data_size(0), "0 B");
     }
 
     #[test]
     fn test_format_data_size_bytes() {
-        assert!(format_data_size(512).contains("KB"));
+        assert_eq!(format_data_size(512), "512 B");
+    }
+
+    #[test]
+    fn test_format_data_size_just_under_kb() {
+        assert_eq!(format_data_size(1023), "1023 B");
     }
 
     #[test]
@@ -175,59 +79,5 @@ mod tests {
     #[test]
     fn test_format_data_size_gigabytes() {
         assert!(format_data_size(4 * 1024 * 1024 * 1024).contains("GB"));
-    }
-
-    #[test]
-    fn test_is_valid_ipv4_valid() {
-        assert!(is_valid_ipv4("192.168.1.1"));
-        assert!(is_valid_ipv4("0.0.0.0"));
-        assert!(is_valid_ipv4("255.255.255.255"));
-    }
-
-    #[test]
-    fn test_is_valid_ipv4_invalid() {
-        assert!(!is_valid_ipv4("256.1.1.1"));
-        assert!(!is_valid_ipv4("1.2.3"));
-        assert!(!is_valid_ipv4("abc"));
-        assert!(!is_valid_ipv4(""));
-        assert!(!is_valid_ipv4("1.2.3.4.5"));
-    }
-
-    #[test]
-    fn test_bar_chart_half() {
-        let bar = bar_chart(50.0, 100.0, 10);
-        assert_eq!(bar.chars().count(), 10);
-        assert_eq!(bar, "█████░░░░░");
-    }
-
-    #[test]
-    fn test_bar_chart_full() {
-        let bar = bar_chart(100.0, 100.0, 10);
-        assert_eq!(bar.chars().count(), 10);
-        assert_eq!(bar, "██████████");
-    }
-
-    #[test]
-    fn test_bar_chart_empty_val() {
-        let bar = bar_chart(0.0, 100.0, 10);
-        assert_eq!(bar, "░░░░░░░░░░");
-    }
-
-    #[test]
-    fn test_bar_chart_zero_max() {
-        let bar = bar_chart(50.0, 0.0, 10);
-        assert_eq!(bar, "░░░░░░░░░░");
-    }
-
-    #[test]
-    fn test_bar_chart_zero_width() {
-        let bar = bar_chart(50.0, 100.0, 0);
-        assert_eq!(bar, "");
-    }
-
-    #[test]
-    fn test_bar_chart_over_max() {
-        let bar = bar_chart(150.0, 100.0, 10);
-        assert_eq!(bar, "██████████"); // clamped to 100%
     }
 }

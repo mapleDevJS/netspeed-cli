@@ -6,7 +6,7 @@ Thank you for your interest in contributing to netspeed-cli! All contributions a
 
 ### Prerequisites
 
-- Rust 1.85 or later
+- Rust 1.86 or later
 - `cargo` package manager
 
 ### Setup
@@ -40,38 +40,47 @@ All CI checks must pass before a PR can be merged:
 - `cargo deny check` (security + license audit)
 - MSRV verification with Rust 1.86
 
-## Development Workflow
+## Branch Model
 
-1. **Fork** the repository
-2. **Create a branch** from `develop` (or `main` for hotfixes)
-3. **Make your changes** with tests
-4. **Run verification**: `cargo fmt && cargo clippy -- -D warnings && cargo test`
-5. **Submit a PR** against `develop` (or `main` for hotfixes)
-
-### Branch Strategy
+This project uses a three-branch model:
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable releases only |
+| `master` | Stable releases only |
 | `develop` | Integration branch for features and fixes |
-| Feature branches | `feature/your-feature-name` (branch from `develop`) |
-| Hotfix branches | `hotfix/issue-description` (branch from `main`) |
+| `staging` | Release preparation — promoted to `master` for releases |
+
+## Development Workflow
+
+1. **Fork** the repository
+2. **Create a feature branch** from `develop`
+3. **Make your changes** with tests
+4. **Run verification**: `cargo fmt && cargo clippy -- -D warnings && cargo test`
+5. **Submit a PR** against `develop`
+
+### Branch Naming
+
+| Type | Convention | Example |
+|---|---|---|
+| Feature | `feature/your-feature-name` | `feature/dashboard-improvement` |
+| Bug fix | `fix/issue-description` | `fix/xml-parse-error` |
+| Hotfix | `hotfix/issue-description` | `hotfix/crash-on-macos` |
 
 **PR rules:**
-- Feature PRs → target `develop`
-- Release PRs → `develop` → `main` (see [Release Process](#release-process))
-- Hotfix PRs → target `main` directly
+- Feature/fix PRs → target `develop`
+- Release PRs → `staging` → `master` (see [Release Process](#release-process))
+- Hotfix PRs → target `master`
 
 ## Release Process
 
-Releases are published from **`main`** via CI automation. See [RELEASE.md](RELEASE.md)
+Releases are published from **`master`** via CI automation. See [RELEASE.md](RELEASE.md)
 for the complete release workflow.
 
 **Quick summary:**
 1. Develop on `develop`
-2. Open PR `develop` → `main`
-3. Merge PR to `main`
-4. Run `./scripts/release.sh <version>` from `main`
+2. When ready, merge `develop` into `staging`
+3. Open PR `staging` → `master`
+4. Merge PR to `master` and tag the release
 5. CI builds binaries, publishes GitHub Release, updates Homebrew, and publishes to crates.io
 
 ## What to Contribute

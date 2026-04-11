@@ -42,3 +42,9 @@ repos:
         language: system
         types: [cargo]
         pass_filenames: false
+      - id: cargo-deny
+        name: cargo deny
+        entry: cargo deny check
+        language: system
+        types: [cargo]
+        pass_filenames: false

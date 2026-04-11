@@ -1,14 +1,16 @@
 //! Core performance benchmarks for netspeed-cli.
 //!
 //! Benchmarks critical pure functions in:
-//! - Bandwidth calculation (`common::calculate_bandwidth`)
+//! - Bandwidth calculation (`bandwidth_loop::calculate_bandwidth`)
 //! - Distance calculation (`servers::calculate_distance`)
-//! - Formatting utilities (`common::format_distance`, `common::format_data_size`)
+//! - Formatting utilities (`formatter::formatting::format_distance`, `format_data_size`)
 //! - IP validation (`common::is_valid_ipv4`)
-//! - URL construction (`download::build_test_url`, `upload::build_upload_url`)
+//! - URL construction (`download::build_test_url`, `upload::build_upload_unit`)
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use netspeed_cli::bandwidth_loop::calculate_bandwidth;
 use netspeed_cli::common;
+use netspeed_cli::formatter::formatting::{format_data_size, format_distance};
 
 mod bandwidth {
     use super::*;
@@ -27,7 +29,7 @@ mod bandwidth {
                 &(bytes, elapsed),
                 |b, &(bytes, elapsed)| {
                     b.iter(|| {
-                        common::calculate_bandwidth(
+                        calculate_bandwidth(
                             std::hint::black_box(bytes),
                             std::hint::black_box(elapsed),
                         )
@@ -42,7 +44,7 @@ mod bandwidth {
     pub fn bench_calculate_bandwidth_zero_elapsed(c: &mut Criterion) {
         c.bench_function("bandwidth/zero_elapsed", |b| {
             b.iter(|| {
-                common::calculate_bandwidth(
+                calculate_bandwidth(
                     std::hint::black_box(1_000_000u64),
                     std::hint::black_box(0.0f64),
                 )
@@ -116,7 +118,7 @@ mod formatting {
             (5570.0f64, "long"),
         ] {
             group.bench_with_input(BenchmarkId::from_parameter(label), &value, |b, &value| {
-                b.iter(|| common::format_distance(std::hint::black_box(value)));
+                b.iter(|| format_distance(std::hint::black_box(value)));
             });
         }
 
@@ -133,7 +135,7 @@ mod formatting {
             (4 * 1024 * 1024 * 1024, "gigabytes"),
         ] {
             group.bench_with_input(BenchmarkId::from_parameter(label), &bytes, |b, &bytes| {
-                b.iter(|| common::format_data_size(std::hint::black_box(bytes)));
+                b.iter(|| format_data_size(std::hint::black_box(bytes)));
             });
         }
 

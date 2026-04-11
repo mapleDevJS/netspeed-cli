@@ -1,18 +1,11 @@
 use clap::Parser;
-use netspeed_cli::cli::CliArgs;
-use netspeed_cli::error::SpeedtestError;
-use netspeed_cli::orchestrator::SpeedTestOrchestrator;
 use netspeed_cli::progress::no_color;
+use netspeed_cli::{CliArgs, SpeedTestOrchestrator, SpeedtestError};
 use owo_colors::OwoColorize;
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = run_speedtest().await {
-        // __list_displayed__ is a sentinel meaning "—list was shown, exit normally"
-        if matches!(&e, SpeedtestError::Context { msg, .. } if msg == "__list_displayed__") {
-            return;
-        }
-
         let nc = no_color();
         if nc {
             eprintln!("\nError: {e}");
@@ -31,5 +24,6 @@ async fn main() {
 async fn run_speedtest() -> Result<(), SpeedtestError> {
     let args = CliArgs::parse();
     let orchestrator = SpeedTestOrchestrator::new(args)?;
-    orchestrator.run().await
+    orchestrator.run().await?;
+    Ok(())
 }
