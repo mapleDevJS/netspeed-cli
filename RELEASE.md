@@ -1,12 +1,12 @@
 # Release Process
 
-Releases are built and published from the **`main`** branch. All development
-happens on **`develop`** and flows to `main` via pull request.
+Releases are built and published from the **`master`** branch. All development
+happens on **`develop`** and flows to `master` via pull request.
 
 ## Workflow
 
 ```
-develop ──(PR)──► main ──(tag)──► CI publishes
+develop ──(PR)──► master ──(tag)──► CI publishes
 ```
 
 ### Step-by-step
@@ -19,31 +19,31 @@ git pull origin develop
 cargo test && cargo clippy -- -D warnings
 ```
 
-#### 2. Open PR from `develop` → `main`
+#### 2. Open PR from `develop` → `master`
 
 ```bash
-gh pr create --base main --head develop \
+gh pr create --base master --head develop \
   --title "Release v0.5.0" \
-  --body "Merge develop into main for v0.5.0 release"
+  --body "Merge develop into master for v0.5.0 release"
 ```
 
-Review the PR, ensure all CI checks pass, then **merge to `main`**.
+Review the PR, ensure all CI checks pass, then **merge to `master`**.
 
 #### 3. Create the release
 
-Check out `main` and run the release script:
+Check out `master` and run the release script:
 
 ```bash
-git checkout main
-git pull origin main
+git checkout master
+git pull origin master
 ./scripts/release.sh 0.5.0
 ```
 
 The script will:
-- Validate you're on `main` with a clean tree
+- Validate you're on `master` with a clean tree
 - Update `Cargo.toml` version
 - Commit with `chore(release): bump to v0.5.0`
-- Push to `origin/main`
+- Push to `origin/master`
 - Create and push annotated tag `v0.5.0`
 
 #### 4. Monitor CI
@@ -89,12 +89,12 @@ Follows [Semantic Versioning](https://semver.org/):
 If a critical bug needs immediate fixing:
 
 ```bash
-git checkout main
+git checkout master
 git checkout -b hotfix/critical-fix
 # ... make fix ...
 git commit -m "fix: critical bug description"
 git push origin hotfix/critical-fix
-gh pr create --base main --head hotfix/critical-fix
+gh pr create --base master --head hotfix/critical-fix
 # Merge PR, then run release script with patch version
 ./scripts/release.sh 0.4.1
 ```
