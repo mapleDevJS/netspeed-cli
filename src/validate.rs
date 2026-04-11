@@ -1,9 +1,8 @@
 /// Shared validation functions for CLI argument parsing.
 ///
-/// This file is `include!()`-ed by both `build.rs` (via `cli.rs`) and the
-/// main crate (via `common::is_valid_ipv4`), so it must be self-contained
-/// with no external dependencies.
-fn validate_ip_address(s: &str) -> Result<String, String> {
+/// This file is `include!()`-ed by both `cli.rs` and `common.rs`, so it must
+/// be self-contained with no external dependencies.
+pub fn validate_ip_address(s: &str) -> Result<String, String> {
     if !is_valid_ipv4(s) {
         return Err(format!(
             "Invalid IP address format: '{s}'. Expected format: x.x.x.x"
@@ -12,7 +11,7 @@ fn validate_ip_address(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 
-fn is_valid_ipv4(s: &str) -> bool {
+pub fn is_valid_ipv4(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 4 {
         return false;
