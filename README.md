@@ -119,7 +119,7 @@ netspeed-cli --history
 ### Dashboard
 
 ```
-  ╔══════════════════ netspeed-cli v0.5.0 ═══════════════════╗
+  ╔══════════════════ netspeed-cli <version> ═══════════════════╗
   ║  Server: Rogers (Toronto) · CA · 12km                    ║
   ║  Client IP: 192.168.1.1                                  ║
   ╚══════════════════════════════════════════════════════════╝
