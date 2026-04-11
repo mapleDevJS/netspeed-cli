@@ -40,27 +40,36 @@ All CI checks must pass before a PR can be merged:
 - `cargo deny check` (security + license audit)
 - MSRV verification with Rust 1.86
 
-## Development Workflow
+## Branch Model
 
-1. **Fork** the repository
-2. **Create a branch** from `develop` (or `master` for hotfixes)
-3. **Make your changes** with tests
-4. **Run verification**: `cargo fmt && cargo clippy -- -D warnings && cargo test`
-5. **Submit a PR** against `develop` (or `master` for hotfixes)
-
-### Branch Strategy
+This project uses a three-branch model:
 
 | Branch | Purpose |
 |---|---|
 | `master` | Stable releases only |
 | `develop` | Integration branch for features and fixes |
-| Feature branches | `feature/your-feature-name` (branch from `develop`) |
-| Hotfix branches | `hotfix/issue-description` (branch from `master`) |
+| `staging` | Release preparation — promoted to `master` for releases |
+
+## Development Workflow
+
+1. **Fork** the repository
+2. **Create a feature branch** from `develop`
+3. **Make your changes** with tests
+4. **Run verification**: `cargo fmt && cargo clippy -- -D warnings && cargo test`
+5. **Submit a PR** against `develop`
+
+### Branch Naming
+
+| Type | Convention | Example |
+|---|---|---|
+| Feature | `feature/your-feature-name` | `feature/dashboard-improvement` |
+| Bug fix | `fix/issue-description` | `fix/xml-parse-error` |
+| Hotfix | `hotfix/issue-description` | `hotfix/crash-on-macos` |
 
 **PR rules:**
-- Feature PRs → target `develop`
-- Release PRs → `develop` → `master` (see [Release Process](#release-process))
-- Hotfix PRs → target `master` directly
+- Feature/fix PRs → target `develop`
+- Release PRs → `staging` → `master` (see [Release Process](#release-process))
+- Hotfix PRs → target `master`
 
 ## Release Process
 
@@ -69,9 +78,9 @@ for the complete release workflow.
 
 **Quick summary:**
 1. Develop on `develop`
-2. Open PR `develop` → `master`
-3. Merge PR to `master`
-4. Run `./scripts/release.sh <version>` from `master`
+2. When ready, merge `develop` into `staging`
+3. Open PR `staging` → `master`
+4. Merge PR to `master` and tag the release
 5. CI builds binaries, publishes GitHub Release, updates Homebrew, and publishes to crates.io
 
 ## What to Contribute

@@ -1,52 +1,64 @@
 # Release Process
 
-Releases are built and published from the **`master`** branch. All development
-happens on **`develop`** and flows to `master` via pull request.
+Releases are built and published from the **`master`** branch. The project uses a
+three-branch model:
+
+| Branch | Purpose |
+|---|---|
+| `master` | Stable releases only — every merge is a tagged release |
+| `develop` | Integration branch for features, fixes, and refactors |
+| `staging` | Release preparation — promoted to `master` for releases |
 
 ## Workflow
 
 ```
-develop ──(PR)──► master ──(tag)──► CI publishes
+feature → develop → staging ──(PR)──► master ──(tag)──► CI publishes
 ```
 
 ### Step-by-step
 
-#### 1. Ensure `develop` is ready for release
+#### 1. Prepare `staging` for release
 
 ```bash
-git checkout develop
-git pull origin develop
+git checkout staging
+git pull origin staging
 cargo test && cargo clippy -- -D warnings
 ```
 
-#### 2. Open PR from `develop` → `master`
+#### 2. Open PR from `staging` → `master`
 
 ```bash
-gh pr create --base master --head develop \
-  --title "Release v0.5.0" \
-  --body "Merge develop into master for v0.5.0 release"
+gh pr create --base master --head staging \
+  --title "Release v0.8.0" \
+  --body "Promote staging to master for v0.8.0 release"
 ```
 
 Review the PR, ensure all CI checks pass, then **merge to `master`**.
 
-#### 3. Create the release
+#### 3. Create the release tag
 
-Check out `master` and run the release script:
+Check out `master` and tag the release:
 
 ```bash
 git checkout master
 git pull origin master
-./scripts/release.sh 0.5.0
+git tag -a v0.8.0 -m "Release v0.8.0"
+git push origin v0.8.0
 ```
 
-The script will:
-- Validate you're on `master` with a clean tree
-- Update `Cargo.toml` version
-- Commit with `chore(release): bump to v0.5.0`
-- Push to `origin/master`
-- Create and push annotated tag `v0.5.0`
+Pushing the tag triggers the release CI workflow.
 
-#### 4. Monitor CI
+#### 4. Reset `staging` to match `develop`
+
+After the release, reset staging so it's ready for the next cycle:
+
+```bash
+git checkout staging
+git reset --hard origin/develop
+git push origin staging --force-with-lease
+```
+
+#### 5. Monitor CI
 
 The `release.yml` workflow triggers automatically on the tag push and handles:
 
@@ -61,13 +73,13 @@ Monitor progress:
 gh run list --limit 1
 ```
 
-#### 5. Verify the release
+#### 6. Verify the release
 
 After CI completes:
 
 ```bash
 # Check GitHub Release
-gh release view v0.5.0 --repo mapleDevJS/netspeed-cli
+gh release view v0.8.0 --repo mapleDevJS/netspeed-cli
 
 # Test Homebrew install
 brew upgrade mapledevjs/netspeed-cli/netspeed-cli
@@ -92,11 +104,12 @@ If a critical bug needs immediate fixing:
 git checkout master
 git checkout -b hotfix/critical-fix
 # ... make fix ...
-git commit -m "fix: critical bug description"
+git add . && git commit -m "fix: critical bug description"
 git push origin hotfix/critical-fix
 gh pr create --base master --head hotfix/critical-fix
-# Merge PR, then run release script with patch version
-./scripts/release.sh 0.4.1
+# Merge PR, then tag the patch
+git tag -a v0.4.1 -m "Release v0.4.1"
+git push origin v0.4.1
 ```
 
 ## What CI Publishes
