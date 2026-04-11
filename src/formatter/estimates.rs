@@ -62,8 +62,10 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
         } else {
             format!("{:.1}x", ratio)
         };
+        let emoji_off = nc || crate::common::no_emoji();
         if met {
-            let line = format!("{:<26} ✅ {} above", target.name, suffix);
+            let icon = if emoji_off { "OK" } else { "✅" };
+            let line = format!("{:<26} {icon} {suffix} above", target.name);
             if nc {
                 lines.push(format!("  {line}"));
             } else {
@@ -71,7 +73,12 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
             }
         } else {
             let shortfall = target.required_mbps - dl_mbps;
-            let line = format!("{:<26} ❌ {:.1} Mb/s short", target.name, shortfall);
+            let icon = if emoji_off { "SHORT" } else { "❌" };
+            let line = if emoji_off {
+                format!("{:<26} {icon} {shortfall:.1} Mb/s", target.name)
+            } else {
+                format!("{:<26} {icon} {:.1} Mb/s short", target.name, shortfall)
+            };
             if nc {
                 lines.push(format!("  {line}"));
             } else {
@@ -100,11 +107,11 @@ struct FileEstimate {
 
 const ESTIMATES: &[FileEstimate] = &[
     FileEstimate {
-        name: "MP3 song",
-        size_bytes: 5 * 1024 * 1024,
+        name: "MP3 song (3 MB)",
+        size_bytes: 3 * 1024 * 1024,
     },
     FileEstimate {
-        name: "HD photo",
+        name: "HD photo (5 MB)",
         size_bytes: 5 * 1024 * 1024,
     },
     FileEstimate {
@@ -125,7 +132,7 @@ const ESTIMATES: &[FileEstimate] = &[
     },
 ];
 
-fn format_time_estimate(secs: f64, _nc: bool) -> String {
+fn format_time_estimate(secs: f64) -> String {
     if secs < 1.0 {
         format!("{:.1}s", secs)
     } else if secs < 60.0 {
@@ -158,7 +165,7 @@ pub fn build_estimates(download_bps: Option<f64>, nc: bool) -> String {
 
     for file in ESTIMATES {
         let secs = file.size_bytes as f64 / dl_bytes_per_sec;
-        let time_str = format_time_estimate(secs, nc);
+        let time_str = format_time_estimate(secs);
         let label = format!(
             "{:<24} ~{time_str}",
             format!("{} ({})", file.name, format_data_size(file.size_bytes))
@@ -187,8 +194,8 @@ mod tests {
 
     #[test]
     fn test_format_time_estimate() {
-        assert!(format_time_estimate(0.5, false).contains("0.5s"));
-        assert!(format_time_estimate(30.0, false).contains("30s"));
-        assert!(format_time_estimate(120.0, false).contains("2m"));
+        assert!(format_time_estimate(0.5).contains("0.5s"));
+        assert!(format_time_estimate(30.0).contains("30s"));
+        assert!(format_time_estimate(120.0).contains("2m"));
     }
 }

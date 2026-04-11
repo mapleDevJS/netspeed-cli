@@ -155,6 +155,7 @@ pub fn create_latency_monitor(client: &Client, server_url: &str) -> Box<dyn Back
 /// * `server_url` — Base URL of the server under test (for monitoring endpoint)
 /// * `test_label` — Label for progress display (e.g., "Download", "Upload")
 /// * `is_verbose` — Whether to show visible progress
+/// * `bytes` — Whether to display speed in bytes (MB/s) instead of bits (Mb/s)
 /// * `test_fn` — Async closure that runs the actual bandwidth test
 /// * `monitor_factory` — Optional closure that creates a background monitor
 ///
@@ -166,6 +167,7 @@ pub async fn run_bandwidth_test<F, Fut, M>(
     server_url: &str,
     test_label: &str,
     is_verbose: bool,
+    bytes: bool,
     test_fn: F,
     monitor_factory: Option<M>,
 ) -> Result<TestRunResult, SpeedtestError>
@@ -175,9 +177,9 @@ where
     M: FnOnce(&Client, &str) -> Box<dyn BackgroundMonitor>,
 {
     let progress = Arc::new(if is_verbose {
-        SpeedProgress::new(test_label)
+        SpeedProgress::new(test_label, bytes)
     } else {
-        SpeedProgress::with_target(test_label, indicatif::ProgressDrawTarget::hidden())
+        SpeedProgress::with_target(test_label, bytes, indicatif::ProgressDrawTarget::hidden())
     });
 
     // Set up optional background monitoring

@@ -69,12 +69,12 @@ fn build_latency_load_line(lat_load: f64, idle_ping: Option<f64>, nc: bool) -> S
     let degradation = degradation_str(lat_load, idle_ping, nc);
     if nc {
         format!(
-            "  {:>14}:   {:>8.1} ms{degradation}",
+            "  {:>14}:   {:>8.1} ms {degradation}",
             "Latency (load)", lat_load
         )
     } else {
         format!(
-            "  {:>14}:   {}{degradation}",
+            "  {:>14}:   {} {degradation}",
             "Latency (load)".dimmed(),
             format!("{lat_load:.1} ms").yellow(),
         )
@@ -126,7 +126,8 @@ pub fn build_latency_section(result: &TestResult, nc: bool) -> String {
         if nc {
             lines.push(format!("  {:>14}:   {:>8}", "Packet Loss", loss_str));
         } else {
-            let display = if loss == 0.0 {
+            let show_checkmark = loss == 0.0 && !crate::common::no_emoji() && !nc;
+            let display = if show_checkmark {
                 format!("{} {}", loss_str.green(), "✓".green())
             } else {
                 match loss_color {
@@ -376,22 +377,36 @@ pub fn format_footer(timestamp: &str, nc: bool) {
 /// Format a list of available servers.
 pub fn build_list(servers: &[Server]) -> String {
     let nc = no_color();
+    const MAX_SPONSOR: usize = 35;
+    const MAX_NAME: usize = 40;
 
     let (max_id_len, max_sponsor_len, max_name_len) =
         servers
             .iter()
             .fold((3, 7, 24), |(max_id, max_sponsor, max_name), s| {
-                let name_len = s.name.len() + s.country.len() + 3;
+                let name_len =
+                    (s.name.chars().count() + s.country.chars().count() + 3).min(MAX_NAME);
                 (
-                    max_id.max(s.id.len()),
-                    max_sponsor.max(s.sponsor.len()),
+                    max_id.max(s.id.chars().count()),
+                    max_sponsor.max(s.sponsor.chars().count().min(MAX_SPONSOR)),
                     max_name.max(name_len),
                 )
             });
 
     let idw = max_id_len.max(3);
-    let sw = max_sponsor_len.max(7);
-    let nw = max_name_len.max(24);
+    let sw = max_sponsor_len.clamp(7, MAX_SPONSOR);
+    let nw = max_name_len.clamp(24, MAX_NAME);
+
+    /// Truncate a string with ellipsis if it exceeds max_chars.
+    fn ellipsis(s: &str, max_chars: usize) -> String {
+        let char_count = s.chars().count();
+        if char_count <= max_chars {
+            s.to_string()
+        } else {
+            let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+            format!("{truncated}…")
+        }
+    }
 
     let mut lines = Vec::new();
 
@@ -433,23 +448,32 @@ pub fn build_list(servers: &[Server]) -> String {
 
     for server in servers {
         let dist = format_distance(server.distance);
+        let sponsor_display = ellipsis(&server.sponsor, MAX_SPONSOR);
+        let name_display = ellipsis(&format!("{} ({})", server.name, server.country), MAX_NAME);
         if nc {
             lines.push(format!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
-                server.id,
-                server.sponsor,
-                format!("{} ({})", server.name, server.country),
-                dist,
+                "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
+                server.id, sponsor_display, name_display, dist,
             ));
         } else {
             lines.push(format!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
+                "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
                 server.id,
-                server.sponsor.white().bold(),
-                format!("{} ({})", server.name, server.country),
+                sponsor_display.white().bold(),
+                name_display,
                 dist.bright_black(),
             ));
         }
+    }
+
+    lines.push(String::new());
+    if nc {
+        lines.push(format!("  {} server(s) found", servers.len()));
+    } else {
+        lines.push(format!(
+            "  {} server(s) found",
+            servers.len().to_string().green().bold()
+        ));
     }
 
     lines.join("\n")

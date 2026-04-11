@@ -65,7 +65,7 @@ impl OutputFormat {
                 ul,
                 history_data,
             } => {
-                dashboard::format_dashboard(result, dl, ul, history_data)?;
+                dashboard::format_dashboard(result, dl, ul, history_data, bytes)?;
                 Ok(())
             }
         }

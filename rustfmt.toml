@@ -8,5 +8,5 @@ reorder_modules = true
 remove_nested_parens = true
 edition = "2024"
 merge_derives = true
-use_try_shorthand = false
-use_field_init_shorthand = false
+use_try_shorthand = true
+use_field_init_shorthand = true

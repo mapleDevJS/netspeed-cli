@@ -6,18 +6,18 @@
 // See `common::format_data_size` for docs and examples.
 pub use crate::common::format_data_size;
 
-/// Format distance consistently: 1 decimal for < 100 km, 0 decimals for >= 100 km.
+/// Format distance consistently: 1 decimal for < 1000 km, 0 decimals for >= 1000 km.
 ///
 /// # Examples
 ///
 /// ```
 /// # use netspeed_cli::formatter::formatting::format_distance;
 /// assert_eq!(format_distance(50.5), "50.5 km");
-/// assert_eq!(format_distance(150.5), "150 km");
+/// assert_eq!(format_distance(150.5), "150.5 km");
 /// ```
 #[must_use]
 pub fn format_distance(km: f64) -> String {
-    if km < 100.0 {
+    if km < 1000.0 {
         format!("{km:.1} km")
     } else {
         format!("{km:.0} km")
@@ -66,7 +66,7 @@ pub fn sparkline(values: &[f64]) -> String {
     let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let range = max - min;
     if range <= 0.0 {
-        return CHARS[3].to_string().repeat(values.len());
+        return "─".repeat(values.len());
     }
     values
         .iter()
@@ -82,15 +82,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_format_distance_under_100() {
+    fn test_format_distance_under_1000() {
         assert_eq!(format_distance(50.5), "50.5 km");
         assert_eq!(format_distance(99.9), "99.9 km");
+        assert_eq!(format_distance(100.0), "100.0 km");
+        assert_eq!(format_distance(150.5), "150.5 km");
+        assert_eq!(format_distance(999.9), "999.9 km");
     }
 
     #[test]
-    fn test_format_distance_100_plus() {
-        assert_eq!(format_distance(100.0), "100 km");
-        assert_eq!(format_distance(150.5), "150 km");
+    fn test_format_distance_1000_plus() {
+        assert_eq!(format_distance(1000.0), "1000 km");
+        assert_eq!(format_distance(1500.5), "1500 km");
     }
 
     #[test]
@@ -146,6 +149,6 @@ mod tests {
     fn test_sparkline_identical_values() {
         let line = sparkline(&[5.0, 5.0, 5.0]);
         assert_eq!(line.chars().count(), 3);
-        assert!(line.chars().all(|c| c == '▄'));
+        assert!(line.chars().all(|c| c == '─'));
     }
 }

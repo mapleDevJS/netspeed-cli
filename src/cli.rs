@@ -97,6 +97,14 @@ pub struct CliArgs {
     #[arg(long)]
     pub quiet: bool,
 
+    /// Disable all colors (equivalent to NO_COLOR=1)
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Replace emoji/icons with plain text (for terminals without emoji support)
+    #[arg(long)]
+    pub no_emoji: bool,
+
     /// Validate configuration and exit without running tests
     #[arg(long)]
     pub dry_run: bool,

@@ -34,6 +34,12 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
             ratings::format_speed_colored(dl, bytes)
         };
         parts.push(format!("Download: {speed}"));
+    } else {
+        parts.push(if nc {
+            "Download: — (skipped)".to_string()
+        } else {
+            format!("Download: {}", "(skipped)".bright_black())
+        });
     }
 
     if let Some(ul) = result.upload {
@@ -43,6 +49,12 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
             ratings::format_speed_colored(ul, bytes)
         };
         parts.push(format!("Upload: {speed}"));
+    } else {
+        parts.push(if nc {
+            "Upload: — (skipped)".to_string()
+        } else {
+            format!("Upload: {}", "(skipped)".bright_black())
+        });
     }
 
     eprintln!("{}", parts.join(" | "));
@@ -179,11 +191,7 @@ pub fn format_verbose_sections(result: &TestResult) {
         let dl_stability = stability::format_stability_line(dl_cv, nc);
         let ul_stability = stability::format_stability_line(ul_cv, nc);
         eprintln!();
-        if nc {
-            eprintln!("  STABILITY");
-        } else {
-            eprintln!("\n  {}", "STABILITY".bold().underline());
-        }
+        eprintln!("  {}", "STABILITY".bold().underline());
         eprintln!("  {:>14}:   {dl_stability}", "Download".dimmed());
         eprintln!("  {:>14}:   {ul_stability}", "Upload".dimmed());
     }
@@ -192,11 +200,7 @@ pub fn format_verbose_sections(result: &TestResult) {
     if let Some(ref samples) = result.ping_samples {
         if let Some((p50, p95, p99)) = stability::compute_percentiles(samples) {
             eprintln!();
-            if nc {
-                eprintln!("  LATENCY PERCENTILES");
-            } else {
-                eprintln!("\n  {}", "LATENCY PERCENTILES".bold().underline());
-            }
+            eprintln!("  {}", "LATENCY PERCENTILES".bold().underline());
             let p50_str = format!("{p50:.1} ms");
             let p95_str = format!("{p95:.1} ms");
             let p99_str = format!("{p99:.1} ms");

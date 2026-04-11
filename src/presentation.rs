@@ -153,12 +153,14 @@ pub fn print_history() -> Result<(), SpeedtestError> {
         eprintln!("\n  {}", "TEST HISTORY".bold().underline());
     }
     eprintln!(
-        "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
+        "  {:<20}  {:<15}  {:>12}  {:>14}  {:>14}",
         "Date", "Sponsor", "Ping", "Download", "Upload"
     );
 
     for entry in entries.iter().rev() {
-        let date = &entry.timestamp[0..10];
+        let date = entry.timestamp.get(0..10).unwrap_or(&entry.timestamp);
+        // Pad short dates to 10 chars for column alignment
+        let date_padded = format!("{date:<10}");
         let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
         let dl = entry
             .download
@@ -168,20 +170,21 @@ pub fn print_history() -> Result<(), SpeedtestError> {
             .map_or("-".to_string(), |u| format!("{:.2} Mb/s", u / 1_000_000.0));
 
         let sponsor_display = if entry.sponsor.len() > 15 {
-            &entry.sponsor[0..12]
+            let truncated: String = entry.sponsor.chars().take(12).collect();
+            format!("{truncated}…")
         } else {
-            &entry.sponsor
+            entry.sponsor.clone()
         };
 
         if nc {
             eprintln!(
-                "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-                date, sponsor_display, ping, dl, ul
+                "  {:<20}  {:<15}  {:>12}  {:>14}  {:>14}",
+                date_padded, sponsor_display, ping, dl, ul
             );
         } else {
             eprintln!(
-                "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-                date,
+                "  {:<20}  {:<15}  {:>12}  {:>14}  {:>14}",
+                date_padded,
                 sponsor_display,
                 ping.cyan(),
                 dl.green(),
