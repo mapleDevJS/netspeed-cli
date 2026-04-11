@@ -44,6 +44,7 @@ mod presentation;
 pub use cli::CliArgs;
 pub use cli::OutputFormatType;
 pub use error::SpeedtestError;
+pub use orchestrator::ExitReason;
 pub use orchestrator::SpeedTestOrchestrator;
 pub use types::{BandwidthMetrics, Server, ServerInfo, TestResult};
 

@@ -16,6 +16,15 @@ use crate::test_runner::{self, TestRunResult, create_latency_monitor};
 use crate::types::{Server, ServerInfo, TestResult};
 use crate::{download, upload};
 
+/// Reason the orchestrator exited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitReason {
+    /// Normal completion -- speed test ran and results were displayed.
+    Success,
+    /// `--list` flag was used; server list was printed and no test was run.
+    ListDisplayed,
+}
+
 /// Orchestrates the full speed test lifecycle.
 pub struct SpeedTestOrchestrator {
     args: CliArgs,
@@ -36,17 +45,33 @@ impl SpeedTestOrchestrator {
     }
 
     /// Run the full speed test workflow.
-    pub async fn run(&self) -> Result<(), SpeedtestError> {
+    pub async fn run(&self) -> Result<ExitReason, SpeedtestError> {
+        // Set NO_COLOR and NO_EMOJI env vars so formatters can detect them
+        if self.config.no_color {
+            // SAFETY: single-threaded context at startup, no concurrent env access
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var("NO_COLOR", "1");
+            }
+        }
+        if self.config.no_emoji {
+            // SAFETY: single-threaded context at startup, no concurrent env access
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var("NO_EMOJI", "1");
+            }
+        }
+
         // Shell completion early-exit
         if let Some(shell) = self.args.generate_completion {
             Self::generate_shell_completion(shell);
-            return Ok(());
+            return Ok(ExitReason::Success);
         }
 
         // History display early-exit
         if self.args.history {
             presentation::print_history()?;
-            return Ok(());
+            return Ok(ExitReason::Success);
         }
 
         // Dry-run: validate configuration and exit
@@ -60,7 +85,8 @@ impl SpeedTestOrchestrator {
                 no_upload: self.config.no_upload,
                 single_stream: self.config.single,
             };
-            return presentation::print_dry_run(&dry_run_config);
+            presentation::print_dry_run(&dry_run_config)?;
+            return Ok(ExitReason::Success);
         }
 
         let is_verbose = self.is_verbose();
@@ -75,7 +101,7 @@ impl SpeedTestOrchestrator {
 
         // Handle --list: format_list already printed, signal completion
         if self.config.list {
-            return Ok(());
+            return Ok(ExitReason::ListDisplayed);
         }
 
         // Select best server
@@ -121,7 +147,7 @@ impl SpeedTestOrchestrator {
         // Output — Strategy pattern dispatch
         self.output_results(&result, &dl_result, &ul_result)?;
 
-        Ok(())
+        Ok(ExitReason::Success)
     }
 
     /// Whether verbose output should be shown.
@@ -226,6 +252,7 @@ impl SpeedTestOrchestrator {
             &server.url,
             "Download",
             is_verbose,
+            self.config.bytes,
             |progress| async {
                 let result =
                     download::download_test(&self.client, server, self.config.single, progress)
@@ -258,6 +285,7 @@ impl SpeedTestOrchestrator {
             &server.url,
             "Upload",
             is_verbose,
+            self.config.bytes,
             |progress| async {
                 let result =
                     upload::upload_test(&self.client, server, self.config.single, progress).await?;
