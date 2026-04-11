@@ -12,24 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Architecture**: `download.rs` refactored to use shared `BandwidthLoopState` instead of inline throttle logic (~60 lines of duplicated measurement state eliminated)
 - **API stability**: `lib.rs` now documents a stable public API facade (`CliArgs`, `OutputFormatType`, `SpeedtestError`, `SpeedTestOrchestrator`, `Server`, `ServerInfo`, `TestResult`). Internal modules remain `pub` for integration tests but are marked as non-stable
 - **API consistency**: Both `download_test()` and `upload_test()` now return `BandwidthResult` instead of tuple types `(f64, f64, u64, Vec<f64>)`
-- **Dependencies**: Updated 6 dependencies to latest versions
-  - `indicatif`: 0.17.11 → 0.18.4
-  - `clap_mangen`: 0.2.33 → 0.3.0
-  - `quick-xml`: 0.37.5 → 0.39.2
-  - `toml`: 0.9.12 → 1.1.2
-  - `criterion`: 0.5.1 → 0.8.2
-  - `actions/upload-artifact`: 4 → 7
 
 ### Fixed
 
-- docs.rs build failure: `build.rs` now skips file generation on docs.rs (read-only filesystem)
-- Added `[package.metadata.docs.rs]` configuration to `Cargo.toml`
-- Benchmark compatibility with criterion 0.8 (`std::hint::black_box`)
 - `main.rs` imports updated to use stable public API re-exports instead of internal module paths
 
 ### Pending
 
-- `actions/download-artifact`: 7 → 8 (requires manual merge — workflow file)
+- `actions/download-artifact`: 7 -> 8 (requires manual merge -- workflow file)
 
 ## [0.7.0] - 2026-04-07
 
@@ -216,3 +206,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shell completions (bash, zsh, fish, PowerShell, Elvish)
 - Man page
 - Server selection and listing
+
+<!-- Link reference definitions for GitHub compare URLs -->
+
+[Unreleased]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.1.3...v0.2.0
+[0.1.3]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/mapleDevJS/netspeed-cli/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/mapleDevJS/netspeed-cli/releases/tag/v0.1.0
