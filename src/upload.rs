@@ -31,9 +31,6 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
 /// Number of upload rounds per stream (each round uploads a chunk of test data).
 const UPLOAD_TEST_ROUNDS: usize = 4;
 
-/// Estimated total bytes for progress bar initialization.
-const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
-
 /// Run upload bandwidth test against the given server.
 ///
 /// Returns [`BandwidthResult`] with average/peak speed, total bytes, and samples.
@@ -48,7 +45,7 @@ pub async fn upload_test(
     progress: Arc<SpeedProgress>,
 ) -> Result<BandwidthResult, SpeedtestError> {
     let concurrent_uploads = determine_stream_count(single);
-    let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
+    let state = Arc::new(BandwidthLoopState::new(progress));
     let upload_data = generate_upload_data(200_000); // 200KB chunks
 
     let mut handles = Vec::new();
@@ -82,9 +79,20 @@ pub async fn upload_test(
 
     // Collect results — log any task panics so failures aren't silently swallowed.
     // Bytes are already counted via atomic counters, so we don't need the return values.
+    let nc = crate::progress::no_color();
     for (i, handle) in handles.into_iter().enumerate() {
         if let Err(e) = handle.await {
-            eprintln!("\nWarning: upload task {i} failed: {e}");
+            let task_num = i + 1;
+            let msg = if nc {
+                format!("\nWarning: upload task {task_num} failed: {e}")
+            } else {
+                use owo_colors::OwoColorize;
+                format!(
+                    "\n{}",
+                    format!("Warning: upload task {task_num} failed: {e}").yellow()
+                )
+            };
+            eprintln!("{msg}");
         }
     }
 

@@ -75,7 +75,7 @@ pub async fn fetch_servers(client: &Client) -> Result<Vec<Server>, SpeedtestErro
         Ok(coords) => coords,
         Err(ref e) => {
             eprintln!(
-                "Warning: could not determine client location ({e}), using default (equator)"
+                "Warning: could not determine client location ({e}), using default coordinates"
             );
             (0.0, 0.0)
         }

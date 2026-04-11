@@ -10,6 +10,18 @@ use super::ratings::{
     format_speed_colored, format_speed_plain, ping_rating, speed_rating_mbps,
 };
 
+/// Build a section separator line for detailed output.
+pub(crate) fn section_divider(title: &str, nc: bool) -> String {
+    let title_with_spaces = format!(" {title} ");
+    let dash_count = 60usize.saturating_sub(title_with_spaces.len());
+    let dashes = "─".repeat(dash_count);
+    if nc {
+        format!("  {title_with_spaces}{dashes}")
+    } else {
+        format!("  {title_with_spaces}{}", dashes.dimmed())
+    }
+}
+
 fn build_skipped_line(label: &str, nc: bool) -> String {
     if nc {
         format!("  {:>14}:   — (skipped)", label)
@@ -126,7 +138,7 @@ pub fn build_latency_section(result: &TestResult, nc: bool) -> String {
         if nc {
             lines.push(format!("  {:>14}:   {:>8}", "Packet Loss", loss_str));
         } else {
-            let show_checkmark = loss == 0.0 && !crate::common::no_emoji() && !nc;
+            let show_checkmark = loss == 0.0 && !crate::common::no_emoji();
             let display = if show_checkmark {
                 format!("{} {}", loss_str.green(), "✓".green())
             } else {

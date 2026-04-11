@@ -1,9 +1,10 @@
 //! Terminal progress bars and spinners for test feedback.
 //!
 //! This module provides user interface components for test progress:
-//! - [`SpeedProgress`] — Progress bar with real-time speed display
+//! - [`SpeedProgress`] — Indeterminate progress bar with real-time speed display
 //! - Spinners for individual test phases (server discovery, ping, etc.)
 //! - `NO_COLOR` environment variable support for disabling colored output
+//! - `NO_EMOJI` environment variable support for disabling emoji characters
 //! - Colorized finish messages with test results
 
 #![allow(
@@ -34,25 +35,26 @@ impl SpeedProgress {
     }
 
     /// Create with a custom draw target (use `ProgressDrawTarget::hidden()` for silent mode).
+    /// Uses an indeterminate-style progress bar — no misleading percentage, just elapsed time,
+    /// live speed, and total bytes.
     #[must_use]
     pub fn with_target(label: &str, bytes: bool, target: ProgressDrawTarget) -> Self {
-        let bar = ProgressBar::with_draw_target(Some(100), target);
+        let bar = ProgressBar::with_draw_target(None, target); // None = indeterminate
 
         let nc = no_color();
         let no_emoji = crate::common::no_emoji();
-        let ascii = nc || no_emoji;
-        let style = if ascii {
+        let style = if no_emoji {
             ProgressStyle::with_template(
-                "  {prefix} {bar:40} {percent:>3}%  {elapsed_precise} | {msg}",
+                "  {prefix} {spinner}  {elapsed_precise} | {msg}",
             )
             .unwrap()
-            .progress_chars("=>-")
+            .tick_strings(&["—", "\\", "|", "/"])
         } else {
             ProgressStyle::with_template(
-                "  {prefix} {bar:40.cyan/blue} {percent:>3}%  {elapsed_precise} | {msg}",
+                "  {prefix} {spinner}  {elapsed_precise} | {msg}",
             )
             .unwrap()
-            .progress_chars("━╾─")
+            .tick_strings(&["━", "╾", "━", "╾"])
         };
 
         bar.set_style(style);
@@ -62,16 +64,14 @@ impl SpeedProgress {
             format!("{:<10}", format!("{label}:").dimmed())
         });
         bar.set_message("starting...");
-        bar.set_position(0);
 
         Self { bar, bytes }
     }
 
     /// Update the live speed and data display.
     /// `speed_mbps` is the current speed in Mb/s (or MB/s if bytes mode).
-    /// `progress` is 0.0 to 1.0.
     /// `bytes` is total bytes transferred so far.
-    pub fn update(&self, speed_mbps: f64, progress: f64, bytes: u64) {
+    pub fn update(&self, speed_mbps: f64, bytes: u64) {
         let unit = if self.bytes { "MB/s" } else { "Mb/s" };
         let speed_str = if speed_mbps < 1000.0 {
             format!("{speed_mbps:.1} {unit}")
@@ -89,8 +89,6 @@ impl SpeedProgress {
         };
 
         self.bar.set_message(msg);
-        let pct = (progress * 100.0).round() as u64;
-        self.bar.set_position(pct.min(100));
     }
 
     /// Mark the test as complete and display final speed.
@@ -105,7 +103,6 @@ impl SpeedProgress {
 
         let data_str = format_data_size(total_bytes);
 
-        self.bar.set_position(100);
         let msg = if no_color() {
             format!("DONE ({data_str} total @ {speed_str})")
         } else {
@@ -124,7 +121,7 @@ impl SpeedProgress {
 #[must_use]
 pub fn create_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(10));
-    let tick_chars = if crate::common::no_emoji() || no_color() {
+    let tick_chars = if crate::common::no_emoji() {
         &["|", "/", "-", "\\"][..]
     } else {
         &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"][..]
@@ -141,7 +138,7 @@ pub fn create_spinner(message: &str) -> ProgressBar {
 
 /// Finish a simple spinner with a checkmark.
 pub fn finish_ok(pb: &ProgressBar, message: &str) {
-    if no_color() || crate::common::no_emoji() {
+    if crate::common::no_emoji() {
         pb.finish_with_message(format!("  [OK] {message}"));
     } else {
         pb.finish_with_message(format!("  {} {}", "✓".green(), message));
@@ -195,7 +192,7 @@ mod tests {
     #[test]
     fn test_speed_progress_update() {
         let sp = SpeedProgress::new("Download", false);
-        sp.update(125.4, 0.5, 5_000_000);
+        sp.update(125.4, 5_000_000);
         sp.finish(125.40, 10_000_000);
     }
 
@@ -232,7 +229,7 @@ mod tests {
     fn test_speed_progress_nc() {
         set_no_color();
         let sp = SpeedProgress::new("Download", false);
-        sp.update(125.4, 0.5, 5_000_000);
+        sp.update(125.4, 5_000_000);
         sp.finish(125.40, 10_000_000);
         unset_no_color();
     }

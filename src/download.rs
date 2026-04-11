@@ -23,10 +23,6 @@ use crate::types::Server;
 use reqwest::Client;
 use std::sync::Arc;
 
-/// Estimated total bytes for progress bar initialization.
-/// This is a rough estimate; the bar will adjust as actual data is downloaded.
-const ESTIMATED_DOWNLOAD_BYTES: u64 = 15_000_000; // 15 MB estimate
-
 /// Number of download rounds per stream (each round fetches a different test file).
 const DOWNLOAD_TEST_ROUNDS: usize = 4;
 
@@ -62,7 +58,7 @@ pub async fn download_test(
     progress: Arc<SpeedProgress>,
 ) -> Result<BandwidthResult, SpeedtestError> {
     let concurrent_streams = determine_stream_count(single);
-    let state = Arc::new(BandwidthLoopState::new(ESTIMATED_DOWNLOAD_BYTES, progress));
+    let state = Arc::new(BandwidthLoopState::new(progress));
 
     // Spawn streams that report progress
     let mut handles = Vec::new();
@@ -163,12 +159,5 @@ mod tests {
     fn test_extract_base_url_different_path() {
         let url = "https://cdn.speedtest.net/upload.php";
         assert_eq!(extract_base_url(url), "https://cdn.speedtest.net");
-    }
-
-    #[test]
-    fn test_estimated_download_bytes_constant() {
-        // Verify the constant is reasonable (around 15 MB)
-        const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES > 10_000_000);
-        const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES < 20_000_000);
     }
 }

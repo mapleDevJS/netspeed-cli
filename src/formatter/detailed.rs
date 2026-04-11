@@ -88,10 +88,18 @@ pub fn format_detailed(
     eprintln!("{}", ratings::format_overall_rating(result, nc));
     eprintln!();
 
+    eprintln!("{}", sections::section_divider("Latency", nc));
     sections::format_latency_section(result, nc);
+    eprintln!();
+    eprintln!("{}", sections::section_divider("Download", nc));
     sections::format_download_section(result, bytes, nc, dl_skipped);
+    eprintln!();
+    eprintln!("{}", sections::section_divider("Upload", nc));
     sections::format_upload_section(result, bytes, nc, ul_skipped);
+    eprintln!();
+    eprintln!("{}", sections::section_divider("Connection", nc));
     sections::format_connection_info(result, nc);
+    eprintln!();
     sections::format_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc);
     sections::format_footer(&result.timestamp, nc);
 

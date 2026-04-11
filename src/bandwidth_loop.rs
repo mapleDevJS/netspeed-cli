@@ -44,7 +44,6 @@ pub struct BandwidthLoopState {
     pub speed_samples: Arc<Mutex<Vec<f64>>>,
     pub start: Instant,
     pub last_sample_ms: Arc<AtomicU64>,
-    pub estimated_total: u64,
     pub progress: Arc<SpeedProgress>,
 }
 
@@ -60,14 +59,13 @@ pub struct BandwidthResult {
 impl BandwidthLoopState {
     /// Create a new bandwidth measurement state.
     #[must_use]
-    pub fn new(estimated_total: u64, progress: Arc<SpeedProgress>) -> Self {
+    pub fn new(progress: Arc<SpeedProgress>) -> Self {
         Self {
             total_bytes: Arc::new(AtomicU64::new(0)),
             peak_bps: Arc::new(AtomicU64::new(0)),
             speed_samples: Arc::new(Mutex::new(Vec::new())),
             start: Instant::now(),
             last_sample_ms: Arc::new(AtomicU64::new(0)),
-            estimated_total,
             progress,
         }
     }
@@ -105,8 +103,7 @@ impl BandwidthLoopState {
             samples.push(speed);
         }
 
-        let pct = (total as f64 / self.estimated_total as f64).min(1.0);
-        self.progress.update(speed / 1_000_000.0, pct, total);
+        self.progress.update(speed / 1_000_000.0, total);
     }
 
     /// Compute final results from accumulated state.

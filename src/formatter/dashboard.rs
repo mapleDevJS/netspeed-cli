@@ -451,7 +451,7 @@ fn build_history(recent: &HistoryData, nc: bool) -> String {
     }
 
     // Last 3 entries as text
-    let emoji_off = nc || crate::common::no_emoji();
+    let no_emoji = crate::common::no_emoji();
     for (date, dl, ul) in recent.iter().rev().take(3) {
         let indicator = if *dl >= 200.0 {
             "⚡"
@@ -462,9 +462,9 @@ fn build_history(recent: &HistoryData, nc: bool) -> String {
         } else {
             "○"
         };
-        let arrow_dl = if emoji_off { "DL" } else { "↓" };
-        let arrow_ul = if emoji_off { "UL" } else { "↑" };
-        if emoji_off {
+        let arrow_dl = if no_emoji { " DL" } else { "↓" };
+        let arrow_ul = if no_emoji { " UL" } else { "↑" };
+        if no_emoji {
             lines.push(format!(
                 "  {date}  {dl:>7.1}{arrow_dl} / {ul:>6.1}{arrow_ul} Mb/s"
             ));
@@ -491,7 +491,7 @@ fn build_history(recent: &HistoryData, nc: bool) -> String {
 
 /// Build footer with keyboard hints (informational — dashboard is static output).
 fn build_footer(nc: bool) -> String {
-    let line1 = "  Tip: --format dashboard|detailed|simple|json|csv";
+    let line1 = "  Tip: --format dashboard, detailed, simple, json, csv";
     let line2 = "       --no-emoji, --no-color, --bytes, --quiet";
     if nc {
         format!("{line1}\n{line2}")

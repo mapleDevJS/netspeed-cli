@@ -62,9 +62,9 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
         } else {
             format!("{:.1}x", ratio)
         };
-        let emoji_off = nc || crate::common::no_emoji();
+        let no_emoji = crate::common::no_emoji();
         if met {
-            let icon = if emoji_off { "OK" } else { "✅" };
+            let icon = if no_emoji { "OK" } else { "✅" };
             let line = format!("{:<26} {icon} {suffix} above", target.name);
             if nc {
                 lines.push(format!("  {line}"));
@@ -73,8 +73,8 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
             }
         } else {
             let shortfall = target.required_mbps - dl_mbps;
-            let icon = if emoji_off { "SHORT" } else { "❌" };
-            let line = if emoji_off {
+            let icon = if no_emoji { "SHORT" } else { "❌" };
+            let line = if no_emoji {
                 format!("{:<26} {icon} {shortfall:.1} Mb/s", target.name)
             } else {
                 format!("{:<26} {icon} {:.1} Mb/s short", target.name, shortfall)

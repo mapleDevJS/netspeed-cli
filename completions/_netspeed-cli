@@ -33,6 +33,9 @@ _netspeed-cli() {
 '--list[Display a list of speedtest.net servers sorted by distance]' \
 '--history[Display test history]' \
 '--quiet[Suppress all progress output (JSON/CSV still go to stdout)]' \
+'--no-color[Disable all colors (equivalent to NO_COLOR=1)]' \
+'--no-emoji[Replace emoji/icons with plain text (for terminals without emoji support)]' \
+'--dry-run[Validate configuration and exit without running tests]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \

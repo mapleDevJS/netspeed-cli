@@ -97,11 +97,11 @@ pub fn print_dry_run(config: &DryRunConfig) -> Result<(), SpeedtestError> {
 pub fn format_ping_result(avg_latency_ms: f64) -> String {
     let nc = no_color();
     if nc {
-        format!("Latency: {avg_latency_ms:.2} ms")
+        format!("Latency: {avg_latency_ms:.1} ms")
     } else {
         format!(
             "Latency: {}",
-            format!("{avg_latency_ms:.2} ms").cyan().bold()
+            format!("{avg_latency_ms:.1} ms").cyan().bold()
         )
     }
 }

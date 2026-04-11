@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH netspeed-cli 1  "netspeed-cli 0.8.0-SNAPSHOT" 
+.TH netspeed-cli 1  "netspeed-cli 0.8.0" 
 .SH NAME
 netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-no\-color\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-dry\-run\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Command line interface for testing internet bandwidth using speedtest.net
 .SH OPTIONS
@@ -95,6 +95,15 @@ Display test history
 \fB\-\-quiet\fR
 Suppress all progress output (JSON/CSV still go to stdout)
 .TP
+\fB\-\-no\-color\fR
+Disable all colors (equivalent to NO_COLOR=1)
+.TP
+\fB\-\-no\-emoji\fR
+Replace emoji/icons with plain text (for terminals without emoji support)
+.TP
+\fB\-\-dry\-run\fR
+Validate configuration and exit without running tests
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
 .TP
@@ -116,4 +125,4 @@ Examples:
   netspeed\-cli \-\-generate\-completion zsh > ~/.zsh/functions/_netspeed\-cli
                                         Generate Zsh shell completions
 .SH VERSION
-v0.8.0\-SNAPSHOT
+v0.8.0

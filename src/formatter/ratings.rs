@@ -38,8 +38,8 @@ pub fn speed_rating_mbps(mbps: f64) -> &'static str {
 }
 
 pub fn colorize_rating(rating: &str, nc: bool) -> String {
-    let emoji_off = nc || crate::common::no_emoji();
-    let display = if emoji_off {
+    let no_emoji = crate::common::no_emoji();
+    let display = if no_emoji {
         rating.to_string()
     } else {
         let icon = match rating {
@@ -271,8 +271,8 @@ pub fn bufferbloat_colorized(grade: BufferbloatGrade, added_ms: f64, nc: bool) -
 
 pub fn format_overall_rating(result: &TestResult, nc: bool) -> String {
     let rating = connection_rating(result);
-    let emoji_off = nc || crate::common::no_emoji();
-    if emoji_off {
+    let no_emoji = crate::common::no_emoji();
+    if no_emoji {
         let colored = if nc {
             rating.to_string()
         } else {
