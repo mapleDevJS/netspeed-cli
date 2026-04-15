@@ -25,6 +25,11 @@ brew install netspeed-cli
 
 > **Note:** After adding the tap, you can use `brew install netspeed-cli` for all future installations and updates.
 
+### Direct Download
+
+Pre-built binaries are available for download at:
+[https://github.com/mapleDevJS/netspeed-cli/releases/latest](https://github.com/mapleDevJS/netspeed-cli/releases/latest)
+
 ### From source
 
 ```bash
@@ -33,6 +38,8 @@ cd netspeed-cli
 cargo build --release
 ./target/release/netspeed-cli
 ```
+
+> **Note:** The CLI is officially supported on macOS 12+, Linux (kernel 5.4+), and Windows 10+. While it may work on other Unix-like systems, it's not guaranteed.
 
 ## System Requirements
 
@@ -304,6 +311,18 @@ netspeed-cli stores test results locally for historical comparison. The followin
 
 **To disable history**: Results are only saved after a successful test. Use `--json` or `--csv` output to suppress history saving (these modes output to stdout only).
 
+## Verification
+
+After installation, verify your installation worked correctly by running:
+```bash
+netspeed-cli --version
+```
+or
+```bash
+netspeed-cli --help
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+```
