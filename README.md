@@ -99,7 +99,7 @@ netspeed-cli --history
 | `--single` | Use single connection |
 | `--bytes` | Display values in bytes instead of bits |
 | `--simple` | Show minimal output |
-| `--format TYPE` | Output format: `json`, `csv`, `simple`, `detailed`, `dashboard` (supersedes `--json`, `--csv`, `--simple`) |
+| `--format TYPE` | Output format: `json`, `jsonl`, `csv`, `minimal`, `simple`, `compact`, `detailed`, `dashboard` (supersedes `--json`, `--csv`, `--simple`) |
 | `--csv` | Output in CSV format |
 | `--csv-delimiter CHAR` | CSV delimiter character: `,`, `;`, `\|`, or tab (default: `,`) |
 | `--csv-header` | Include CSV header row |
@@ -110,6 +110,7 @@ netspeed-cli --history
 | `--exclude ID` | Exclude server from selection (can be used multiple times) |
 | `--source IP` | Bind to source IP address |
 | `--timeout SEC` | HTTP timeout in seconds (default: 10, range: 1–300) |
+| `--theme THEME` | Color theme: `dark`, `light`, `high-contrast`, `monochrome` (default: `dark`) |
 | `--history` | Show test history |
 | `--generate-completion SHELL` | Generate shell completion script |
 | `--version` | Show version |
@@ -118,19 +119,49 @@ netspeed-cli --history
 
 ### Dashboard
 
+Rich terminal dashboard with 3-column metrics and capability matrix:
+
 ```
-  ╔══════════════════ netspeed-cli v0.5.0 ═══════════════════╗
-  ║  Server: Rogers (Toronto) · CA · 12km                    ║
-  ║  Client IP: 192.168.1.1                                  ║
-  ╚══════════════════════════════════════════════════════════╝
+  ╭────────────────────────────────────────────────────────╮
+  │          NetSpeed CLI v0.8.0                          │
+  │  Rogers (Toronto) • CA • 12km • 192.168.1.1            │
+  ╰────────────────────────────────────────────────────────╯
 
-  Latency    ████████████████████████████████    5.2 ms  ⚡ Excellent
-  Download   ████████████████████░░░░░░░░       450.23 Mb/s  ⚡ Excellent
-  Upload     ██████████████░░░░░░░░░░░░         120.45 Mb/s  🟢 Good
+  ┌ PERFORMANCE ┬ STABILITY ┬ BUFFERBLOAT ┐
+  │  450.2 Mb/s ↓│ DL: A+    │ Grade: C    │
+  │  120.5 Mb/s ↑│ UL: A+    │             │
+  │    12.1 ms  │           │ Overall: B+ │
+  └─────────────┴───────────┴─────────────┘
+```
 
-  ── Summary ──────────────────────────────────────────────────
-  Download:     450.23 Mb/s  ████████████████████░░░░░░░░  (3.2s, 14.6 MB)
-  Peak:         520.10 Mb/s
+### Compact
+
+Key metrics with quality ratings between simple and detailed:
+
+```
+  TEST RESULTS
+  Overall: 🟢 Good
+
+  Latency        12.1 ms    (Good)
+  Download     450.23 Mb/s  (Excellent)
+  Peak         520.10 Mb/s
+  Upload      120.45 Mb/s   (Good)
+
+  Download: 14.6 MB in 3.2s
+  Upload: 4.1 MB in 2.1s
+  Total time: 5.3s
+```
+
+### Detailed (Default)
+
+Full analysis with per-metric grades, stability metrics, and variance data.
+
+### Minimal
+
+Ultra-compact single line for status bars and scripts:
+```
+B+  450.2↓  120.5↑  12ms
+```
   Upload:        50.45 Mb/s  ██████████████░░░░░░░░░░░░     (2.1s, 5.0 MB)
   Peak:          60.00 Mb/s
 
@@ -187,28 +218,26 @@ Run with `netspeed-cli --format dashboard`.
 Latency: 5.2 ms | Download: 450.23 Mb/s | Upload: 120.45 Mb/s
 ```
 
+### Minimal
+
+Ultra-compact single line for status bars and scripts:
+```
+B+  450.2↓  120.5↑  12ms
+```
+
 ### JSON
 
+One-line JSON object:
 ```json
-{
-  "server": {
-    "id": "1234",
-    "name": "Toronto",
-    "sponsor": "Rogers",
-    "country": "CA",
-    "distance": 12.0
-  },
-  "ping": 5.2,
-  "jitter": 1.3,
-  "download": 450230000.0,
-  "download_peak": 520100000.0,
-  "upload": 120450000.0,
-  "upload_peak": 145800000.0,
-  "latency_download": 12.4,
-  "latency_upload": 8.1,
-  "timestamp": "2026-04-04T12:00:00Z",
-  "client_ip": "192.168.1.1"
-}
+{"server":{"id":"1234",...},"ping":5.2,"download":450230000,...}
+```
+
+### JSONL
+
+JSON Lines format - one JSON object per line, ideal for logging:
+```json
+{"server":{"id":"1234",...},"ping":5.2,"download":450230000,...}
+{"server":{"id":"1234",...},"ping":4.8,"download":445000000,...}
 ```
 
 ### CSV
