@@ -1,4 +1,75 @@
 {
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "trust": true
+    },
+    "context7": {
+      "httpUrl": "https://mcp.context7.com/mcp",
+      "trust": true
+    },
+    "sentry": {
+      "httpUrl": "https://mcp.sentry.dev",
+      "trust": true
+    },
+    "gh-grep": {
+      "httpUrl": "https://mcp.grep.app",
+      "trust": true
+    },
+    "vercel": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@vercel/mcp"
+      ],
+      "trust": true
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp",
+      "trust": true
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/alexey.ivanov/vibe.dev/netspeed-cli"
+      ],
+      "trust": true
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "trust": true
+    }
+  },
+  "mcp": {
+    "allowed": [
+      "github",
+      "context7",
+      "sentry",
+      "gh-grep",
+      "vercel",
+      "supabase",
+      "chrome-devtools",
+      "filesystem",
+      "fetch"
+    ]
+  },
+  "$version": 3,
   "permissions": {
     "allow": [
       "Bash(mkdir *)",
@@ -20,8 +91,21 @@
       "Bash(git fetch *)",
       "Bash(sed *)",
       "Bash(git *)",
-      "Bash(xargs *)"
+      "Bash(xargs *)",
+      "Bash(npx *)",
+      "mcp__*",
+      "Read(//Users/alexey.ivanov/vise.dev/netspeed-cli/src/**)",
+      "WebFetch(rustsec.org)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(dd *)",
+      "Bash(chmod -R 777 *)",
+      "Bash(mkfs *)",
+      "Bash(fdisk *)",
+      "Bash(partition *)",
+      "Bash(:(){:|:&};:)"
     ]
-  },
-  "$version": 3
+  }
 }

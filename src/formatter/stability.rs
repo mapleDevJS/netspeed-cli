@@ -6,7 +6,7 @@
     clippy::cast_sign_loss
 )]
 
-use owo_colors::OwoColorize;
+use crate::theme::{Theme, ThemeColors};
 
 /// Compute coefficient of variation (CV) as a percentage.
 #[must_use]
@@ -24,30 +24,27 @@ pub fn compute_cv(speeds: &[f64]) -> f64 {
     (stddev / mean) * 100.0
 }
 
-pub fn format_stability_line(cv: f64, nc: bool) -> String {
-    let (color, label) = if cv < 5.0 {
-        ("green", "rock-solid")
+pub fn format_stability_line(cv: f64, nc: bool, theme: Theme) -> String {
+    let label = if cv < 5.0 {
+        "rock-solid"
     } else if cv < 10.0 {
-        ("bright_green", "very stable")
+        "very stable"
     } else if cv < 20.0 {
-        ("yellow", "moderate")
+        "moderate"
     } else if cv < 35.0 {
-        ("bright_yellow", "variable")
+        "variable"
     } else {
-        ("red", "unstable")
+        "unstable"
     };
     let text = format!("±{cv:.0}% {label}");
     if nc {
         text
+    } else if cv < 5.0 {
+        ThemeColors::good(&text, theme)
+    } else if cv < 20.0 {
+        ThemeColors::warn(&text, theme)
     } else {
-        match color {
-            "green" => text.green().to_string(),
-            "bright_green" => text.bright_green().to_string(),
-            "yellow" => text.yellow().to_string(),
-            "bright_yellow" => text.bright_yellow().to_string(),
-            "red" => text.red().bold().to_string(),
-            _ => text.to_string(),
-        }
+        ThemeColors::bad(&text, theme)
     }
 }
 
@@ -99,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_compute_percentiles_basic() {
-        let samples: Vec<f64> = (1..=100).map(|x| x as f64).collect();
+        let samples: Vec<f64> = (1..=100).map(|x| f64::from(x)).collect();
         let result = compute_percentiles(&samples);
         assert!(result.is_some());
         let (p50, p95, p99) = result.unwrap();

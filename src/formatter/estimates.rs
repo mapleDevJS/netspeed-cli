@@ -7,7 +7,8 @@
 )]
 
 use crate::common;
-use owo_colors::OwoColorize;
+use crate::terminal;
+use crate::theme::{Theme, ThemeColors};
 
 // ── Target benchmarks ────────────────────────────────────────────────
 
@@ -40,21 +41,41 @@ const TARGETS: &[Target] = &[
 ];
 
 /// Build target usage check output as a string.
-pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
+pub fn build_targets(download_bps: Option<f64>, nc: bool, theme: Theme) -> String {
+    let targets: Vec<crate::profiles::UsageTarget> = TARGETS
+        .iter()
+        .map(|t| crate::profiles::UsageTarget {
+            name: t.name,
+            required_mbps: t.required_mbps,
+            icon: "",
+        })
+        .collect();
+    let dl_mbps = download_bps.map(|d| d / 1_000_000.0);
+    build_profile_targets(download_bps, nc, theme, &targets, dl_mbps)
+}
+
+/// Build profile-specific target usage check output.
+pub fn build_profile_targets(
+    download_bps: Option<f64>,
+    nc: bool,
+    theme: Theme,
+    targets: &[crate::profiles::UsageTarget],
+    dl_mbps: Option<f64>,
+) -> String {
     let Some(dl) = download_bps else {
         return String::new();
     };
-    let dl_mbps = dl / 1_000_000.0;
+    let dl_mbps = dl_mbps.unwrap_or_else(|| dl / 1_000_000.0);
 
     let mut lines = Vec::new();
 
     if nc {
         lines.push("\n  USAGE CHECK".to_string());
     } else {
-        lines.push(format!("\n  {}", "USAGE CHECK".bold().underline()));
+        lines.push(format!("\n  {}", ThemeColors::header("USAGE CHECK", theme)));
     }
 
-    for target in TARGETS {
+    for target in targets {
         let met = dl_mbps >= target.required_mbps;
         let ratio = dl_mbps / target.required_mbps;
         let suffix = if ratio >= 10.0 {
@@ -62,20 +83,31 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
         } else {
             format!("{:.1}x", ratio)
         };
+        let hide_emoji = terminal::no_emoji();
+        let icon = if target.icon.is_empty() {
+            "🎯"
+        } else {
+            target.icon
+        };
         if met {
-            let line = format!("{:<26} ✅ {} above", target.name, suffix);
-            if nc {
+            let status = if hide_emoji { "✓" } else { "✅" };
+            let line = format!("{icon} {:<24} {status} {} above", target.name, suffix);
+            if nc || hide_emoji {
                 lines.push(format!("  {line}"));
             } else {
-                lines.push(format!("  {}", line.green()));
+                lines.push(format!("  {}", ThemeColors::good(&line, theme)));
             }
         } else {
             let shortfall = target.required_mbps - dl_mbps;
-            let line = format!("{:<26} ❌ {:.1} Mb/s short", target.name, shortfall);
-            if nc {
+            let status = if hide_emoji { "✗" } else { "❌" };
+            let line = format!(
+                "{icon} {:<24} {status} {:.1} Mb/s short",
+                target.name, shortfall
+            );
+            if nc || hide_emoji {
                 lines.push(format!("  {line}"));
             } else {
-                lines.push(format!("  {}", line.red()));
+                lines.push(format!("  {}", ThemeColors::bad(&line, theme)));
             }
         }
     }
@@ -84,8 +116,8 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool) -> String {
 }
 
 /// Format target usage check against download speed.
-pub fn format_targets(download_bps: Option<f64>, nc: bool) {
-    let output = build_targets(download_bps, nc);
+pub fn format_targets(download_bps: Option<f64>, nc: bool, theme: Theme) {
+    let output = build_targets(download_bps, nc, theme);
     if !output.is_empty() {
         eprintln!("{}", output);
     }
@@ -100,28 +132,28 @@ struct FileEstimate {
 
 const ESTIMATES: &[FileEstimate] = &[
     FileEstimate {
-        name: "MP3 song",
-        size_bytes: 5 * 1024 * 1024,
+        name: "Song / Podcast episode",
+        size_bytes: 8 * 1024 * 1024,
     },
     FileEstimate {
-        name: "HD photo",
-        size_bytes: 5 * 1024 * 1024,
+        name: "Photo (RAW)",
+        size_bytes: 30 * 1024 * 1024,
     },
     FileEstimate {
         name: "App install",
-        size_bytes: 100 * 1024 * 1024,
+        size_bytes: 300 * 1024 * 1024,
     },
     FileEstimate {
-        name: "HD movie (4 GB)",
-        size_bytes: 4 * 1024 * 1024 * 1024,
+        name: "HD movie (1080p)",
+        size_bytes: 8 * 1024 * 1024 * 1024,
     },
     FileEstimate {
-        name: "4K movie (15 GB)",
-        size_bytes: 15 * 1024 * 1024 * 1024,
+        name: "4K movie (HDR)",
+        size_bytes: 25 * 1024 * 1024 * 1024,
     },
     FileEstimate {
-        name: "Game install (50 GB)",
-        size_bytes: 50 * 1024 * 1024 * 1024,
+        name: "Game install (AAA)",
+        size_bytes: 120 * 1024 * 1024 * 1024,
     },
 ];
 
@@ -142,7 +174,7 @@ fn format_time_estimate(secs: f64, _nc: bool) -> String {
 }
 
 /// Build real-world download time estimates as a string.
-pub fn build_estimates(download_bps: Option<f64>, nc: bool) -> String {
+pub fn build_estimates(download_bps: Option<f64>, nc: bool, theme: Theme) -> String {
     let Some(dl) = download_bps else {
         return String::new();
     };
@@ -153,33 +185,26 @@ pub fn build_estimates(download_bps: Option<f64>, nc: bool) -> String {
     if nc {
         lines.push("\n  ESTIMATES".to_string());
     } else {
-        lines.push(format!("\n  {}", "ESTIMATES".bold().underline()));
+        lines.push(format!("\n  {}", ThemeColors::header("ESTIMATES", theme)));
     }
 
     for file in ESTIMATES {
         let secs = file.size_bytes as f64 / dl_bytes_per_sec;
         let time_str = format_time_estimate(secs, nc);
-        let label = format!(
-            "{:<24} ~{time_str}",
-            format!(
-                "{} ({})",
-                file.name,
-                common::format_data_size(file.size_bytes)
-            )
-        );
+        let size_str = common::format_data_size(file.size_bytes);
+        let label = format!("{:<24} {:>8}   ~{time_str}", file.name, size_str);
         if nc {
             lines.push(format!("  {label}"));
         } else {
-            lines.push(format!("  {}", label.green()));
+            lines.push(format!("  {}", ThemeColors::good(&label, theme)));
         }
     }
 
     lines.join("\n")
 }
 
-/// Format real-world download time estimates.
-pub fn format_estimates(download_bps: Option<f64>, nc: bool) {
-    let output = build_estimates(download_bps, nc);
+pub fn format_estimates(download_bps: Option<f64>, nc: bool, theme: Theme) {
+    let output = build_estimates(download_bps, nc, theme);
     if !output.is_empty() {
         eprintln!("{}", output);
     }

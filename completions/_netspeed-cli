@@ -16,12 +16,21 @@ _netspeed-cli() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
 '--csv-delimiter=[Single character delimiter for CSV output (default\: ",")]:CSV_DELIMITER:_default' \
-'--format=[Output format (supersedes --json, --csv, --simple)]:FORMAT:(json csv simple detailed dashboard)' \
+'--format=[Output format (supersedes --json, --csv, --simple)]:FORMAT:((json\:"Machine-readable JSON output"
+jsonl\:"JSON Lines for logging (one JSON object per line)"
+csv\:"CSV format for spreadsheet analysis"
+minimal\:"Ultra-minimal\: just grade + speeds (e.g., "B+ 150.5↓ 25.3↑ 12ms")"
+simple\:"Minimal one-line summary"
+compact\:"Key metrics with quality ratings"
+detailed\:"Full analysis with per-metric grades (default)"
+dashboard\:"Rich terminal dashboard with capability matrix"))' \
 '*--server=[Specify a server ID to test against (can be supplied multiple times)]:SERVER:_default' \
 '*--exclude=[Exclude a server from selection (can be supplied multiple times)]:EXCLUDE:_default' \
-'--source=[Source IP address to bind to]:SOURCE:_default' \
+'--source=[Source IP address to bind to (IPv4 or IPv6)]:SOURCE:_default' \
 '--timeout=[HTTP timeout in seconds (default\: 10)]:TIMEOUT:_default' \
-'--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish power-shell elvish)' \
+'--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish powershell elvish)' \
+'--profile=[User profile for customized output (gamer, streamer, remote-worker, power-user, casual)]:PROFILE:_default' \
+'--theme=[Output color theme (dark, light, high-contrast, monochrome)]:THEME:_default' \
 '--no-download[Do not perform download test]' \
 '--no-upload[Do not perform upload test]' \
 '--single[Only use a single connection instead of multiple]' \
@@ -33,8 +42,12 @@ _netspeed-cli() {
 '--list[Display a list of speedtest.net servers sorted by distance]' \
 '--history[Display test history]' \
 '--quiet[Suppress all progress output (JSON/CSV still go to stdout)]' \
-'-h[Print help]' \
-'--help[Print help]' \
+'--dry-run[Validate configuration and exit without running tests]' \
+'--no-emoji[Disable emoji output (for environments where emojis don'\''t render well)]' \
+'--minimal[Minimal ASCII-only output (no Unicode box-drawing characters)]' \
+'--show-config-path[Show the configuration file path and exit]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
 '--version[Print version]' \
 && ret=0

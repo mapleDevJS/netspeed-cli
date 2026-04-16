@@ -16,11 +16,13 @@
 use crate::common;
 use crate::error::SpeedtestError;
 use crate::progress::SpeedProgress;
+use crate::terminal;
 use crate::types::Server;
+use owo_colors::OwoColorize;
 use reqwest::Client;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Estimated total bytes for progress bar initialization.
@@ -107,14 +109,15 @@ pub async fn download_test(
                     let mut stream = response.bytes_stream();
                     while let Some(item) = stream.next().await {
                         if let Ok(chunk) = item {
-                            let len = chunk.len() as u64;
+                            let len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
                             stream_bytes += len;
-                            // Cheap atomic add — runs on every chunk
-                            total_ref.fetch_add(len, Ordering::Relaxed);
+                            // Release ensures other threads see this write before the final Acquire load
+                            total_ref.fetch_add(len, Ordering::Release);
 
                             // Throttle gate: only run expensive ops every 50ms.
                             // First sample always fires (last_sample_ms == 0 means "never sampled").
-                            let elapsed_ms = start_ref.elapsed().as_millis() as u64;
+                            let elapsed_ms =
+                                u64::try_from(start_ref.elapsed().as_millis()).unwrap_or(u64::MAX);
                             let last_ms = throttle_ref.load(Ordering::Relaxed);
                             let should_sample = last_ms == 0
                                 || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
@@ -128,10 +131,11 @@ pub async fn download_test(
                                 let elapsed = start_ref.elapsed().as_secs_f64();
                                 let speed = common::calculate_bandwidth(total_so_far, elapsed);
 
-                                // Peak tracking (cheap compare-and-swap)
+                                // Peak tracking — Release pairs with the Acquire load in final read
                                 let current_peak = peak_ref.load(Ordering::Relaxed);
                                 if speed > current_peak as f64 {
-                                    peak_ref.store(speed as u64, Ordering::Relaxed);
+                                    let peak_u64 = speed.clamp(0.0, u64::MAX as f64) as u64;
+                                    peak_ref.store(peak_u64, Ordering::Release);
                                 }
 
                                 // Record speed sample (throttled, no need for additional check)
@@ -156,11 +160,20 @@ pub async fn download_test(
         handles.push(handle);
     }
 
-    // Collect results
+    // Collect results — log any task panics so failures aren't silently swallowed.
+    // Bytes are already counted via atomic counters, so we don't need the return values.
     let mut results = Vec::new();
-    for handle in handles {
-        if let Ok(result) = handle.await {
-            results.push(result);
+    for (i, handle) in handles.into_iter().enumerate() {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(e) => {
+                let msg = format!("Warning: download task {i} failed: {e}");
+                if terminal::no_color() {
+                    eprintln!("\n{msg}");
+                } else {
+                    eprintln!("\n{}", msg.yellow().bold());
+                }
+            }
         }
     }
 
@@ -173,10 +186,15 @@ pub async fn download_test(
         .map(|r| common::calculate_bandwidth(r.bytes, r.elapsed_secs))
         .sum();
 
-    let final_total_bytes = total_bytes.load(Ordering::Relaxed);
-    let final_peak_speed = peak_bps.load(Ordering::Relaxed) as f64;
+    // Final reads: Acquire pairs with the Release fetch_add/stores to ensure
+    // we see all writes from completed Tokio tasks on all architectures.
+    let final_total_bytes = total_bytes.load(Ordering::Acquire);
+    let final_peak_speed = peak_bps.load(Ordering::Acquire) as f64;
     let avg_bandwidth = total_bandwidth / results.len() as f64;
-    let samples = speed_samples.lock().unwrap().to_vec();
+    let samples = speed_samples
+        .lock()
+        .map_err(|e| SpeedtestError::context(format!("download samples lock poisoned: {e}")))?
+        .to_vec();
     Ok((avg_bandwidth, final_peak_speed, final_total_bytes, samples))
 }
 

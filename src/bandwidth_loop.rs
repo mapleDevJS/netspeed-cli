@@ -12,9 +12,9 @@
 
 use crate::common;
 use crate::progress::SpeedProgress;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Throttle interval for speed sampling (20 Hz max).
@@ -62,9 +62,10 @@ impl BandwidthLoopState {
     /// This is the single point where all expensive operations (bandwidth calc,
     /// peak tracking, sample recording, progress update) are throttled.
     pub fn record_bytes(&self, len: u64) {
-        self.total_bytes.fetch_add(len, Ordering::Relaxed);
+        // Release ensures writes are visible to the final Acquire load in finish()
+        self.total_bytes.fetch_add(len, Ordering::Release);
 
-        let elapsed_ms = self.start.elapsed().as_millis() as u64;
+        let elapsed_ms = u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX);
         let last_ms = self.last_sample_ms.load(Ordering::Relaxed);
         let should_sample =
             last_ms == 0 || elapsed_ms.saturating_sub(last_ms) >= SAMPLE_INTERVAL_MS;
@@ -83,7 +84,9 @@ impl BandwidthLoopState {
 
         let current_peak = self.peak_bps.load(Ordering::Relaxed);
         if speed > current_peak as f64 {
-            self.peak_bps.store(speed as u64, Ordering::Relaxed);
+            let peak_u64 = speed.clamp(0.0, u64::MAX as f64) as u64;
+            // Release pairs with the Acquire load in finish()
+            self.peak_bps.store(peak_u64, Ordering::Release);
         }
 
         if let Ok(mut samples) = self.speed_samples.lock() {
@@ -97,10 +100,16 @@ impl BandwidthLoopState {
     /// Compute final results from accumulated state.
     #[must_use]
     pub fn finish(&self) -> BandwidthResult {
-        let total = self.total_bytes.load(Ordering::Relaxed);
-        let peak = self.peak_bps.load(Ordering::Relaxed) as f64;
+        // Acquire pairs with the Release fetch_add/stores to see all writes
+        let total = self.total_bytes.load(Ordering::Acquire);
+        let peak = self.peak_bps.load(Ordering::Acquire) as f64;
         let duration = self.start.elapsed().as_secs_f64();
-        let samples = self.speed_samples.lock().unwrap().to_vec();
+        // Graceful fallback: if lock is poisoned (thread panicked), return empty samples
+        let samples = self
+            .speed_samples
+            .lock()
+            .map(|g| g.to_vec())
+            .unwrap_or_default();
         let avg = common::calculate_bandwidth(total, duration);
 
         BandwidthResult {

@@ -3,6 +3,8 @@
 //! Tests the complete pipeline: server selection, ping test, and
 //! bandwidth measurement against a mock server.
 
+#![allow(clippy::float_cmp, clippy::similar_names)]
+
 use netspeed_cli::common;
 use netspeed_cli::download::{build_test_url, download_test, extract_base_url};
 use netspeed_cli::progress::SpeedProgress;

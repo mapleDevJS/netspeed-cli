@@ -28,8 +28,12 @@ pub struct TestResult {
     pub packet_loss: Option<f64>,
     pub download: Option<f64>,
     pub download_peak: Option<f64>,
+    pub download_cv: Option<f64>, // coefficient of variation (0-1) for variance
     pub upload: Option<f64>,
     pub upload_peak: Option<f64>,
+    pub upload_cv: Option<f64>, // coefficient of variation (0-1) for variance
+    pub download_ci_95: Option<(f64, f64)>, // (lower, upper) 95% CI in Mbps
+    pub upload_ci_95: Option<(f64, f64)>, // (lower, upper) 95% CI in Mbps
     pub latency_download: Option<f64>,
     pub latency_upload: Option<f64>,
     pub download_samples: Option<Vec<f64>>,
@@ -37,6 +41,11 @@ pub struct TestResult {
     pub ping_samples: Option<Vec<f64>>,
     pub timestamp: String,
     pub client_ip: Option<String>,
+    // Computed grades for machine-readable output (screen readers, scripts)
+    pub overall_grade: Option<String>,
+    pub download_grade: Option<String>,
+    pub upload_grade: Option<String>,
+    pub connection_rating: Option<String>,
 }
 
 impl TestResult {
@@ -48,16 +57,24 @@ impl TestResult {
         ping: Option<f64>,
         jitter: Option<f64>,
         packet_loss: Option<f64>,
-        ping_samples: Vec<f64>,
-        dl: &crate::test_runner::TestRunResult,
-        ul: &crate::test_runner::TestRunResult,
+        ping_samples: &[f64],
+        dl: &crate::task_runner::TestRunResult,
+        ul: &crate::task_runner::TestRunResult,
         client_ip: Option<String>,
     ) -> Self {
         fn opt_samples(v: &[f64]) -> Option<Vec<f64>> {
-            if v.is_empty() { None } else { Some(v.to_vec()) }
+            if v.is_empty() {
+                None
+            } else {
+                Some(v.to_vec())
+            }
         }
         fn opt_positive(v: f64) -> Option<f64> {
-            if v > 0.0 { Some(v) } else { None }
+            if v > 0.0 {
+                Some(v)
+            } else {
+                None
+            }
         }
 
         Self {
@@ -67,8 +84,12 @@ impl TestResult {
             packet_loss,
             download: opt_positive(dl.avg_bps),
             download_peak: opt_positive(dl.peak_bps),
+            download_cv: compute_cv(&dl.speed_samples),
             upload: opt_positive(ul.avg_bps),
             upload_peak: opt_positive(ul.peak_bps),
+            upload_cv: compute_cv(&ul.speed_samples),
+            download_ci_95: compute_ci_95(&dl.speed_samples, 1_000_000.0),
+            upload_ci_95: compute_ci_95(&ul.speed_samples, 1_000_000.0),
             latency_download: dl.latency_under_load,
             latency_upload: ul.latency_under_load,
             download_samples: opt_samples(&dl.speed_samples),
@@ -76,7 +97,52 @@ impl TestResult {
             ping_samples: opt_samples(&ping_samples),
             timestamp: chrono::Utc::now().to_rfc3339(),
             client_ip,
+            overall_grade: None,
+            download_grade: None,
+            upload_grade: None,
+            connection_rating: None,
         }
+    }
+}
+
+/// Compute coefficient of variation (CV) for a sample set.
+/// Returns None for empty or single-element sets, or when mean is zero.
+fn compute_cv(samples: &[f64]) -> Option<f64> {
+    if samples.len() < 2 {
+        return None;
+    }
+    let mean: f64 = samples.iter().sum::<f64>() / samples.len() as f64;
+    if mean == 0.0 {
+        return None;
+    }
+    let variance: f64 =
+        samples.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (samples.len() - 1) as f64;
+    let std_dev = variance.sqrt();
+    Some(std_dev / mean)
+}
+
+/// Compute 95% confidence interval for the mean bandwidth.
+/// Returns `(lower, upper)` in Mbps. Uses t-distribution approximation for small samples.
+fn compute_ci_95(samples: &[f64], scale: f64) -> Option<(f64, f64)> {
+    let n = samples.len();
+    if n < 2 {
+        return None;
+    }
+    let mean: f64 = samples.iter().sum::<f64>() / n as f64;
+    if n < 30 {
+        // Small sample: use t ≈ 2.045 (df=29, 95% CI) as conservative estimate
+        let variance: f64 =
+            samples.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let std_err = variance.sqrt() / (n as f64).sqrt();
+        let margin = 2.045 * std_err;
+        Some(((mean - margin) / scale, (mean + margin) / scale))
+    } else {
+        // Large sample: use z = 1.96
+        let variance: f64 =
+            samples.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let std_err = variance.sqrt() / (n as f64).sqrt();
+        let margin = 1.96 * std_err;
+        Some(((mean - margin) / scale, (mean + margin) / scale))
     }
 }
 
@@ -153,6 +219,14 @@ mod tests {
             ping_samples: None,
             timestamp: "2026-04-04T12:00:00Z".to_string(),
             client_ip: Some("192.168.1.1".to_string()),
+            download_cv: None,
+            upload_cv: None,
+            download_ci_95: None,
+            upload_ci_95: None,
+            overall_grade: None,
+            download_grade: None,
+            upload_grade: None,
+            connection_rating: None,
         };
 
         let json = serde_json::to_string(&result).unwrap();

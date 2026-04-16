@@ -1,5 +1,7 @@
 //! Rating helper functions for speed test results.
 
+use crate::terminal::no_emoji;
+use crate::theme::{Theme, ThemeColors};
 use crate::types::TestResult;
 use owo_colors::OwoColorize;
 
@@ -37,21 +39,22 @@ pub fn speed_rating_mbps(mbps: f64) -> &'static str {
     }
 }
 
-pub fn colorize_rating(rating: &str, nc: bool) -> String {
-    if nc {
-        rating.to_string()
+pub fn colorize_rating(rating: &str, nc: bool, theme: Theme) -> String {
+    if nc || no_emoji() {
+        format!("[{rating}]")
     } else {
-        match rating {
-            "Excellent" => format!("{}{}", "⚡ ".green().bold(), rating.green().bold()),
-            "Great" => format!("{}{}", "🔵  ".blue(), rating.blue()),
-            "Good" => format!("{}{}", "🟢  ".bright_green(), rating.bright_green()),
-            "Fair" => format!("{}{}", "🟡  ".yellow(), rating.yellow()),
-            "Moderate" => format!("{}{}", "🟠  ".bright_yellow(), rating.bright_yellow()),
-            "Poor" => format!("{}{}", "🔴  ".red(), rating.red()),
-            "Slow" => format!("{}{}", "🟤  ".bright_red(), rating.bright_red()),
-            "Very Slow" => format!("{}{}", "⚠️  ".red().bold(), rating.red().bold()),
-            _ => rating.to_string(),
-        }
+        let (icon, colored) = match rating {
+            "Excellent" => ("⚡ ", ThemeColors::good(rating, theme)),
+            "Great" => ("🔵  ", ThemeColors::info(rating, theme)),
+            "Good" => ("🟢  ", ThemeColors::good(rating, theme)),
+            "Fair" => ("🟡  ", ThemeColors::warn(rating, theme)),
+            "Moderate" => ("🟠  ", ThemeColors::warn(rating, theme)),
+            "Poor" => ("🔴  ", ThemeColors::bad(rating, theme)),
+            "Slow" => ("🟤  ", ThemeColors::bad(rating, theme)),
+            "Very Slow" => ("⚠️  ", ThemeColors::bad(rating, theme)),
+            _ => ("", rating.to_string()),
+        };
+        format!("{icon}{colored}")
     }
 }
 
@@ -69,16 +72,16 @@ fn speed_components(bps: f64, bytes: bool) -> SpeedComponents {
     SpeedComponents { value, unit }
 }
 
-pub fn format_speed_colored(bps: f64, bytes: bool) -> String {
+pub fn format_speed_colored(bps: f64, bytes: bool, theme: Theme) -> String {
     let SpeedComponents { value, unit } = speed_components(bps, bytes);
     let mbps = bps / 1_000_000.0;
     let rating = speed_rating_mbps(mbps);
+    let text = format!("{value:.2} {unit}");
     match rating {
-        "Excellent" | "Great" => format!("{value:.2} {unit}").green().bold().to_string(),
-        "Good" => format!("{value:.2} {unit}").bright_green().to_string(),
-        "Fair" | "Moderate" => format!("{value:.2} {unit}").yellow().to_string(),
-        "Poor" | "Slow" | "Very Slow" => format!("{value:.2} {unit}").red().to_string(),
-        _ => format!("{value:.2} {unit}"),
+        "Excellent" | "Great" | "Good" => ThemeColors::good(&text, theme),
+        "Fair" | "Moderate" => ThemeColors::warn(&text, theme),
+        "Poor" | "Slow" | "Very Slow" => ThemeColors::bad(&text, theme),
+        _ => text,
     }
 }
 
@@ -225,58 +228,45 @@ pub fn bufferbloat_grade(load_latency: f64, idle_latency: f64) -> (BufferbloatGr
     (grade, added.max(0.0))
 }
 
-pub fn bufferbloat_colorized(grade: BufferbloatGrade, added_ms: f64, nc: bool) -> String {
+pub fn bufferbloat_colorized(
+    grade: BufferbloatGrade,
+    added_ms: f64,
+    nc: bool,
+    theme: Theme,
+) -> String {
     if nc {
         format!("{} ({added_ms:.0}ms)", grade.as_str())
     } else {
-        let (color, bold) = match grade {
-            BufferbloatGrade::A => ("green", true),
-            BufferbloatGrade::B => ("bright_green", false),
-            BufferbloatGrade::C => ("yellow", false),
-            BufferbloatGrade::D => ("bright_yellow", false),
-            BufferbloatGrade::F => ("red", true),
-        };
         let text = format!("{} ({added_ms:.0}ms added)", grade.as_str());
-        match (color, bold) {
-            ("green", true) => text.green().bold().to_string(),
-            ("bright_green", _) => text.bright_green().to_string(),
-            ("yellow", _) => text.yellow().to_string(),
-            ("bright_yellow", _) => text.bright_yellow().to_string(),
-            ("red", true) => text.red().bold().to_string(),
-            _ => text.dimmed().to_string(),
+        match grade {
+            BufferbloatGrade::A => ThemeColors::good(&text, theme),
+            BufferbloatGrade::B => ThemeColors::good(&text, theme),
+            BufferbloatGrade::C => ThemeColors::warn(&text, theme),
+            BufferbloatGrade::D => ThemeColors::warn(&text, theme),
+            BufferbloatGrade::F => ThemeColors::bad(&text, theme),
         }
     }
 }
 
-pub fn format_overall_rating(result: &TestResult, nc: bool) -> String {
+pub fn format_overall_rating(result: &TestResult, nc: bool, theme: Theme) -> String {
     let rating = connection_rating(result);
-    if nc {
+    if nc || no_emoji() {
         format!("  Overall: {rating}")
     } else {
-        let (icon, color) = match rating {
-            "Excellent" => ("⚡ ", "green"),
-            "Great" => ("🔵  ", "blue"),
-            "Good" => ("🟢  ", "bright_green"),
-            "Fair" => ("🟡  ", "yellow"),
-            "Moderate" => ("🟠  ", "bright_yellow"),
-            "Poor" => ("🔴  ", "red"),
-            _ => ("", ""),
+        let (icon, colored) = match rating {
+            "Excellent" => ("⚡ ", ThemeColors::good(rating, theme)),
+            "Great" => ("🔵  ", ThemeColors::info(rating, theme)),
+            "Good" => ("🟢  ", ThemeColors::good(rating, theme)),
+            "Fair" => ("🟡  ", ThemeColors::warn(rating, theme)),
+            "Moderate" => ("🟠  ", ThemeColors::warn(rating, theme)),
+            "Poor" => ("🔴  ", ThemeColors::bad(rating, theme)),
+            _ => ("", rating.to_string()),
         };
-        let text = format!("{icon}{rating}");
-        let colored = match color {
-            "green" => text.green().bold().to_string(),
-            "blue" => text.blue().to_string(),
-            "bright_green" => text.bright_green().to_string(),
-            "yellow" => text.yellow().to_string(),
-            "bright_yellow" => text.bright_yellow().to_string(),
-            "red" => text.red().to_string(),
-            _ => text.dimmed().to_string(),
-        };
-        format!("  {} {colored}", "Overall:".dimmed())
+        format!("  {} {icon}{colored}", "Overall:".dimmed())
     }
 }
 
-pub fn degradation_str(lat_load: f64, idle_ping: Option<f64>, nc: bool) -> String {
+pub fn degradation_str(lat_load: f64, idle_ping: Option<f64>, nc: bool, theme: Theme) -> String {
     let Some(idle) = idle_ping else {
         return String::new();
     };
@@ -284,22 +274,25 @@ pub fn degradation_str(lat_load: f64, idle_ping: Option<f64>, nc: bool) -> Strin
         return String::new();
     }
     let pct = ((lat_load / idle) - 1.0) * 100.0;
-    let (label, color) = if pct < 25.0 {
-        ("minimal", "green")
-    } else if pct < 50.0 {
-        ("moderate", "yellow")
-    } else {
-        ("significant", "red")
-    };
-    let text = format!("+{pct:.0}% ({label})");
+    let text = format!(
+        "+{pct:.0}% ({})",
+        if pct < 25.0 {
+            "minimal"
+        } else if pct < 50.0 {
+            "moderate"
+        } else {
+            "significant"
+        }
+    );
     if nc {
         format!("  [{text:>8}]")
     } else {
-        let colored = match color {
-            "green" => text.green().to_string(),
-            "yellow" => text.yellow().to_string(),
-            "red" => text.red().to_string(),
-            _ => text.dimmed().to_string(),
+        let colored = if pct < 25.0 {
+            ThemeColors::good(&text, theme)
+        } else if pct < 50.0 {
+            ThemeColors::warn(&text, theme)
+        } else {
+            ThemeColors::bad(&text, theme)
         };
         format!("  {colored}")
     }

@@ -1,12 +1,21 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH netspeed-cli 1  "netspeed-cli 0.8.0-SNAPSHOT" 
+.TH netspeed-cli 1  "netspeed-cli 0.8.0" 
 .SH NAME
-netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
+netspeed\-cli \- Test internet bandwidth via speedtest.net servers
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
-Command line interface for testing internet bandwidth using speedtest.net
+Test internet bandwidth via speedtest.net servers.
+.PP
+The default workflow runs a full bandwidth test:
+  1. Discover nearest speedtest.net servers
+  2. Measure latency (8 ping samples → latency, jitter, packet loss)
+  3. Measure download speed (multi\-stream, concurrent downloads)
+  4. Measure upload speed (multi\-stream, concurrent uploads)
+  5. Grade results (A+ to F) and show real\-world usage estimates
+.PP
+Results are saved to a local history file for trend tracking.
 .SH OPTIONS
 .TP
 \fB\-\-no\-download\fR
@@ -16,16 +25,21 @@ Do not perform download test
 Do not perform upload test
 .TP
 \fB\-\-single\fR
-Only use a single connection instead of multiple
+Use a single TCP connection for testing (measures sustained throughput).
+The default uses multiple connections (measures burst/bandwidth capacity).
 .TP
 \fB\-\-bytes\fR
-Display values in bytes instead of bits
+Display values in bytes instead of bits per second.
+The default uses bits (standard for ISP advertising).
 .TP
 \fB\-\-simple\fR
-Suppress verbose output, only show basic information
+Suppress verbose output, only show basic information.
+Basic information = one\-line summary: latency, download, upload.
+Deprecated: use \-\-format simple instead.
 .TP
 \fB\-\-csv\fR
-Output in CSV format
+Output in CSV format for spreadsheet analysis.
+Deprecated: use \-\-format csv instead.
 .TP
 \fB\-\-csv\-delimiter\fR \fI<CSV_DELIMITER>\fR [default: ,]
 Single character delimiter for CSV output (default: ",")
@@ -34,7 +48,8 @@ Single character delimiter for CSV output (default: ",")
 Print CSV headers
 .TP
 \fB\-\-json\fR
-Output in JSON format
+Output in JSON format (machine\-readable).
+Deprecated: use \-\-format json instead.
 .TP
 \fB\-\-format\fR \fI<FORMAT>\fR
 Output format (supersedes \-\-json, \-\-csv, \-\-simple)
@@ -44,19 +59,26 @@ Output format (supersedes \-\-json, \-\-csv, \-\-simple)
 \fIPossible values:\fR
 .RS 14
 .IP \(bu 2
-json
+json: Machine\-readable JSON output
 .IP \(bu 2
-csv
+jsonl: JSON Lines for logging (one JSON object per line)
 .IP \(bu 2
-simple
+csv: CSV format for spreadsheet analysis
 .IP \(bu 2
-detailed
+minimal: Ultra\-minimal: just grade + speeds (e.g., "B+ 150.5↓ 25.3↑ 12ms")
 .IP \(bu 2
-dashboard
+simple: Minimal one\-line summary
+.IP \(bu 2
+compact: Key metrics with quality ratings
+.IP \(bu 2
+detailed: Full analysis with per\-metric grades (default)
+.IP \(bu 2
+dashboard: Rich terminal dashboard with capability matrix
 .RE
 .TP
 \fB\-\-list\fR
-Display a list of speedtest.net servers sorted by distance
+Display a list of nearby speedtest.net servers sorted by distance.
+Does not run a bandwidth test.
 .TP
 \fB\-\-server\fR \fI<SERVER>\fR
 Specify a server ID to test against (can be supplied multiple times)
@@ -65,7 +87,8 @@ Specify a server ID to test against (can be supplied multiple times)
 Exclude a server from selection (can be supplied multiple times)
 .TP
 \fB\-\-source\fR \fI<SOURCE>\fR
-Source IP address to bind to
+Source IP address to bind to (IPv4 or IPv6).
+Useful on multi\-homed systems to select a specific interface.
 .TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR [default: 10]
 HTTP timeout in seconds (default: 10)
@@ -84,36 +107,62 @@ zsh
 .IP \(bu 2
 fish
 .IP \(bu 2
-power\-shell
+powershell
 .IP \(bu 2
 elvish
 .RE
 .TP
 \fB\-\-history\fR
-Display test history
+Display test history from the local JSON file.
+Does not run a bandwidth test.
 .TP
 \fB\-\-quiet\fR
-Suppress all progress output (JSON/CSV still go to stdout)
+Suppress all progress output during the test.
+JSON/CSV output still goes to stdout.
+.TP
+\fB\-\-dry\-run\fR
+Validate configuration and exit without running tests.
+Prints the server that would be selected and confirms connectivity.
+.TP
+\fB\-\-no\-emoji\fR
+Disable emoji output (for environments where emojis don\*(Aqt render well)
+.TP
+\fB\-\-minimal\fR
+Minimal ASCII\-only output (no Unicode box\-drawing characters)
+.TP
+\fB\-\-profile\fR \fI<PROFILE>\fR
+User profile for customized output.
+Profiles control displayed sections and grading thresholds:
+  gamer:          Latency\-focused (ping/jitter weighted higher)
+  streamer:       Download\-focused (download weighted higher)
+  remote\-worker:  Upload\-focused (upload weighted higher)
+  power\-user:     All metrics with full detail
+  casual:         Simple pass/fail view
+.TP
+\fB\-\-theme\fR \fI<THEME>\fR [default: dark]
+Output color theme (dark, light, high\-contrast, monochrome)
+.TP
+\fB\-\-show\-config\-path\fR
+Show the configuration file path and exit
 .TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Print version
 .SH EXTRA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Examples:
   netspeed\-cli                          Run a full speed test
-  netspeed\-cli \-\-simple                 Run with minimal output
-  netspeed\-cli \-\-json                   Output results as JSON
-  netspeed\-cli \-\-format dashboard       Rich dashboard with bar charts and history
-  netspeed\-cli \-\-format detailed        Full output with ratings and stability
+  netspeed\-cli \-\-format compact         Key metrics with ratings
+  netspeed\-cli \-\-format dashboard       Rich dashboard with history
+  netspeed\-cli \-\-format json            Machine\-readable output
   netspeed\-cli \-\-list                   List available servers
-  netspeed\-cli \-\-server 1234            Test against a specific server
-  netspeed\-cli \-\-no\-upload              Skip upload test
-  netspeed\-cli \-\-quiet                  Suppress all progress output
-  netspeed\-cli \-\-bytes                  Show results in MB/s instead of Mbit/s
-  netspeed\-cli \-\-single                 Use a single connection (debugging)
-  netspeed\-cli \-\-generate\-completion zsh > ~/.zsh/functions/_netspeed\-cli
-                                        Generate Zsh shell completions
+  netspeed\-cli \-\-history                Show test history
+  netspeed\-cli \-\-profile gamer          Optimize output for gaming
+  netspeed\-cli \-\-theme light            Light terminal background
+  netspeed\-cli \-\-no\-emoji               Disable emoji output
+  netspeed\-cli \-\-quiet                  Suppress progress output
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 .SH VERSION
-v0.8.0\-SNAPSHOT
+v0.8.0

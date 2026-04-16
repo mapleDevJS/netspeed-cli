@@ -9,3 +9,12 @@ cognitive-complexity-threshold = 25
 
 # Allow more type complexity before warning
 type-complexity-threshold = 300
+
+# Allow more function arguments before warning (formatter functions need many params)
+too-many-arguments-threshold = 10
+
+# Allow longer functions (formatter functions are naturally verbose)
+too-many-lines-threshold = 200
+
+# Allow more enum variants
+enum-variant-size-threshold = 200

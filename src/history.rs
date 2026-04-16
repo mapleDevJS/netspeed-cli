@@ -1,4 +1,5 @@
 use crate::error::SpeedtestError;
+use crate::terminal;
 use crate::types::TestResult;
 use directories::ProjectDirs;
 use owo_colors::OwoColorize;
@@ -136,18 +137,20 @@ pub fn print_history() -> Result<(), SpeedtestError> {
         return Ok(());
     }
 
-    println!("\n  {}", "TEST HISTORY".bold().underline());
+    let nc = terminal::no_color();
+    println!();
+    if nc {
+        println!("  TEST HISTORY");
+    } else {
+        println!("  {}", "TEST HISTORY".bold().underline());
+    }
     println!(
         "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-        "Date".dimmed(),
-        "Sponsor".dimmed(),
-        "Ping".dimmed(),
-        "Download".dimmed(),
-        "Upload".dimmed()
+        "Date", "Sponsor", "Ping", "Download", "Upload"
     );
 
     for entry in history.iter().rev() {
-        let date = &entry.timestamp[0..10]; // Simple YYYY-MM-DD
+        let date = &entry.timestamp[0..10];
         let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
         let dl = entry
             .download
@@ -155,6 +158,10 @@ pub fn print_history() -> Result<(), SpeedtestError> {
         let ul = entry
             .upload
             .map_or("-".to_string(), |u| format!("{:.2} Mb/s", u / 1_000_000.0));
+
+        let ping_display = if nc { ping } else { format!("{}", ping.cyan()) };
+        let dl_display = if nc { dl } else { format!("{}", dl.green()) };
+        let ul_display = if nc { ul } else { format!("{}", ul.yellow()) };
 
         println!(
             "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
@@ -164,9 +171,9 @@ pub fn print_history() -> Result<(), SpeedtestError> {
             } else {
                 &entry.sponsor
             },
-            ping.cyan(),
-            dl.green(),
-            ul.yellow()
+            ping_display,
+            dl_display,
+            ul_display
         );
     }
 
@@ -270,6 +277,29 @@ pub fn sparkline(values: &[f64]) -> String {
         .collect::<String>()
 }
 
+/// Render an ASCII-only sparkline using `_-^` characters for environments
+/// where Unicode block characters don't render.
+#[must_use]
+pub fn sparkline_ascii(values: &[f64]) -> String {
+    const CHARS: &[char] = &['_', '_', '‗', '-', '=', '≈', '^', '▲'];
+    if values.is_empty() {
+        return String::new();
+    }
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let range = max - min;
+    if range <= 0.0 {
+        return "-".repeat(values.len());
+    }
+    values
+        .iter()
+        .map(|v| {
+            let idx = (((v - min) / range) * 7.0).round() as usize;
+            CHARS[idx.min(7)]
+        })
+        .collect::<String>()
+}
+
 /// Get recent download/upload speeds as paired tuples for sparkline display.
 /// Returns up to the last 7 entries as `(date_label, dl_mbps, ul_mbps)`.
 #[must_use]
@@ -324,6 +354,14 @@ mod tests {
             ping_samples: None,
             timestamp: timestamp.to_string(),
             client_ip: None,
+            download_cv: None,
+            upload_cv: None,
+            download_ci_95: None,
+            upload_ci_95: None,
+            overall_grade: None,
+            download_grade: None,
+            upload_grade: None,
+            connection_rating: None,
         }
     }
 

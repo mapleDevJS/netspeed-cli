@@ -1,4 +1,5 @@
 use crate::cli::CliArgs;
+use crate::theme::Theme;
 use directories::ProjectDirs;
 use serde::Deserialize;
 use std::fs;
@@ -16,6 +17,8 @@ pub struct ConfigFile {
     pub csv_header: Option<bool>,
     pub json: Option<bool>,
     pub timeout: Option<u64>,
+    pub profile: Option<String>,
+    pub theme: Option<String>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -35,9 +38,13 @@ pub struct Config {
     pub source: Option<String>,
     pub timeout: u64,
     pub quiet: bool,
+    pub profile: Option<String>,
+    pub theme: Theme,
+    pub minimal: bool,
 }
 
 impl Config {
+    #[allow(deprecated)]
     #[must_use]
     pub fn from_args(args: &CliArgs) -> Self {
         let file_config = load_config_file().unwrap_or_default();
@@ -82,11 +89,23 @@ impl Config {
             source: args.source.clone(),
             timeout: merge_u64(args.timeout, file_config.timeout, 10),
             quiet: merge_bool(args.quiet, None),
+            profile: args.profile.clone().or(file_config.profile),
+            theme: if args.theme == "dark" {
+                file_config
+                    .theme
+                    .as_ref()
+                    .and_then(|t| Theme::from_name(t))
+                    .unwrap_or_default()
+            } else {
+                Theme::from_name(&args.theme).unwrap_or_default()
+            },
+            minimal: merge_bool(args.minimal, None),
         }
     }
 }
 
-fn get_config_path() -> Option<PathBuf> {
+/// Get the configuration file path (internal — also used by orchestrator for --show-config-path).
+pub fn get_config_path_internal() -> Option<PathBuf> {
     ProjectDirs::from("dev", "vibe", "netspeed-cli").map(|proj_dirs| {
         let config_dir = proj_dirs.config_dir();
         fs::create_dir_all(config_dir).ok();
@@ -95,18 +114,26 @@ fn get_config_path() -> Option<PathBuf> {
 }
 
 fn load_config_file() -> Option<ConfigFile> {
-    let path = get_config_path()?;
+    let path = get_config_path_internal()?;
     if !path.exists() {
         return None;
     }
 
     let content = fs::read_to_string(path).ok()?;
-    let mut config: ConfigFile = toml::from_str(&content).ok()?;
+    let mut config: ConfigFile = match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Warning: Failed to parse config: {e}");
+            return None;
+        }
+    };
 
     // Validate timeout if present
     if let Some(timeout) = config.timeout {
         if timeout == 0 || timeout > 300 {
-            // Silently ignore invalid timeout — fall back to default
+            eprintln!(
+                "Warning: Invalid config timeout ({timeout}s, must be 1-300). Using default."
+            );
             config.timeout = None;
         }
     }
@@ -150,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_config_file_deserialization() {
-        let toml_content = r#"
+        let toml_content = r"
             no_download = true
             no_upload = false
             single = true
@@ -161,7 +188,7 @@ mod tests {
             csv_header = true
             json = true
             timeout = 30
-        "#;
+        ";
 
         let config: ConfigFile = toml::from_str(toml_content).unwrap();
         assert_eq!(config.no_download, Some(true));
@@ -178,10 +205,10 @@ mod tests {
 
     #[test]
     fn test_config_file_partial() {
-        let toml_content = r#"
+        let toml_content = r"
             no_download = true
             timeout = 20
-        "#;
+        ";
 
         let config: ConfigFile = toml::from_str(toml_content).unwrap();
         assert_eq!(config.no_download, Some(true));
@@ -205,9 +232,9 @@ mod tests {
         // because merge_bool = cli || file.unwrap_or(false)
         // Actually merge_bool returns true only if CLI is true OR file is Some(true)
         // Let's verify the actual behavior
-        let toml_content = r#"
+        let toml_content = r"
             no_download = true
-        "#;
+        ";
         let file_config: ConfigFile = toml::from_str(toml_content).unwrap();
 
         // CLI args with no_download=false (default)

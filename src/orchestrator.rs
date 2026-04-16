@@ -7,12 +7,13 @@ use crate::cli::{CliArgs, ShellType};
 use crate::common;
 use crate::config::Config;
 use crate::error::SpeedtestError;
-use crate::formatter::{OutputFormat, format_list};
+use crate::formatter::format_list;
 use crate::history;
 use crate::http;
-use crate::progress::{create_spinner, finish_ok, no_color};
+use crate::progress::{create_spinner, finish_ok, reveal_pause, reveal_scan_complete};
 use crate::servers::{fetch_servers, ping_test, select_best_server};
-use crate::test_runner::{self, TestRunResult};
+use crate::task_runner::{self, TestRunResult};
+use crate::terminal;
 use crate::types::Server;
 use crate::types::{self, TestResult};
 use crate::{download, upload};
@@ -30,7 +31,12 @@ impl SpeedTestOrchestrator {
     /// Create a new orchestrator from CLI arguments.
     pub fn new(args: CliArgs) -> Result<Self, SpeedtestError> {
         let config = Config::from_args(&args);
-        let client = http::create_client(&config)?;
+        let http_settings = http::HttpSettings {
+            timeout_secs: config.timeout,
+            source_ip: config.source.clone(),
+            user_agent: http::HttpSettings::default().user_agent,
+        };
+        let client = http::create_client(&http_settings)?;
         Ok(Self {
             args,
             config,
@@ -40,6 +46,21 @@ impl SpeedTestOrchestrator {
 
     /// Run the full speed test workflow.
     pub async fn run(&self) -> Result<(), SpeedtestError> {
+        // Set NO_EMOJI env var if flag is passed (used by rating functions)
+        // Safe: single-threaded at startup, no async signal handlers
+        if self.args.no_emoji {
+            #[allow(unsafe_code)]
+            unsafe {
+                std::env::set_var("NO_EMOJI", "1");
+            }
+        }
+
+        // Show config path early-exit
+        if self.args.show_config_path {
+            self.show_config_path();
+            return Ok(());
+        }
+
         // Shell completion early-exit
         if let Some(shell) = self.args.generate_completion {
             Self::generate_shell_completion(shell);
@@ -54,7 +75,8 @@ impl SpeedTestOrchestrator {
 
         // Dry-run: validate configuration and exit
         if self.args.dry_run {
-            return self.run_dry_run();
+            self.run_dry_run();
+            return Ok(());
         }
 
         let is_verbose = self.is_verbose();
@@ -63,6 +85,9 @@ impl SpeedTestOrchestrator {
         if is_verbose {
             Self::print_header();
         }
+
+        // Start test timer
+        let test_start = std::time::Instant::now();
 
         // Fetch and filter servers
         let servers = self.fetch_and_filter_servers(is_verbose).await?;
@@ -94,7 +119,7 @@ impl SpeedTestOrchestrator {
         let ul_result = self.run_upload_test(&server, is_verbose).await?;
 
         // Build result
-        let result = TestResult::from_test_runs(
+        let mut result = TestResult::from_test_runs(
             types::ServerInfo {
                 id: server.id.clone(),
                 name: server.name.clone(),
@@ -105,7 +130,7 @@ impl SpeedTestOrchestrator {
             ping,
             jitter,
             packet_loss,
-            ping_samples,
+            &ping_samples,
             &dl_result,
             &ul_result,
             client_ip,
@@ -116,8 +141,11 @@ impl SpeedTestOrchestrator {
             history::save_result(&result).ok();
         }
 
+        // Calculate total elapsed time
+        let elapsed = test_start.elapsed();
+
         // Output — Strategy pattern dispatch
-        self.output_results(&result, &dl_result, &ul_result)?;
+        self.output_results(&mut result, &dl_result, &ul_result, elapsed)?;
 
         Ok(())
     }
@@ -133,7 +161,10 @@ impl SpeedTestOrchestrator {
             self.args.format,
             Some(
                 OutputFormatType::Simple
+                    | OutputFormatType::Minimal
+                    | OutputFormatType::Compact
                     | OutputFormatType::Json
+                    | OutputFormatType::Jsonl
                     | OutputFormatType::Csv
                     | OutputFormatType::Dashboard
             )
@@ -145,21 +176,40 @@ impl SpeedTestOrchestrator {
             && !format_non_verbose
     }
 
+    /// Check if this is a simple/quiet mode — show minimal one-line progress.
+    pub fn is_simple_mode(&self) -> bool {
+        #[allow(deprecated)]
+        let simple = self.args.simple;
+        simple
+            || self.args.quiet
+            || matches!(self.args.format, Some(crate::cli::OutputFormatType::Simple))
+    }
+
     fn print_header() {
-        eprintln!(
-            "{}",
-            format!("  ═══  NetSpeed CLI v{}  ═══", env!("CARGO_PKG_VERSION"))
-                .dimmed()
-                .bold()
-        );
-        eprintln!("{}", "  Bandwidth test · speedtest.net".dimmed());
-        eprintln!();
+        let version = env!("CARGO_PKG_VERSION");
+        let nc = terminal::no_color();
+
+        if nc {
+            eprintln!();
+            eprintln!("  NetSpeed CLI v{version}  ·  speedtest.net");
+            eprintln!();
+        } else {
+            eprintln!();
+            eprintln!(
+                "  {} v{}  {}  {}",
+                "NetSpeed CLI".cyan().bold(),
+                version.white(),
+                "·".dimmed(),
+                "speedtest.net".bright_black()
+            );
+            eprintln!();
+        }
     }
 
     fn print_server_info(server: &Server) {
         let dist = common::format_distance(server.distance);
         eprintln!();
-        if no_color() {
+        if terminal::no_color() {
             eprintln!("  Server:   {} ({})", server.sponsor, server.name);
             eprintln!("  Location: {} ({dist})", server.country);
         } else {
@@ -228,7 +278,7 @@ impl SpeedTestOrchestrator {
         };
         let ping_result = ping_test(&self.client, server).await?;
         if let Some(ref pb) = ping_spinner {
-            let msg = if no_color() {
+            let msg = if terminal::no_color() {
                 format!("Latency: {:.2} ms", ping_result.0)
             } else {
                 format!(
@@ -255,8 +305,8 @@ impl SpeedTestOrchestrator {
             return Ok(TestRunResult::default());
         }
 
-        test_runner::run_bandwidth_test(
-            &self.config,
+        task_runner::run_bandwidth_test(
+            self.client.clone(),
             server,
             "Download",
             is_verbose,
@@ -276,8 +326,8 @@ impl SpeedTestOrchestrator {
             return Ok(TestRunResult::default());
         }
 
-        test_runner::run_bandwidth_test(
-            &self.config,
+        task_runner::run_bandwidth_test(
+            self.client.clone(),
             server,
             "Upload",
             is_verbose,
@@ -290,87 +340,111 @@ impl SpeedTestOrchestrator {
 
     fn output_results(
         &self,
-        result: &TestResult,
+        result: &mut TestResult,
         dl_result: &TestRunResult,
         ul_result: &TestRunResult,
+        elapsed: std::time::Duration,
     ) -> Result<(), SpeedtestError> {
-        use crate::cli::OutputFormatType;
+        // Compute grades once and attach to result for JSON/machine-readable output
+        let profile = crate::profiles::UserProfile::from_name(
+            self.args.profile.as_deref().unwrap_or("power-user"),
+        )
+        .unwrap_or(crate::profiles::UserProfile::PowerUser);
+        let overall = crate::grades::grade_overall(
+            result.ping,
+            result.jitter,
+            result.download,
+            result.upload,
+            profile,
+        );
+        result.overall_grade = Some(overall.as_str().to_string());
+        result.download_grade = result.download.map(|d| {
+            crate::grades::grade_download(d / 1_000_000.0, profile)
+                .as_str()
+                .to_string()
+        });
+        result.upload_grade = result.upload.map(|u| {
+            crate::grades::grade_upload(u / 1_000_000.0, profile)
+                .as_str()
+                .to_string()
+        });
+        result.connection_rating =
+            Some(crate::formatter::ratings::connection_rating(result).to_string());
 
-        // --format flag takes precedence over legacy --json/--csv/--simple booleans
-        let output_format = match self.args.format {
-            Some(OutputFormatType::Json) => OutputFormat::Json,
-            Some(OutputFormatType::Csv) => OutputFormat::Csv {
-                delimiter: self.config.csv_delimiter,
-                header: self.config.csv_header,
-            },
-            Some(OutputFormatType::Simple) => OutputFormat::Simple,
-            Some(OutputFormatType::Dashboard) => OutputFormat::Dashboard {
-                dl_mbps: dl_result.avg_bps / 1_000_000.0,
-                dl_peak_mbps: dl_result.peak_bps / 1_000_000.0,
-                dl_bytes: dl_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_mbps: ul_result.avg_bps / 1_000_000.0,
-                ul_peak_mbps: ul_result.peak_bps / 1_000_000.0,
-                ul_bytes: ul_result.total_bytes,
-                ul_duration: ul_result.duration_secs,
-            },
-            Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
-                dl_bytes: dl_result.total_bytes,
-                ul_bytes: ul_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_duration: ul_result.duration_secs,
-                dl_skipped: self.config.no_download,
-                ul_skipped: self.config.no_upload,
-            },
-            None => {
-                // Legacy boolean flag fallback
-                if self.config.json {
-                    OutputFormat::Json
-                } else if self.config.csv {
-                    OutputFormat::Csv {
-                        delimiter: self.config.csv_delimiter,
-                        header: self.config.csv_header,
-                    }
-                } else if self.config.simple {
-                    OutputFormat::Simple
-                } else {
-                    OutputFormat::Detailed {
-                        dl_bytes: dl_result.total_bytes,
-                        ul_bytes: ul_result.total_bytes,
-                        dl_duration: dl_result.duration_secs,
-                        ul_duration: ul_result.duration_secs,
-                        dl_skipped: self.config.no_download,
-                        ul_skipped: self.config.no_upload,
-                    }
-                }
-            }
-        };
+        // Strategy pattern: resolve format → dispatch via OutputFormat::format (OCP)
+        let output_format = crate::output_strategy::resolve_output_format(
+            &self.args,
+            &self.config,
+            dl_result,
+            ul_result,
+            elapsed,
+        );
+
+        // For verbose output formats (detailed), show scan complete reveal first
+        if self.is_verbose() {
+            Self::reveal_results(result, self.config.theme);
+        }
+
         output_format.format(result, self.config.bytes)?;
-
         Ok(())
     }
 
+    /// Show the scan completion reveal before outputting detailed results.
+    /// Creates intentional friction — user sees the grade "computed" from samples.
+    fn reveal_results(result: &TestResult, theme: crate::theme::Theme) {
+        let nc = terminal::no_color();
+
+        // Count total samples
+        let sample_count = result
+            .download_samples
+            .as_ref()
+            .map(|s| s.len())
+            .unwrap_or(0)
+            + result.upload_samples.as_ref().map(|s| s.len()).unwrap_or(0)
+            + result.ping_samples.as_ref().map(|s| s.len()).unwrap_or(0);
+
+        // Compute overall grade for reveal
+        let profile = crate::profiles::UserProfile::from_name("power-user")
+            .unwrap_or(crate::profiles::UserProfile::PowerUser);
+        let overall_grade = crate::grades::grade_overall(
+            result.ping,
+            result.jitter,
+            result.download,
+            result.upload,
+            profile,
+        );
+
+        // Reveal scan completion with grade
+        let grade_badge = overall_grade.color_str(nc, theme);
+        let grade_plain = overall_grade.as_str().to_string();
+        reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc);
+
+        // Brief pause before sections start
+        reveal_pause();
+    }
+
     fn generate_shell_completion(shell: ShellType) {
-        use clap::CommandFactory;
-        use clap_complete::{Shell as CompleteShell, generate};
-        use std::io;
-
-        let shell_type = match shell {
-            ShellType::Bash => CompleteShell::Bash,
-            ShellType::Zsh => CompleteShell::Zsh,
-            ShellType::Fish => CompleteShell::Fish,
-            ShellType::PowerShell => CompleteShell::PowerShell,
-            ShellType::Elvish => CompleteShell::Elvish,
+        // Shell completions are generated at build time by build.rs and placed in
+        // the completions/ directory. This runtime flag prints a helpful message
+        // pointing users to the pre-generated files.
+        let shell_name = match shell {
+            ShellType::Bash => "netspeed-cli.bash",
+            ShellType::Zsh => "_netspeed-cli",
+            ShellType::Fish => "netspeed-cli.fish",
+            ShellType::PowerShell => "_netspeed-cli.ps1",
+            ShellType::Elvish => "netspeed-cli.elv",
         };
-
-        let mut cmd = CliArgs::command();
-        let bin_name = "netspeed-cli";
-        generate(shell_type, &mut cmd, bin_name, &mut io::stdout());
+        eprintln!(
+            "Shell completion for {:?} is available in the completions/ directory.",
+            shell
+        );
+        eprintln!("  File: {shell_name}");
+        eprintln!("  Install: copy it to your shell's completion directory and reload.");
     }
 
     /// Validate configuration and print confirmation without running tests.
-    fn run_dry_run(&self) -> Result<(), SpeedtestError> {
-        let nc = no_color();
+    fn run_dry_run(&self) {
+        let nc = terminal::no_color();
 
         if nc {
             eprintln!("Configuration valid:");
@@ -424,8 +498,6 @@ impl SpeedTestOrchestrator {
                 "Dry run complete. Run without --dry-run to perform speed test.".bright_black()
             );
         }
-
-        Ok(())
     }
 
     /// Return a human-readable description of the output format.
@@ -433,11 +505,22 @@ impl SpeedTestOrchestrator {
         use crate::cli::OutputFormatType;
         match self.args.format {
             Some(OutputFormatType::Json) => "JSON",
+            Some(OutputFormatType::Jsonl) => "JSONL",
             Some(OutputFormatType::Csv) => "CSV",
+            Some(OutputFormatType::Minimal) => "Minimal",
             Some(OutputFormatType::Simple) => "Simple",
+            Some(OutputFormatType::Compact) => "Compact",
             Some(OutputFormatType::Detailed) => "Detailed",
             Some(OutputFormatType::Dashboard) => "Dashboard",
             None => "Detailed (default)",
+        }
+    }
+
+    /// Show the configuration file path and exit.
+    fn show_config_path(&self) {
+        match crate::config::get_config_path_internal() {
+            Some(path) => eprintln!("Configuration file: {}", path.display()),
+            None => eprintln!("No configuration path available (directories crate returned None)."),
         }
     }
 }
@@ -502,8 +585,7 @@ mod tests {
     fn test_dry_run_succeeds() {
         let args = CliArgs::parse_from(["netspeed-cli", "--dry-run"]);
         let orch = SpeedTestOrchestrator::new(args).unwrap();
-        // run_dry_run should not panic and should return Ok
-        let result = orch.run_dry_run();
-        assert!(result.is_ok());
+        // run_dry_run should not panic
+        orch.run_dry_run();
     }
 }

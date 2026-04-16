@@ -174,7 +174,7 @@ fn test_server_xml_no_servers_tag() {
 
 #[test]
 fn test_config_file_all_fields() {
-    let toml = r#"
+    let toml = r"
         no_download = true
         no_upload = false
         single = true
@@ -185,7 +185,7 @@ fn test_config_file_all_fields() {
         csv_header = true
         json = false
         timeout = 30
-    "#;
+    ";
     let config: ConfigFile = toml::from_str(toml).unwrap();
     assert_eq!(config.no_download, Some(true));
     assert_eq!(config.timeout, Some(30));

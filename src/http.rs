@@ -1,22 +1,45 @@
 use crate::common;
-use crate::config::Config;
 use crate::error::SpeedtestError;
 use reqwest::Client;
 
-/// Create an HTTP client with the given configuration.
+/// HTTP client settings - decoupled from Config struct.
+///
+/// This allows creating HTTP clients without depending on the full Config,
+/// improving modularity and testability.
+#[derive(Debug, Clone)]
+pub struct HttpSettings {
+    /// Timeout in seconds for HTTP requests.
+    pub timeout_secs: u64,
+    /// Optional source IP address to bind to.
+    pub source_ip: Option<String>,
+    /// User agent string for HTTP requests.
+    pub user_agent: String,
+}
+
+impl Default for HttpSettings {
+    fn default() -> Self {
+        Self {
+            timeout_secs: 10,
+            source_ip: None,
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string(),
+        }
+    }
+}
+
+/// Create an HTTP client with the given settings.
 ///
 /// # Errors
 ///
 /// Returns [`SpeedtestError::Context`] if the source IP is invalid.
 /// Returns [`SpeedtestError::NetworkError`] if the client fails to build.
-pub fn create_client(config: &Config) -> Result<Client, SpeedtestError> {
+pub fn create_client(settings: &HttpSettings) -> Result<Client, SpeedtestError> {
     let mut builder = Client::builder()
-        .timeout(std::time::Duration::from_secs(config.timeout))
+        .timeout(std::time::Duration::from_secs(settings.timeout_secs))
         .http1_only()
         .no_gzip()
-        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        .user_agent(&settings.user_agent);
 
-    if let Some(ref source_ip) = config.source {
+    if let Some(ref source_ip) = settings.source_ip {
         let addr: std::net::SocketAddr = source_ip
             .parse()
             .map_err(|e| SpeedtestError::with_source("Invalid source IP", e))?;
@@ -116,9 +139,13 @@ mod tests {
         use crate::cli::CliArgs;
         use clap::Parser;
         let args = CliArgs::parse_from(["netspeed-cli"]);
-        let mut config = Config::from_args(&args);
-        config.source = Some("invalid-ip".to_string());
-        let result = create_client(&config);
+        let config = crate::config::Config::from_args(&args);
+        let settings = HttpSettings {
+            timeout_secs: config.timeout,
+            source_ip: Some("invalid-ip".to_string()),
+            ..Default::default()
+        };
+        let result = create_client(&settings);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -131,8 +158,13 @@ mod tests {
         use crate::cli::CliArgs;
         use clap::Parser;
         let args = CliArgs::parse_from(["netspeed-cli"]);
-        let config = Config::from_args(&args);
-        let result = create_client(&config);
+        let config = crate::config::Config::from_args(&args);
+        let settings = HttpSettings {
+            timeout_secs: config.timeout,
+            source_ip: config.source.clone(),
+            ..Default::default()
+        };
+        let result = create_client(&settings);
         assert!(result.is_ok());
     }
 
@@ -141,10 +173,15 @@ mod tests {
         use crate::cli::CliArgs;
         use clap::Parser;
         let args = CliArgs::parse_from(["netspeed-cli", "--source", "0.0.0.0"]);
-        let config = Config::from_args(&args);
-        let result = create_client(&config);
+        let config = crate::config::Config::from_args(&args);
+        let settings = HttpSettings {
+            timeout_secs: config.timeout,
+            source_ip: config.source.clone(),
+            ..Default::default()
+        };
+        let result = create_client(&settings);
         match result {
-            Ok(_) | Err(SpeedtestError::NetworkError(_)) | Err(SpeedtestError::Context { .. }) => {}
+            Ok(_) | Err(SpeedtestError::NetworkError(_) | SpeedtestError::Context { .. }) => {}
             Err(e) => panic!("Unexpected error type: {e:?}"),
         }
     }
@@ -154,8 +191,13 @@ mod tests {
         use crate::cli::CliArgs;
         use clap::Parser;
         let args = CliArgs::parse_from(["netspeed-cli", "--timeout", "30"]);
-        let config = Config::from_args(&args);
-        let result = create_client(&config);
+        let config = crate::config::Config::from_args(&args);
+        let settings = HttpSettings {
+            timeout_secs: config.timeout,
+            source_ip: config.source.clone(),
+            ..Default::default()
+        };
+        let result = create_client(&settings);
         assert!(result.is_ok());
     }
 }

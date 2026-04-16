@@ -9,15 +9,13 @@
 //! 4. Stop latency monitoring
 //! 5. Aggregate results
 
-use crate::config::Config;
 use crate::error::SpeedtestError;
-use crate::http;
 use crate::progress::SpeedProgress;
 use crate::servers::measure_latency_under_load;
 use crate::types::Server;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 
 /// Result from a bandwidth test (download or upload).
 #[derive(PartialEq, Debug)]
@@ -59,7 +57,7 @@ impl Default for TestRunResult {
 ///
 /// # Arguments
 ///
-/// * `config` - Configuration for HTTP client creation
+/// * `client` - HTTP client to reuse (avoids creating a second connection pool)
 /// * `server` - Server to test against
 /// * `test_label` - Label for progress display (e.g., "Download", "Upload")
 /// * `is_verbose` - Whether to show visible progress
@@ -69,7 +67,7 @@ impl Default for TestRunResult {
 ///
 /// Returns [`SpeedtestError`] if the test fails.
 pub async fn run_bandwidth_test<F, Fut>(
-    config: &Config,
+    client: reqwest::Client,
     server: &Server,
     test_label: &str,
     is_verbose: bool,
@@ -89,12 +87,11 @@ where
     let latency_samples = Arc::new(Mutex::new(Vec::new()));
     let stop_signal = Arc::new(AtomicBool::new(false));
 
-    let ping_client = http::create_client(config)?;
     let ping_url = server.url.clone();
     let samples_clone = Arc::clone(&latency_samples);
     let stop_clone = Arc::clone(&stop_signal);
     let ping_handle = tokio::spawn(async move {
-        measure_latency_under_load(ping_client, ping_url, samples_clone, stop_clone).await;
+        measure_latency_under_load(client.clone(), ping_url, samples_clone, stop_clone).await;
     });
 
     // Run the actual test
@@ -108,7 +105,9 @@ where
 
     // Calculate average latency under load
     let latency_under_load = {
-        let lock = latency_samples.lock().unwrap();
+        let lock = latency_samples
+            .lock()
+            .map_err(|e| SpeedtestError::context(format!("latency samples lock poisoned: {e}")))?;
         if lock.is_empty() {
             None
         } else {

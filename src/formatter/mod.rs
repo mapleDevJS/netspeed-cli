@@ -6,10 +6,23 @@
 //! - [`stability`] — Speed stability analysis and latency percentiles
 //! - [`estimates`] — Usage check targets and download time estimates
 
+use crate::common;
 use crate::error::SpeedtestError;
-use crate::progress::no_color;
+use crate::grades;
+use crate::profiles::UserProfile;
+use crate::terminal;
+use crate::theme::{Theme, ThemeColors};
 use crate::types::{CsvOutput, TestResult};
 use owo_colors::OwoColorize;
+
+/// Build a section header with consistent formatting.
+fn section_header(title: &str, nc: bool, theme: Theme) -> String {
+    if nc {
+        format!("  {title}")
+    } else {
+        format!("  {}", ThemeColors::header(title, theme))
+    }
+}
 
 /// Output format selection — Strategy pattern.
 /// Add new variants here to extend output formats (OCP).
@@ -19,7 +32,22 @@ pub enum OutputFormat {
         delimiter: char,
         header: bool,
     },
-    Simple,
+    Simple {
+        theme: Theme,
+    },
+    Minimal {
+        theme: Theme,
+    },
+    Jsonl,
+    Compact {
+        dl_bytes: u64,
+        ul_bytes: u64,
+        dl_duration: f64,
+        ul_duration: f64,
+        elapsed: std::time::Duration,
+        profile: UserProfile,
+        theme: Theme,
+    },
     Detailed {
         dl_bytes: u64,
         ul_bytes: u64,
@@ -27,6 +55,10 @@ pub enum OutputFormat {
         ul_duration: f64,
         dl_skipped: bool,
         ul_skipped: bool,
+        elapsed: std::time::Duration,
+        profile: UserProfile,
+        minimal: bool,
+        theme: Theme,
     },
     Dashboard {
         dl_mbps: f64,
@@ -37,6 +69,9 @@ pub enum OutputFormat {
         ul_peak_mbps: f64,
         ul_bytes: u64,
         ul_duration: f64,
+        elapsed: std::time::Duration,
+        profile: UserProfile,
+        theme: Theme,
     },
 }
 
@@ -49,8 +84,32 @@ impl OutputFormat {
     pub fn format(&self, result: &TestResult, bytes: bool) -> Result<(), SpeedtestError> {
         match self {
             OutputFormat::Json => format_json(result),
+            OutputFormat::Jsonl => format_jsonl(result),
             OutputFormat::Csv { delimiter, header } => format_csv(result, *delimiter, *header),
-            OutputFormat::Simple => format_simple(result, bytes),
+            OutputFormat::Simple { theme } => format_simple(result, bytes, *theme),
+            OutputFormat::Minimal { theme } => format_minimal(result, bytes, *theme),
+            OutputFormat::Compact {
+                dl_bytes,
+                ul_bytes,
+                dl_duration,
+                ul_duration,
+                elapsed,
+                profile,
+                theme,
+            } => {
+                format_compact(
+                    result,
+                    bytes,
+                    *dl_bytes,
+                    *ul_bytes,
+                    *dl_duration,
+                    *ul_duration,
+                    *elapsed,
+                    *profile,
+                    *theme,
+                );
+                Ok(())
+            }
             OutputFormat::Detailed {
                 dl_bytes,
                 ul_bytes,
@@ -58,6 +117,10 @@ impl OutputFormat {
                 ul_duration,
                 dl_skipped,
                 ul_skipped,
+                elapsed,
+                profile,
+                minimal,
+                theme,
             } => {
                 format_detailed(
                     result,
@@ -68,8 +131,12 @@ impl OutputFormat {
                     *ul_duration,
                     *dl_skipped,
                     *ul_skipped,
+                    *elapsed,
+                    *profile,
+                    *minimal,
+                    *theme,
                 )?;
-                format_verbose_sections(result);
+                format_verbose_sections(result, *profile, *minimal, *theme);
                 Ok(())
             }
             OutputFormat::Dashboard {
@@ -81,6 +148,9 @@ impl OutputFormat {
                 ul_peak_mbps,
                 ul_bytes,
                 ul_duration,
+                elapsed,
+                profile,
+                theme,
             } => {
                 dashboard::format_dashboard(
                     result,
@@ -93,6 +163,9 @@ impl OutputFormat {
                         ul_peak_mbps: *ul_peak_mbps,
                         ul_bytes: *ul_bytes,
                         ul_duration: *ul_duration,
+                        elapsed: *elapsed,
+                        profile: *profile,
+                        theme: *theme,
                     },
                 )?;
                 Ok(())
@@ -101,22 +174,92 @@ impl OutputFormat {
     }
 }
 
+/// Trait for output formatting strategies.
+///
+/// Implement this trait to provide custom output formatters.
+/// This enables the Open-Closed Principle: new formatters can be added
+/// without modifying existing code that uses formatters.
+///
+/// # Example
+///
+/// ```
+/// use netspeed_cli::formatter::{OutputFormatter, OutputFormat};
+/// use netspeed_cli::types::{Server, TestResult};
+/// use netspeed_cli::error::SpeedtestError;
+///
+/// struct MyFormatter;
+///
+/// impl OutputFormatter for MyFormatter {
+///     fn format(&self, result: &TestResult, use_bytes: bool) -> Result<(), SpeedtestError> {
+///         println!("Custom: {:?}", result.ping);
+///         Ok(())
+///     }
+///     
+///     fn format_list(&self, servers: &[Server]) -> Result<(), SpeedtestError> {
+///         println!("Servers: {}", servers.len());
+///         Ok(())
+///     }
+/// }
+/// ```
+pub trait OutputFormatter {
+    /// Format a test result for output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if output fails.
+    fn format(
+        &self,
+        result: &crate::types::TestResult,
+        use_bytes: bool,
+    ) -> Result<(), crate::error::SpeedtestError>;
+
+    /// Format a list of servers for output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if output fails.
+    fn format_list(
+        &self,
+        servers: &[crate::types::Server],
+    ) -> Result<(), crate::error::SpeedtestError>;
+}
+
+/// Allows using OutputFormat polymorphically through the trait.
+impl OutputFormatter for OutputFormat {
+    fn format(
+        &self,
+        result: &crate::types::TestResult,
+        use_bytes: bool,
+    ) -> Result<(), crate::error::SpeedtestError> {
+        self.format(result, use_bytes)
+    }
+
+    fn format_list(
+        &self,
+        servers: &[crate::types::Server],
+    ) -> Result<(), crate::error::SpeedtestError> {
+        sections::format_list(servers).map_err(|e| crate::error::SpeedtestError::IoError(e))
+    }
+}
+
+pub mod bandwidth_dashboard;
 pub mod dashboard;
 pub mod estimates;
 pub mod ratings;
+pub mod scenarios;
 pub mod sections;
 pub mod stability;
 
 // Re-export commonly used functions for backward compatibility
 pub use estimates::{format_estimates, format_targets};
 pub use ratings::{
-    BufferbloatGrade, bufferbloat_colorized, bufferbloat_grade, colorize_rating, connection_rating,
-    degradation_str, format_duration, format_overall_rating, format_speed_colored,
-    format_speed_plain, ping_rating, speed_rating_mbps,
+    bufferbloat_colorized, bufferbloat_grade, colorize_rating, connection_rating, degradation_str,
+    format_duration, format_overall_rating, format_speed_colored, format_speed_plain, ping_rating,
+    speed_rating_mbps, BufferbloatGrade,
 };
 pub use sections::{
-    format_connection_info, format_download_section, format_footer, format_latency_section,
-    format_list, format_test_summary, format_upload_section,
+    build_elapsed_time, format_connection_info, format_download_section, format_elapsed_time,
+    format_footer, format_latency_section, format_list, format_test_summary, format_upload_section,
 };
 pub use stability::{compute_cv, compute_percentiles, format_stability_line};
 
@@ -126,15 +269,18 @@ pub use stability::{compute_cv, compute_percentiles, format_stability_line};
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
-pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestError> {
-    let nc = no_color();
+pub fn format_simple(result: &TestResult, bytes: bool, theme: Theme) -> Result<(), SpeedtestError> {
+    let nc = terminal::no_color();
     let mut parts = Vec::new();
 
     if let Some(ping) = result.ping {
         parts.push(if nc {
             format!("Latency: {ping:.1} ms")
         } else {
-            format!("Latency: {} ms", ping.cyan())
+            format!(
+                "Latency: {} ms",
+                ThemeColors::info(&format!("{ping:.1}"), theme)
+            )
         });
     }
 
@@ -142,7 +288,7 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
         let speed = if nc {
             ratings::format_speed_plain(dl, bytes)
         } else {
-            ratings::format_speed_colored(dl, bytes)
+            ratings::format_speed_colored(dl, bytes, theme)
         };
         parts.push(format!("Download: {speed}"));
     }
@@ -151,13 +297,158 @@ pub fn format_simple(result: &TestResult, bytes: bool) -> Result<(), SpeedtestEr
         let speed = if nc {
             ratings::format_speed_plain(ul, bytes)
         } else {
-            ratings::format_speed_colored(ul, bytes)
+            ratings::format_speed_colored(ul, bytes, theme)
         };
         parts.push(format!("Upload: {speed}"));
     }
 
     eprintln!("{}", parts.join(" | "));
     Ok(())
+}
+
+/// Minimal mode — ultra-compact: just "B+ 150.5↓ 25.3↑ 12ms"
+pub fn format_minimal(
+    result: &TestResult,
+    _bytes: bool,
+    theme: Theme,
+) -> Result<(), SpeedtestError> {
+    let nc = terminal::no_color();
+    let profile = UserProfile::default();
+
+    let overall_grade = grades::grade_overall(
+        result.ping,
+        result.jitter,
+        result.download,
+        result.upload,
+        profile,
+    );
+    let grade_str = if nc {
+        format!("[{}]", overall_grade.as_str())
+    } else {
+        overall_grade.color_str(nc, theme)
+    };
+
+    let dl_str = result
+        .download
+        .map(|d| {
+            let mbps = d / 1_000_000.0;
+            format!("{:.1}↓", mbps)
+        })
+        .unwrap_or_else(|| "—↓".to_string());
+
+    let ul_str = result
+        .upload
+        .map(|u| {
+            let mbps = u / 1_000_000.0;
+            format!("{:.1}↑", mbps)
+        })
+        .unwrap_or_else(|| "—↑".to_string());
+
+    let lat_str = result
+        .ping
+        .map(|p| format!("{:.0}ms", p))
+        .unwrap_or_else(|| "—ms".to_string());
+
+    eprintln!("{grade_str}  {dl_str}  {ul_str}  {lat_str}");
+    Ok(())
+}
+
+/// JSONL mode — one JSON object per line, ideal for logging/parsing
+pub fn format_jsonl(result: &TestResult) -> Result<(), SpeedtestError> {
+    println!("{}", serde_json::to_string(result)?);
+    Ok(())
+}
+
+/// Compact mode — key metrics with ratings and brief summary.
+/// Middle ground between simple (too minimal) and detailed (too verbose).
+pub fn format_compact(
+    result: &TestResult,
+    bytes: bool,
+    dl_bytes: u64,
+    ul_bytes: u64,
+    dl_duration: f64,
+    ul_duration: f64,
+    elapsed: std::time::Duration,
+    profile: UserProfile,
+    theme: Theme,
+) {
+    let nc = terminal::no_color();
+    let overall_grade = grades::grade_overall(
+        result.ping,
+        result.jitter,
+        result.download,
+        result.upload,
+        profile,
+    );
+
+    eprintln!();
+    eprintln!("{}", section_header("TEST RESULTS", nc, theme));
+    eprintln!("{}", ratings::format_overall_rating(result, nc, theme));
+    if !nc {
+        eprintln!(
+            "  {} {}",
+            "Grade:".dimmed(),
+            overall_grade.color_str(nc, theme)
+        );
+    }
+    eprintln!();
+
+    sections::format_latency_section(result, nc, theme);
+    eprintln!();
+
+    sections::format_download_section(result, bytes, nc, false, theme);
+    eprintln!();
+
+    sections::format_upload_section(result, bytes, nc, false, theme);
+    eprintln!();
+
+    if let Some(ip) = &result.client_ip {
+        if nc {
+            eprintln!("  Server: {} · {}", result.server.sponsor, ip);
+        } else {
+            eprintln!(
+                "  {} {} · {}",
+                "Server:".dimmed(),
+                ThemeColors::bold(&result.server.sponsor, theme),
+                ThemeColors::muted(ip, theme),
+            );
+        }
+        eprintln!();
+    }
+
+    if nc {
+        eprintln!("  SUMMARY");
+    } else {
+        eprintln!("  {}", ThemeColors::header("SUMMARY", theme));
+    }
+    if dl_bytes > 0 {
+        eprintln!(
+            "  {:>14}:   {} in {:.1}s",
+            "Download".dimmed(),
+            common::format_data_size(dl_bytes),
+            dl_duration
+        );
+    }
+    if ul_bytes > 0 {
+        eprintln!(
+            "  {:>14}:   {} in {:.1}s",
+            "Upload".dimmed(),
+            common::format_data_size(ul_bytes),
+            ul_duration
+        );
+    }
+
+    eprintln!();
+    if nc {
+        eprintln!("  Total time: {:.1}s", elapsed.as_secs_f64());
+    } else {
+        eprintln!(
+            "  {}: {}",
+            "Total time".dimmed(),
+            ThemeColors::info(&format!("{:.1}s", elapsed.as_secs_f64()), theme),
+        );
+    }
+    sections::format_footer(&result.timestamp, nc, theme);
 }
 
 /// Detailed mode — clean key/value pairs.
@@ -176,23 +467,53 @@ pub fn format_detailed(
     ul_duration: f64,
     dl_skipped: bool,
     ul_skipped: bool,
+    elapsed: std::time::Duration,
+    profile: UserProfile,
+    minimal: bool,
+    theme: Theme,
 ) -> Result<(), SpeedtestError> {
-    let nc = no_color();
+    let nc = terminal::no_color() || minimal;
+    let overall_grade = grades::grade_overall(
+        result.ping,
+        result.jitter,
+        result.download,
+        result.upload,
+        profile,
+    );
 
     if nc {
         eprintln!("\n  TEST RESULTS");
     } else {
-        eprintln!("\n  {}", "TEST RESULTS".bold().underline());
+        eprintln!("\n  {}", ThemeColors::header("TEST RESULTS", theme));
     }
-    eprintln!("{}", ratings::format_overall_rating(result, nc));
+    eprintln!("{}", ratings::format_overall_rating(result, nc, theme));
+    if !nc {
+        eprintln!(
+            "  {} {}",
+            "Grade:".dimmed(),
+            overall_grade.color_str(nc, theme)
+        );
+    }
     eprintln!();
 
-    sections::format_latency_section(result, nc);
-    sections::format_download_section(result, bytes, nc, dl_skipped);
-    sections::format_upload_section(result, bytes, nc, ul_skipped);
-    sections::format_connection_info(result, nc);
+    sections::format_latency_section(result, nc, theme);
+    sections::format_download_section(result, bytes, nc, dl_skipped, theme);
+    sections::format_upload_section(result, bytes, nc, ul_skipped, theme);
+    sections::format_connection_info(result, nc, theme);
     sections::format_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc);
-    sections::format_footer(&result.timestamp, nc);
+
+    eprintln!();
+    if nc {
+        eprintln!("  Total time: {:.1}s", elapsed.as_secs_f64());
+    } else {
+        eprintln!(
+            "  {}: {}",
+            "Total time".dimmed(),
+            ThemeColors::info(&format!("{:.1}s", elapsed.as_secs_f64()), theme),
+        );
+    }
+
+    sections::format_footer(&result.timestamp, nc, theme);
 
     Ok(())
 }
@@ -269,71 +590,81 @@ pub fn format_csv(
 
 /// Format additional verbose output sections: stability, latency percentiles, and historical comparison.
 /// Only used in detailed (verbose) mode.
-pub fn format_verbose_sections(result: &TestResult) {
-    let nc = no_color();
+pub fn format_verbose_sections(
+    result: &TestResult,
+    profile: UserProfile,
+    minimal: bool,
+    theme: Theme,
+) {
+    let nc = terminal::no_color() || minimal;
 
-    // Usage check targets
-    let targets = estimates::build_targets(result.download, nc);
-    if !targets.is_empty() {
-        eprintln!("{targets}");
-    }
-
-    // Download time estimates
-    let estimates = estimates::build_estimates(result.download, nc);
-    if !estimates.is_empty() {
-        eprintln!("{estimates}");
-    }
-
-    // Speed stability (DL + UL)
-    if let (Some(dl_s), Some(ul_s)) = (&result.download_samples, &result.upload_samples) {
-        let dl_cv = compute_cv(dl_s);
-        let ul_cv = compute_cv(ul_s);
-        let dl_stability = format_stability_line(dl_cv, nc);
-        let ul_stability = format_stability_line(ul_cv, nc);
-        eprintln!();
-        if nc {
-            eprintln!("  STABILITY");
-        } else {
-            eprintln!("\n  {}", "STABILITY".bold().underline());
+    if profile.show_estimates() {
+        let estimates = estimates::build_estimates(result.download, nc, theme);
+        if !estimates.is_empty() {
+            eprintln!("{estimates}");
         }
-        eprintln!("  {:>14}:   {dl_stability}", "Download".dimmed());
-        eprintln!("  {:>14}:   {ul_stability}", "Upload".dimmed());
     }
 
-    // Latency percentiles
-    if let Some(ref samples) = result.ping_samples {
-        if let Some((p50, p95, p99)) = compute_percentiles(samples) {
+    if profile.show_stability() {
+        if let (Some(dl_s), Some(ul_s)) = (&result.download_samples, &result.upload_samples) {
+            let dl_cv = compute_cv(dl_s);
+            let ul_cv = compute_cv(ul_s);
+            let dl_grade = grades::grade_stability(dl_cv);
+            let ul_grade = grades::grade_stability(ul_cv);
+            let dl_stability = format_stability_line(dl_cv, nc, theme);
+            let ul_stability = format_stability_line(ul_cv, nc, theme);
             eprintln!();
-            if nc {
-                eprintln!("  LATENCY PERCENTILES");
-            } else {
-                eprintln!("\n  {}", "LATENCY PERCENTILES".bold().underline());
-            }
-            let p50_str = format!("{p50:.1} ms");
-            let p95_str = format!("{p95:.1} ms");
-            let p99_str = format!("{p99:.1} ms");
-            if nc {
-                eprintln!("  P50: {p50_str}  P95: {p95_str}  P99: {p99_str}");
-            } else {
+            eprintln!("{}", section_header("STABILITY", nc, theme));
+            if !nc {
                 eprintln!(
-                    "  {}: {}  {}: {}  {}: {}",
-                    "P50".dimmed(),
-                    p50_str.cyan(),
-                    "P95".dimmed(),
-                    p95_str.yellow(),
-                    "P99".dimmed(),
-                    p99_str.red().bold(),
+                    "  {:>14}:   {} {dl_stability}",
+                    "Download".dimmed(),
+                    dl_grade.color_str(nc, theme)
                 );
+                eprintln!(
+                    "  {:>14}:   {} {ul_stability}",
+                    "Upload".dimmed(),
+                    ul_grade.color_str(nc, theme)
+                );
+            } else {
+                eprintln!("  {:>14}:   [{dl_stability}]", "Download");
+                eprintln!("  {:>14}:   [{ul_stability}]", "Upload");
             }
         }
     }
 
-    // Historical comparison
-    let dl_mbps = result.download.map(|d| d / 1_000_000.0).unwrap_or(0.0);
-    let ul_mbps = result.upload.map(|u| u / 1_000_000.0).unwrap_or(0.0);
-    if let Some(comparison) = crate::history::format_comparison(dl_mbps, ul_mbps, nc) {
-        eprintln!();
-        eprintln!("  {comparison}");
+    if profile.show_percentiles() {
+        if let Some(ref samples) = result.ping_samples {
+            if let Some((p50, p95, p99)) = compute_percentiles(samples) {
+                eprintln!();
+                eprintln!("{}", section_header("LATENCY PERCENTILES", nc, theme));
+                let p50_str = format!("{p50:.1} ms");
+                let p95_str = format!("{p95:.1} ms");
+                let p99_str = format!("{p99:.1} ms");
+                if nc {
+                    eprintln!("  P50: {p50_str}  P95: {p95_str}  P99: {p99_str}");
+                } else {
+                    eprintln!(
+                        "  {}: {}  {}: {}  {}: {}",
+                        "P50".dimmed(),
+                        ThemeColors::info(&p50_str, theme),
+                        "P95".dimmed(),
+                        ThemeColors::warn(&p95_str, theme),
+                        "P99".dimmed(),
+                        ThemeColors::bad(&p99_str, theme),
+                    );
+                }
+            }
+        }
+    }
+
+    if profile.show_history() {
+        let dl_mbps = result.download.map(|d| d / 1_000_000.0).unwrap_or(0.0);
+        let ul_mbps = result.upload.map(|u| u / 1_000_000.0).unwrap_or(0.0);
+        if let Some(comparison) = crate::history::format_comparison(dl_mbps, ul_mbps, nc) {
+            eprintln!();
+            eprintln!("  {comparison}");
+        }
     }
 }
 
@@ -366,10 +697,18 @@ mod tests {
             ping_samples: None,
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             client_ip: None,
+            download_cv: None,
+            upload_cv: None,
+            download_ci_95: None,
+            upload_ci_95: None,
+            overall_grade: None,
+            download_grade: None,
+            upload_grade: None,
+            connection_rating: None,
         };
 
         // Just verify it doesn't panic
-        let _ = format_simple(&result, false);
+        let _ = format_simple(&result, false, Theme::Dark);
     }
 
     #[test]
@@ -412,11 +751,19 @@ mod tests {
             ping_samples: Some(vec![9.5, 10.0, 10.5]),
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             client_ip: Some("192.168.1.1".to_string()),
+            download_cv: Some(0.05),
+            upload_cv: Some(0.04),
+            download_ci_95: Some((140.0, 160.0)),
+            upload_ci_95: Some((45.0, 55.0)),
+            overall_grade: None,
+            download_grade: None,
+            upload_grade: None,
+            connection_rating: None,
         };
 
         // Exercise the full integration path: targets, estimates, stability,
         // latency percentiles, and history comparison
-        format_verbose_sections(&result);
+        format_verbose_sections(&result, UserProfile::default(), false, Theme::Dark);
     }
 
     #[test]
@@ -444,9 +791,17 @@ mod tests {
             ping_samples: None,
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             client_ip: None,
+            download_cv: None,
+            upload_cv: None,
+            download_ci_95: None,
+            upload_ci_95: None,
+            overall_grade: None,
+            download_grade: None,
+            upload_grade: None,
+            connection_rating: None,
         };
 
         // Should not panic with all None values
-        format_verbose_sections(&result);
+        format_verbose_sections(&result, UserProfile::default(), false, Theme::Dark);
     }
 }

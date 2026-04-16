@@ -1,3 +1,4 @@
+pub use clap::ArgAction;
 use clap::{Parser, ValueEnum};
 
 // Shared validation functions (also used by build.rs via include!)
@@ -5,48 +6,86 @@ include!("validate.rs");
 
 #[derive(Parser, Debug)]
 #[allow(clippy::struct_excessive_bools)]
+#[allow(deprecated)]
 #[command(name = "netspeed-cli")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Command line interface for testing internet bandwidth using speedtest.net")]
-#[command(after_help = "\
+#[command(
+    about = "Test internet bandwidth via speedtest.net servers",
+    long_about = "Test internet bandwidth via speedtest.net servers.
+
+The default workflow runs a full bandwidth test:
+  1. Discover nearest speedtest.net servers
+  2. Measure latency (8 ping samples → latency, jitter, packet loss)
+  3. Measure download speed (multi-stream, concurrent downloads)
+  4. Measure upload speed (multi-stream, concurrent uploads)
+  5. Grade results (A+ to F) and show real-world usage estimates
+
+Results are saved to a local history file for trend tracking."
+)]
+#[command(
+    after_help = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Examples:
   netspeed-cli                          Run a full speed test
-  netspeed-cli --simple                 Run with minimal output
-  netspeed-cli --json                   Output results as JSON
-  netspeed-cli --format dashboard       Rich dashboard with bar charts and history
-  netspeed-cli --format detailed        Full output with ratings and stability
+  netspeed-cli --format compact         Key metrics with ratings
+  netspeed-cli --format dashboard       Rich dashboard with history
+  netspeed-cli --format json            Machine-readable output
   netspeed-cli --list                   List available servers
-  netspeed-cli --server 1234            Test against a specific server
-  netspeed-cli --no-upload              Skip upload test
-  netspeed-cli --quiet                  Suppress all progress output
-  netspeed-cli --bytes                  Show results in MB/s instead of Mbit/s
-  netspeed-cli --single                 Use a single connection (debugging)
-  netspeed-cli --generate-completion zsh > ~/.zsh/functions/_netspeed-cli
-                                        Generate Zsh shell completions
-")]
+  netspeed-cli --history                Show test history
+  netspeed-cli --profile gamer          Optimize output for gaming
+  netspeed-cli --theme light            Light terminal background
+  netspeed-cli --no-emoji               Disable emoji output
+  netspeed-cli --quiet                  Suppress progress output
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+)]
 pub struct CliArgs {
     /// Do not perform download test
-    #[arg(long)]
+    #[arg(long, action = ArgAction::SetTrue)]
     pub no_download: bool,
 
     /// Do not perform upload test
-    #[arg(long)]
+    #[arg(long, action = ArgAction::SetTrue)]
     pub no_upload: bool,
 
     /// Only use a single connection instead of multiple
-    #[arg(long)]
+    ///
+    /// A single connection measures sustained throughput.
+    /// The default uses multiple connections to measure burst/bandwidth capacity.
+    #[arg(
+        long,
+        action = ArgAction::SetTrue,
+        long_help = "Use a single TCP connection for testing (measures sustained throughput).\nThe default uses multiple connections (measures burst/bandwidth capacity)."
+    )]
     pub single: bool,
 
     /// Display values in bytes instead of bits
-    #[arg(long)]
+    ///
+    /// The default displays values in bits (standard for ISP advertising).
+    #[arg(
+        long,
+        action = ArgAction::SetTrue,
+        long_help = "Display values in bytes instead of bits per second.\nThe default uses bits (standard for ISP advertising)."
+    )]
     pub bytes: bool,
 
     /// Suppress verbose output, only show basic information
-    #[arg(long)]
+    ///
+    /// Basic information = one-line summary: latency, download, upload.
+    #[deprecated(since = "0.9.0", note = "Use --format simple instead")]
+    #[arg(
+        long,
+        long_help = "Suppress verbose output, only show basic information.\nBasic information = one-line summary: latency, download, upload.\nDeprecated: use --format simple instead."
+    )]
     pub simple: bool,
 
     /// Output in CSV format
-    #[arg(long)]
+    ///
+    /// CSV output is suitable for spreadsheet analysis.
+    /// Use --csv-header to include column names.
+    #[deprecated(since = "0.9.0", note = "Use --format csv instead")]
+    #[arg(
+        long,
+        long_help = "Output in CSV format for spreadsheet analysis.\nDeprecated: use --format csv instead."
+    )]
     pub csv: bool,
 
     /// Single character delimiter for CSV output (default: ",")
@@ -58,7 +97,13 @@ pub struct CliArgs {
     pub csv_header: bool,
 
     /// Output in JSON format
-    #[arg(long)]
+    ///
+    /// JSON output is machine-readable and includes all measured values.
+    #[deprecated(since = "0.9.0", note = "Use --format json instead")]
+    #[arg(
+        long,
+        long_help = "Output in JSON format (machine-readable).\nDeprecated: use --format json instead."
+    )]
     pub json: bool,
 
     /// Output format (supersedes --json, --csv, --simple)
@@ -66,7 +111,10 @@ pub struct CliArgs {
     pub format: Option<OutputFormatType>,
 
     /// Display a list of speedtest.net servers sorted by distance
-    #[arg(long)]
+    #[arg(
+        long,
+        long_help = "Display a list of nearby speedtest.net servers sorted by distance.\nDoes not run a bandwidth test."
+    )]
     pub list: bool,
 
     /// Specify a server ID to test against (can be supplied multiple times)
@@ -77,8 +125,8 @@ pub struct CliArgs {
     #[arg(long)]
     pub exclude: Vec<String>,
 
-    /// Source IP address to bind to
-    #[arg(long, value_parser = validate_ip_address)]
+    /// Source IP address to bind to (IPv4 or IPv6)
+    #[arg(long, value_parser = validate_ip_address, long_help = "Source IP address to bind to (IPv4 or IPv6).\nUseful on multi-homed systems to select a specific interface.")]
     pub source: Option<String>,
 
     /// HTTP timeout in seconds (default: 10)
@@ -90,16 +138,52 @@ pub struct CliArgs {
     pub generate_completion: Option<ShellType>,
 
     /// Display test history
-    #[arg(long)]
+    #[arg(
+        long,
+        long_help = "Display test history from the local JSON file.\nDoes not run a bandwidth test."
+    )]
     pub history: bool,
 
     /// Suppress all progress output (JSON/CSV still go to stdout)
-    #[arg(long)]
+    #[arg(
+        long,
+        long_help = "Suppress all progress output during the test.\nJSON/CSV output still goes to stdout."
+    )]
     pub quiet: bool,
 
     /// Validate configuration and exit without running tests
-    #[arg(long)]
+    #[arg(
+        long,
+        long_help = "Validate configuration and exit without running tests.\nPrints the server that would be selected and confirms connectivity."
+    )]
     pub dry_run: bool,
+
+    /// Disable emoji output (for environments where emojis don't render well)
+    #[arg(long)]
+    pub no_emoji: bool,
+
+    /// Minimal ASCII-only output (no Unicode box-drawing characters)
+    #[arg(long)]
+    pub minimal: bool,
+
+    /// User profile for customized output (gamer, streamer, remote-worker, power-user, casual)
+    ///
+    /// Profiles control which sections are shown and grading thresholds.
+    /// gamer = latency-focused, streamer = download-focused, etc.
+    #[arg(
+        long,
+        value_name = "PROFILE",
+        long_help = "User profile for customized output.\nProfiles control displayed sections and grading thresholds:\n  gamer:          Latency-focused (ping/jitter weighted higher)\n  streamer:       Download-focused (download weighted higher)\n  remote-worker:  Upload-focused (upload weighted higher)\n  power-user:     All metrics with full detail\n  casual:         Simple pass/fail view"
+    )]
+    pub profile: Option<String>,
+
+    /// Output color theme (dark, light, high-contrast, monochrome)
+    #[arg(long, value_name = "THEME", default_value = "dark")]
+    pub theme: String,
+
+    /// Show the configuration file path and exit
+    #[arg(long)]
+    pub show_config_path: bool,
 }
 
 fn validate_csv_delimiter(s: &str) -> Result<char, String> {
@@ -136,6 +220,7 @@ pub enum ShellType {
     Bash,
     Zsh,
     Fish,
+    #[value(name = "powershell")]
     PowerShell,
     Elvish,
 }
@@ -143,10 +228,21 @@ pub enum ShellType {
 /// Unified output format selection (supersedes --json, --csv, --simple).
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum OutputFormatType {
+    /// Machine-readable JSON output
     Json,
+    /// JSON Lines for logging (one JSON object per line)
+    Jsonl,
+    /// CSV format for spreadsheet analysis
     Csv,
+    /// Ultra-minimal: just grade + speeds (e.g., "B+ 150.5↓ 25.3↑ 12ms")
+    Minimal,
+    /// Minimal one-line summary
     Simple,
+    /// Key metrics with quality ratings
+    Compact,
+    /// Full analysis with per-metric grades (default)
     Detailed,
+    /// Rich terminal dashboard with capability matrix
     Dashboard,
 }
 

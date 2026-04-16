@@ -10,7 +10,8 @@
 use crate::bandwidth_loop::BandwidthLoopState;
 use crate::common;
 use crate::error::SpeedtestError;
-use crate::progress::{SpeedProgress, no_color};
+use crate::progress::SpeedProgress;
+use crate::terminal;
 use crate::types::Server;
 use owo_colors::OwoColorize;
 use reqwest::Client;
@@ -22,6 +23,18 @@ pub fn build_upload_url(server_url: &str) -> String {
     format!("{server_url}/upload")
 }
 
+/// Deterministic upload payload: byte[i] = i % 256.
+/// Initialized once via LazyLock — Bytes-backed for zero-copy sharing.
+static UPLOAD_PAYLOAD: std::sync::LazyLock<bytes::Bytes> = std::sync::LazyLock::new(|| {
+    let mut data = vec![0u8; 200_000];
+    for (i, byte) in data.iter_mut().enumerate() {
+        *byte = (i % 256) as u8;
+    }
+    bytes::Bytes::from(data)
+});
+
+/// Generate upload data of the given size (used by tests).
+#[cfg(test)]
 fn generate_upload_data(size: usize) -> Vec<u8> {
     let mut data = vec![0u8; size];
     for (i, byte) in data.iter_mut().enumerate() {
@@ -51,7 +64,7 @@ pub async fn upload_test(
 ) -> Result<(f64, f64, u64, Vec<f64>), SpeedtestError> {
     let concurrent_uploads = common::determine_stream_count(single);
     let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
-    let upload_data = generate_upload_data(200_000); // 200KB chunks
+    let upload_data: bytes::Bytes = (*UPLOAD_PAYLOAD).clone();
 
     let mut handles = Vec::new();
 
@@ -69,7 +82,7 @@ pub async fn upload_test(
 
                 if let Ok(response) = client.post(&upload_url).body(data.clone()).send().await {
                     if response.status().is_success() {
-                        let chunk = data.len() as u64;
+                        let chunk = u64::try_from(data.len()).unwrap_or(u64::MAX);
                         uploaded_bytes += chunk;
                         state.record_bytes(chunk);
                     }
@@ -87,7 +100,7 @@ pub async fn upload_test(
     for (i, handle) in handles.into_iter().enumerate() {
         if let Err(e) = handle.await {
             let msg = format!("Warning: upload task {i} failed: {e}");
-            if no_color() {
+            if terminal::no_color() {
                 eprintln!("\n{msg}");
             } else {
                 eprintln!("\n{}", msg.yellow().bold());
@@ -178,5 +191,14 @@ mod tests {
         // Verify the upload data size used in upload_test (200KB)
         let data = generate_upload_data(200_000);
         assert_eq!(data.len(), 200_000);
+    }
+
+    #[test]
+    fn test_upload_payload_lazy_init() {
+        // Verify the LazyLock payload matches the expected pattern
+        assert_eq!(UPLOAD_PAYLOAD.len(), 200_000);
+        assert_eq!(UPLOAD_PAYLOAD[0], 0u8);
+        assert_eq!(UPLOAD_PAYLOAD[255], 255u8);
+        assert_eq!(UPLOAD_PAYLOAD[256], 0u8);
     }
 }

@@ -23,7 +23,7 @@ _netspeed-cli() {
 
     case "${cmd}" in
         netspeed__cli)
-            opts="-h -V --no-download --no-upload --single --bytes --simple --csv --csv-delimiter --csv-header --json --format --list --server --exclude --source --timeout --generate-completion --history --quiet --help --version"
+            opts="-h -V --no-download --no-upload --single --bytes --simple --csv --csv-delimiter --csv-header --json --format --list --server --exclude --source --timeout --generate-completion --history --quiet --dry-run --no-emoji --minimal --profile --theme --show-config-path --help --version"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -34,7 +34,7 @@ _netspeed-cli() {
                     return 0
                     ;;
                 --format)
-                    COMPREPLY=($(compgen -W "json csv simple detailed dashboard" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "json jsonl csv minimal simple compact detailed dashboard" -- "${cur}"))
                     return 0
                     ;;
                 --server)
@@ -54,7 +54,15 @@ _netspeed-cli() {
                     return 0
                     ;;
                 --generate-completion)
-                    COMPREPLY=($(compgen -W "bash zsh fish power-shell elvish" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash zsh fish powershell elvish" -- "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --theme)
+                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 *)

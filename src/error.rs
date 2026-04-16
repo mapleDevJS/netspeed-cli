@@ -11,6 +11,22 @@ pub enum SpeedtestError {
     #[error("Network error: {0}")]
     NetworkError(#[from] reqwest::Error),
 
+    /// Failed to fetch the server list from speedtest.net
+    #[error("Failed to fetch server list: {0}")]
+    ServerListFetch(#[source] reqwest::Error),
+
+    /// Failed during download bandwidth test
+    #[error("Download test failed: {0}")]
+    DownloadTest(#[source] reqwest::Error),
+
+    /// Failed during upload bandwidth test
+    #[error("Upload test failed: {0}")]
+    UploadTest(#[source] reqwest::Error),
+
+    /// Failed to discover client IP address
+    #[error("Failed to discover client IP: {0}")]
+    IpDiscovery(#[source] reqwest::Error),
+
     /// XML parsing errors
     #[error("XML parse error: {0}")]
     ParseXml(#[from] quick_xml::Error),
