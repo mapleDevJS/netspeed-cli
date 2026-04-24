@@ -42,6 +42,9 @@ dashboard\:"Rich terminal dashboard with capability matrix"))' \
 '--profile=[User profile for customized output (gamer, streamer, remote-worker, power-user, casual)]:PROFILE:_default' \
 '--theme=[Output color theme (dark, light, high-contrast, monochrome)]:THEME:_default' \
 '--strict-config=[Enable strict config mode - show warnings for invalid config values]::STRICT_CONFIG:(true false)' \
+'--ca-cert=[Path to a custom CA certificate file (PEM/DER format)]:PATH:_default' \
+'--tls-version=[Minimum TLS version to use (1.2 or 1.3)]:VERSION:_default' \
+'--pin-certs=[Enable certificate pinning for speedtest.net servers]::PIN_CERTS:(true false)' \
 '--list[Display a list of speedtest.net servers sorted by distance]' \
 '--history[Display test history]' \
 '--dry-run[Validate configuration and exit without running tests]' \

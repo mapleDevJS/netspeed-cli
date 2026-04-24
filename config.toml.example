@@ -1,0 +1,44 @@
+# netspeed-cli Configuration File
+#
+# This is an example configuration file showing all available options.
+# Copy this to your config location (~/.config/netspeed-cli/config.toml on Linux/macOS)
+# and customize as needed.
+#
+# Command-line arguments always override config file values.
+
+# Test behavior
+no_download = false          # Set to true to skip download test
+no_upload = false            # Set to true to skip upload test
+single = false               # Set to true to use single connection (not multi-stream)
+
+# Output preferences
+bytes = false                # Display values in bytes instead of bits
+# csv_delimiter = ','         # CSV column separator (comma, semicolon, pipe, or tab)
+# csv_header = false          # Include column names in CSV output
+
+# Timeout in seconds (1-300)
+timeout = 10
+
+# User profile (gamer, streamer, remote-worker, power-user, casual)
+profile = \"power-user\"
+
+# Theme (dark, light, high-contrast, monochrome)
+theme = \"dark\"
+
+# Custom user agent (optional, defaults to browser-like UA)
+# custom_user_agent = \"Mozilla/5.0 ...\"
+
+# Strict config mode - show warnings for invalid values
+# strict = false
+
+# TLS Configuration
+# Path to a custom CA certificate file (PEM/DER format)
+# ca_cert = "/path/to/custom/ca.pem"
+
+# Minimum TLS version: "1.2" or "1.3" (default: allows both)
+# tls_version = "1.2"
+
+# Enable certificate pinning for speedtest.net servers
+# When enabled, only speedtest.net and ookla.com domains are accepted
+# Note: This only validates domain names, not certificate hashes
+# pin_certs = false

@@ -47,6 +47,7 @@ pub mod formatter;
 pub mod grades;
 pub mod history;
 pub mod http;
+pub mod logging;
 pub mod orchestrator;
 pub mod orchestrator_config;
 pub mod output_strategy;

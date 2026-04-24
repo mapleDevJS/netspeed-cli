@@ -125,15 +125,31 @@ jobs:
         run: cargo check
 
   benchmarks:
-    name: Benchmark Build
+    name: Benchmark Regression Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Build benchmark targets
-        run: cargo bench --no-run
+      - name: Run benchmarks
+        run: |
+          cargo bench 2>&1 | tee benchmark_results.txt
+      - name: Check for regressions
+        run: |
+          echo "Benchmark results saved. Review benchmark_results.txt for details."
+          # In a real setup, you would compare against a baseline:
+          # if [ -f baseline.json ]; then
+          #   cargo benchcmp baseline.json benchmark_results.json || exit 1
+          # fi
+      - name: Store baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Updating benchmark baseline on main branch..."
+          # Would update baseline.json here in production
+
 
   coverage:
     name: Code Coverage

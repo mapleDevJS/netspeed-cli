@@ -58,23 +58,39 @@ pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     EARTH_RADIUS_KM * c
 }
 
-/// Client location data from the speedtest.net config API
-#[derive(Debug, Clone, Deserialize)]
+/// Client location data from the speedtest.net config API.
+///
+/// This struct mirrors the client element from the speedtest.net iOS config API.
+/// It contains geographic coordinates and optional location metadata.
+#[derive(Debug, Clone, Deserialize, Default)]
 struct ClientConfig {
-    #[serde(rename = "client")]
+    #[serde(rename = "client", default)]
     client: ClientInfo,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Client information from the speedtest.net config API.
+#[derive(Debug, Clone, Deserialize, Default)]
 struct ClientInfo {
-    #[serde(rename = "@lat")]
+    #[serde(rename = "@lat", default)]
     lat: Option<f64>,
-    #[serde(rename = "@lon")]
+    #[serde(rename = "@lon", default)]
     lon: Option<f64>,
+    #[serde(rename = "@city", default)]
+    city: Option<String>,
+    #[serde(rename = "@country", default)]
+    country: Option<String>,
 }
 
-/// Fetch client location from speedtest.net config API
-async fn fetch_client_location(client: &Client) -> Result<(f64, f64), Error> {
+/// Fetch client location from speedtest.net config API.
+///
+/// Returns a [`crate::types::ClientLocation`] with coordinates and optional
+/// city/country information from the speedtest.net iOS config endpoint.
+///
+/// # Errors
+///
+/// Returns [`Error::Context`] if the response cannot be parsed or coordinates
+/// are missing.
+pub async fn fetch_client_location(client: &Client) -> Result<crate::types::ClientLocation, Error> {
     let response = client
         .get(SPEEDTEST_CONFIG_URL)
         .send()
@@ -85,7 +101,12 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), Error> {
     let config: ClientConfig = from_str(&response)?;
 
     match (config.client.lat, config.client.lon) {
-        (Some(lat), Some(lon)) => Ok((lat, lon)),
+        (Some(lat), Some(lon)) => Ok(crate::types::ClientLocation {
+            lat,
+            lon,
+            city: config.client.city,
+            country: config.client.country,
+        }),
         _ => Err(Error::Context {
             msg: "Could not parse client location from config".to_string(),
             source: None,
@@ -95,20 +116,30 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), Error> {
 
 /// Fetch the list of available speedtest servers, sorted by distance.
 ///
+/// Also returns the client location if available, so callers don't need
+/// to make a separate API call.
+///
 /// # Errors
 ///
 /// Returns [`Error::NetworkError`] if fetching the server list fails.
 /// Returns [`Error::DeserializeXml`] if the XML response cannot be parsed.
-pub async fn fetch(client: &Client) -> Result<Vec<Server>, Error> {
-    let (client_lat, client_lon) = match fetch_client_location(client).await {
-        Ok(coords) => coords,
+pub async fn fetch(
+    client: &Client,
+) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
+    let client_location = match fetch_client_location(client).await {
+        Ok(loc) => Some(loc),
         Err(ref e) => {
             eprintln!(
                 "Warning: could not determine client location ({e}), using default (equator)"
             );
-            (0.0, 0.0)
+            None
         }
     };
+
+    // Use 0,0 as default if location fetch failed
+    let (client_lat, client_lon) = client_location
+        .as_ref()
+        .map_or((0.0, 0.0), |loc| (loc.lat, loc.lon));
 
     let response = client
         .get(SPEEDTEST_SERVERS_URL)
@@ -131,7 +162,7 @@ pub async fn fetch(client: &Client) -> Result<Vec<Server>, Error> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    Ok(servers)
+    Ok((servers, client_location))
 }
 
 /// Select the best server from a list, preferring the closest by distance.

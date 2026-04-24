@@ -6,7 +6,7 @@ Thank you for your interest in contributing to netspeed-cli! All contributions a
 
 ### Prerequisites
 
-- Rust 1.85 or later
+- Rust 1.86 or later
 - `cargo` package manager
 
 ### Setup

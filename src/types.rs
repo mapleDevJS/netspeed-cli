@@ -62,6 +62,9 @@ pub struct Server {
 #[derive(Debug, Clone, Serialize)]
 pub struct TestResult {
     pub status: String,
+    pub version: String, // CLI version for API compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test_id: Option<String>, // Unique identifier for this test run
     pub server: ServerInfo,
     pub ping: Option<f64>,
     pub jitter: Option<f64>,
@@ -81,6 +84,8 @@ pub struct TestResult {
     pub ping_samples: Option<Vec<f64>>,
     pub timestamp: String,
     pub client_ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_location: Option<ClientLocation>,
     // Computed grades for machine-readable output (screen readers, scripts)
     pub overall_grade: Option<String>,
     pub download_grade: Option<String>,
@@ -102,6 +107,7 @@ impl TestResult {
         dl: &crate::task_runner::TestRunResult,
         ul: &crate::task_runner::TestRunResult,
         client_ip: Option<String>,
+        client_location: Option<ClientLocation>,
     ) -> Self {
         fn opt_samples(v: &[f64]) -> Option<Vec<f64>> {
             if v.is_empty() {
@@ -120,6 +126,8 @@ impl TestResult {
 
         Self {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: Some(uuid_v4()),
             server,
             ping,
             jitter,
@@ -139,6 +147,7 @@ impl TestResult {
             ping_samples: opt_samples(ping_samples),
             timestamp: chrono::Utc::now().to_rfc3339(),
             client_ip,
+            client_location,
             overall_grade: None,
             download_grade: None,
             upload_grade: None,
@@ -207,6 +216,17 @@ pub struct ServerInfo {
     pub distance: f64,
 }
 
+/// Client geographic location derived from speedtest.net config API.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ClientLocation {
+    pub lat: f64,
+    pub lon: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CsvOutput {
     pub server_id: String,
@@ -225,6 +245,7 @@ pub struct CsvOutput {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -251,6 +272,8 @@ mod tests {
     fn test_test_result_serialization() {
         let result = TestResult {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: None,
             server: ServerInfo {
                 id: "1234".to_string(),
                 name: "Test Server".to_string(),
@@ -272,6 +295,7 @@ mod tests {
             ping_samples: None,
             timestamp: "2026-04-04T12:00:00Z".to_string(),
             client_ip: Some("192.168.1.1".to_string()),
+            client_location: None,
             download_cv: None,
             upload_cv: None,
             download_ci_95: None,
@@ -344,4 +368,83 @@ mod tests {
         assert!(json.contains("\"state\":\"skipped\""));
         assert!(json.contains("\"reason\":\"disabled by user\""));
     }
+
+    #[test]
+    fn test_uuid_v4_format() {
+        let id = uuid_v4();
+        // UUID v4 format: 8-4-4-4-12 hex characters
+        assert_eq!(id.len(), 36);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'));
+        assert_eq!(&id[14..15], "4"); // Version 4 marker
+    }
+
+    #[test]
+    fn test_uuid_v4_unique() {
+        let id1 = uuid_v4();
+        let id2 = uuid_v4();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_client_location_serialization() {
+        let loc = ClientLocation {
+            lat: 40.7128,
+            lon: -74.0060,
+            city: Some("New York".to_string()),
+            country: Some("US".to_string()),
+        };
+        let json = serde_json::to_string(&loc).unwrap();
+        assert!(json.contains("\"lat\":40.7128"));
+        assert!(json.contains("\"lon\":-74.006"));
+        assert!(json.contains("\"city\":\"New York\""));
+    }
+
+    #[test]
+    fn test_client_location_minimal() {
+        let loc = ClientLocation {
+            lat: 0.0,
+            lon: 0.0,
+            city: None,
+            country: None,
+        };
+        let json = serde_json::to_string(&loc).unwrap();
+        assert!(!json.contains("city"));
+        assert!(!json.contains("country"));
+    }
+}
+
+/// Generate a simple UUID v4-like identifier using timestamp and random bytes.
+/// This is not a standards-compliant UUID but provides uniqueness for test tracking.
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let random: u64 = rand_simple();
+    // Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx (36 chars)
+    format!(
+        "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
+        (timestamp as u64) & 0xFFFFFFFF,
+        ((random >> 48) & 0xFFFF) as u16,
+        ((random >> 32) & 0xFFF) as u16,
+        ((random >> 16) & 0xFFFF) as u16,
+        random & 0xFFFFFFFFFFFF
+    )
+}
+
+/// Simple pseudo-random number generator based on xorshift.
+/// Not cryptographically secure, but sufficient for test ID generation.
+fn rand_simple() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static STATE: AtomicU64 = AtomicU64::new(0x123456789ABCDEF0);
+    let mut state = STATE.load(Ordering::Relaxed);
+    if state == 0 {
+        state = 0x123456789ABCDEF0;
+    }
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    STATE.store(state, Ordering::Relaxed);
+    state
 }

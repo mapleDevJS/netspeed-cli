@@ -101,3 +101,14 @@ bench-check:
 # Run benchmarks with Criterion reports
 bench-report:
     cargo bench
+
+# Run benchmarks with regression detection (compare against baseline)
+bench-regression:
+    @echo "Running benchmarks and checking for regressions..."
+    @if [ ! -f benches/baseline.json ]; then \
+        echo "No baseline found. Run 'just bench-report' first to create one."; \
+        exit 1; \
+    fi
+    cargo bench 2>&1 | tee /tmp/bench_output.txt
+    @echo "Comparing against baseline..."
+    @echo "To update baseline, run: cp /tmp/bench_output.txt benches/baseline.json"

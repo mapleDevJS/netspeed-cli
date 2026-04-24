@@ -16,24 +16,6 @@ use crate::types::Server;
 use reqwest::Client;
 use std::sync::Arc;
 
-/// Estimated total bytes for progress bar initialization.
-/// This is a rough estimate; the bar will adjust as actual data is downloaded.
-///
-/// Deprecated: Use `TestConfig::default().estimated_download_bytes` instead.
-#[deprecated(
-    since = "0.9.0",
-    note = "Use TestConfig::default().estimated_download_bytes"
-)]
-#[allow(dead_code)]
-const ESTIMATED_DOWNLOAD_BYTES: u64 = 15_000_000; // 15 MB estimate
-
-/// Number of download rounds per stream (each round fetches a different test file).
-///
-/// Deprecated: Use `TestConfig::default().download_rounds` instead.
-#[deprecated(since = "0.9.0", note = "Use TestConfig::default().download_rounds")]
-#[allow(dead_code)]
-const DOWNLOAD_TEST_ROUNDS: usize = 4;
-
 /// Extract base URL from server URL (strip /upload.php suffix)
 #[must_use]
 pub fn extract_base_url(url: &str) -> String {
@@ -199,13 +181,11 @@ mod tests {
     }
 
     #[test]
-    fn test_estimated_download_bytes_constant() {
-        // Verify the constant is reasonable (around 15 MB)
-        #[allow(deprecated)]
-        {
-            const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES > 10_000_000);
-            const _: () = assert!(ESTIMATED_DOWNLOAD_BYTES < 20_000_000);
-        }
+    fn test_estimated_download_bytes_from_config() {
+        // Verify the config value is reasonable (around 15 MB)
+        let config = TestConfig::default();
+        assert!(config.estimated_download_bytes > 10_000_000);
+        assert!(config.estimated_download_bytes < 20_000_000);
     }
 
     #[test]

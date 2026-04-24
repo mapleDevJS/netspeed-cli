@@ -673,6 +673,8 @@ mod tests {
         use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
         let result = TestResult {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: None,
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -694,6 +696,7 @@ mod tests {
             ping_samples: None,
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             client_ip: None,
+            client_location: None,
             download_cv: None,
             upload_cv: None,
             download_ci_95: None,
@@ -733,6 +736,8 @@ mod tests {
         use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
         let result = TestResult {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: None,
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -754,6 +759,7 @@ mod tests {
             ping_samples: Some(vec![9.5, 10.0, 10.5]),
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             client_ip: Some("192.168.1.1".to_string()),
+            client_location: None,
             download_cv: Some(0.05),
             upload_cv: Some(0.04),
             download_ci_95: Some((140.0, 160.0)),
@@ -779,6 +785,8 @@ mod tests {
         use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
         let result = TestResult {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: None,
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -800,6 +808,7 @@ mod tests {
             ping_samples: None,
             timestamp: "2026-01-01T00:00:00Z".to_string(),
             client_ip: None,
+            client_location: None,
             download_cv: None,
             upload_cv: None,
             download_ci_95: None,

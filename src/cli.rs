@@ -205,6 +205,34 @@ pub struct Args {
     /// Enable strict config mode - show warnings for invalid config values
     #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
     pub strict_config: Option<bool>,
+
+    /// Path to a custom CA certificate file (PEM/DER format)
+    ///
+    /// When specified, the client will use this certificate for TLS verification
+    /// instead of the system default certificates.
+    #[arg(long, value_name = "PATH", value_parser = validate_ca_cert_path, long_help = "Path to a custom CA certificate file (PEM/DER format).\nWhen specified, the client uses this certificate for TLS verification\ninstead of the system default certificates.")]
+    pub ca_cert: Option<String>,
+
+    /// Minimum TLS version to use (1.2 or 1.3)
+    ///
+    /// The default allows both TLS 1.2 and 1.3. Use this to restrict
+    /// connections to a specific TLS version for testing or compliance.
+    #[arg(long, value_name = "VERSION", value_parser = validate_tls_version, long_help = "Minimum TLS version to use (1.2 or 1.3).\nThe default allows both TLS 1.2 and 1.3.\nUse this to restrict connections to a specific TLS version.")]
+    pub tls_version: Option<String>,
+
+    /// Enable certificate pinning for speedtest.net servers
+    ///
+    /// When enabled, the client only accepts connections to speedtest.net
+    /// and ookla.com domains. This provides some protection against MITM attacks
+    /// but does NOT verify actual certificate hashes (domain-only pinning).
+    #[arg(
+        long,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
+        long_help = "Enable certificate pinning for speedtest.net servers.\nWhen enabled, the client only accepts connections to speedtest.net\nand ookla.com domains.\n\n⚠ SECURITY LIMITATION: This is DOMAIN-ONLY pinning. It only validates\nthat the server hostname ends with .speedtest.net or .ookla.com.\nIt does NOT verify certificate hashes or the certificate chain.\nAn attacker with a valid certificate from any CA for these domains\ncould still perform a man-in-the-middle (MITM) attack.\n\nFor production security, use a custom CA certificate (--ca-cert) instead."
+    )]
+    pub pin_certs: Option<bool>,
 }
 
 fn validate_csv_delimiter(s: &str) -> Result<char, String> {
@@ -234,6 +262,30 @@ fn validate_timeout(s: &str) -> Result<u64, String> {
         return Err("Timeout must be 300 seconds or less".to_string());
     }
     Ok(timeout)
+}
+
+fn validate_tls_version(s: &str) -> Result<String, String> {
+    let normalized = s.to_lowercase();
+    if normalized == "1.2" || normalized == "1.3" {
+        Ok(normalized)
+    } else {
+        Err("TLS version must be '1.2' or '1.3'".to_string())
+    }
+}
+
+fn validate_ca_cert_path(s: &str) -> Result<String, String> {
+    let path = std::path::Path::new(s);
+    if !path.exists() {
+        return Err(format!(
+            "CA certificate file not found: {s}\nUse --pin-certs for domain-only pinning instead."
+        ));
+    }
+    if !path.is_file() {
+        return Err(format!(
+            "CA certificate path is not a file: {s}\nUse --pin-certs for domain-only pinning instead."
+        ));
+    }
+    Ok(s.to_string())
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -348,5 +400,63 @@ mod tests {
     #[test]
     fn test_validate_timeout_invalid() {
         assert!(validate_timeout("abc").is_err());
+    }
+
+    #[test]
+    fn test_validate_tls_version_valid_12() {
+        assert_eq!(validate_tls_version("1.2"), Ok("1.2".to_string()));
+    }
+
+    #[test]
+    fn test_validate_tls_version_valid_13() {
+        assert_eq!(validate_tls_version("1.3"), Ok("1.3".to_string()));
+    }
+
+    #[test]
+    fn test_validate_tls_version_case_insensitive() {
+        assert_eq!(validate_tls_version("1.2"), Ok("1.2".to_string()));
+        assert_eq!(validate_tls_version("1.3"), Ok("1.3".to_string()));
+    }
+
+    #[test]
+    fn test_validate_tls_version_invalid() {
+        assert!(validate_tls_version("1.1").is_err());
+        assert!(validate_tls_version("2.0").is_err());
+        assert!(validate_tls_version("TLS1.2").is_err());
+        assert!(validate_tls_version("").is_err());
+    }
+
+    #[test]
+    fn test_validate_ca_cert_path_valid() {
+        // Create a temp file to test the success path
+        let temp_dir = std::env::temp_dir();
+        let cert_path = temp_dir.join("test_ca_cert_validate.pem");
+        std::fs::write(&cert_path, "dummy cert content").ok();
+
+        let result = validate_ca_cert_path(cert_path.to_str().unwrap());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), cert_path.to_str().unwrap());
+
+        // Clean up
+        std::fs::remove_file(&cert_path).ok();
+    }
+
+    #[test]
+    fn test_validate_ca_cert_path_not_found() {
+        let result = validate_ca_cert_path("/nonexistent/path/to/cert.pem");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("not found"));
+        assert!(err.contains("/nonexistent/path/to/cert.pem"));
+        assert!(err.contains("--pin-certs")); // Suggest alternative
+    }
+
+    #[test]
+    fn test_validate_ca_cert_path_is_directory() {
+        // Use /tmp which should exist as a directory
+        let result = validate_ca_cert_path("/tmp");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("not a file"));
     }
 }

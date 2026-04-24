@@ -127,6 +127,172 @@ fn test_invalid_csv_delimiter() {
     assert!(stderr.contains("CSV delimiter") || stderr.contains("error"));
 }
 
+/// Test that warning is printed when both --ca-cert and --pin-certs are set
+#[test]
+fn test_tls_conflict_warning() {
+    // Create a dummy certificate file for testing
+    let temp_dir = std::env::temp_dir();
+    let cert_path = temp_dir.join("test_ca_cert.pem");
+    std::fs::write(&cert_path, "dummy cert content").expect("Failed to create temp cert file");
+
+    // Run with both --ca-cert and --pin-certs
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "--ca-cert",
+            cert_path.to_str().unwrap(),
+            "--pin-certs",
+            "--dry-run",
+        ])
+        .output()
+        .expect("Failed to execute command");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Verify the warning is printed
+    assert!(
+        stderr.contains("--ca-cert") && stderr.contains("--pin-certs"),
+        "Warning should mention both --ca-cert and --pin-certs. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("ignored") || stderr.contains("takes precedence"),
+        "Warning should mention that one option is ignored. stderr: {stderr}"
+    );
+
+    // Clean up temp file
+    std::fs::remove_file(&cert_path).ok();
+}
+
+/// Test that TLS configuration CLI arguments are parsed correctly.
+///
+/// Note: The actual HTTP client creation with TLS options triggers a rustls
+/// crypto provider initialization that may fail in some environments.
+/// CLI argument parsing and validation are tested here; HTTP client creation
+/// with TLS is tested in src/http.rs unit tests.
+#[test]
+fn test_tls_config_cli_parsing() {
+    // Test 1: Verify invalid TLS version is rejected at parse time (before HTTP client creation)
+    {
+        let output = Command::new("cargo")
+            .args(["run", "--quiet", "--", "--tls-version", "2.0"])
+            .output()
+            .expect("Failed to execute command");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "Invalid TLS version should be rejected"
+        );
+        assert!(
+            stderr.contains("TLS version") || stderr.contains("1.2") || stderr.contains("1.3"),
+            "Error should mention valid TLS versions. stderr: {stderr}"
+        );
+    }
+
+    // Test 2: Verify nonexistent CA cert path is rejected at parse time
+    {
+        let output = Command::new("cargo")
+            .args([
+                "run",
+                "--quiet",
+                "--",
+                "--ca-cert",
+                "/nonexistent/path/to/cert.pem",
+            ])
+            .output()
+            .expect("Failed to execute command");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "Nonexistent CA cert path should be rejected"
+        );
+        assert!(
+            stderr.contains("not found") || stderr.contains("error"),
+            "Error should mention file not found. stderr: {stderr}"
+        );
+    }
+
+    // Test 3: Verify directory path is rejected for --ca-cert
+    {
+        let output = Command::new("cargo")
+            .args(["run", "--quiet", "--", "--ca-cert", "/tmp"])
+            .output()
+            .expect("Failed to execute command");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "Directory path for --ca-cert should be rejected"
+        );
+        assert!(
+            stderr.contains("not a file") || stderr.contains("error"),
+            "Error should mention not being a file. stderr: {stderr}"
+        );
+    }
+}
+
+/// Test that --pin-certs flag is accepted by the CLI.
+///
+/// Note: --pin-certs with --dry-run triggers HTTP client creation which may
+/// fail due to rustls crypto provider issues in some environments. This test
+/// verifies parsing only, not the actual HTTP client creation.
+#[test]
+fn test_tls_pin_certs_parsing() {
+    // Test: --pin-certs should be a valid argument (parse-time validation only)
+    // We use --help to avoid triggering the full execution path
+    {
+        let output = Command::new("cargo")
+            .args(["run", "--quiet", "--", "--help"])
+            .output()
+            .expect("Failed to execute command");
+
+        let combined = String::from_utf8_lossy(&output.stdout).to_string()
+            + &String::from_utf8_lossy(&output.stderr);
+
+        // Verify --pin-certs appears in help (means it's a valid CLI option)
+        assert!(
+            combined.contains("--pin-certs"),
+            "--pin-certs should be a documented CLI option. help output: {combined}"
+        );
+    }
+
+    // Test: --tls-version should be a valid argument
+    {
+        let output = Command::new("cargo")
+            .args(["run", "--quiet", "--", "--help"])
+            .output()
+            .expect("Failed to execute command");
+
+        let combined = String::from_utf8_lossy(&output.stdout).to_string()
+            + &String::from_utf8_lossy(&output.stderr);
+
+        // Verify --tls-version appears in help
+        assert!(
+            combined.contains("--tls-version"),
+            "--tls-version should be a documented CLI option. help output: {combined}"
+        );
+    }
+
+    // Test: --ca-cert should be a valid argument
+    {
+        let output = Command::new("cargo")
+            .args(["run", "--quiet", "--", "--help"])
+            .output()
+            .expect("Failed to execute command");
+
+        let combined = String::from_utf8_lossy(&output.stdout).to_string()
+            + &String::from_utf8_lossy(&output.stderr);
+
+        // Verify --ca-cert appears in help
+        assert!(
+            combined.contains("--ca-cert"),
+            "--ca-cert should be a documented CLI option. help output: {combined}"
+        );
+    }
+}
+
 /// Test invalid IP address validation
 #[test]
 fn test_invalid_source_ip() {

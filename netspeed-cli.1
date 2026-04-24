@@ -4,7 +4,7 @@
 .SH NAME
 netspeed\-cli \- Test internet bandwidth via speedtest.net servers
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-\-strict\-config\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-\-strict\-config\fR] [\fB\-\-ca\-cert\fR] [\fB\-\-tls\-version\fR] [\fB\-\-pin\-certs\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Test internet bandwidth via speedtest.net servers.
 .PP
@@ -248,6 +248,39 @@ Show the configuration file path and exit
 .TP
 \fB\-\-strict\-config\fR [\fI<STRICT_CONFIG>\fR]
 Enable strict config mode \- show warnings for invalid config values
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
+.TP
+\fB\-\-ca\-cert\fR \fI<PATH>\fR
+Path to a custom CA certificate file (PEM/DER format).
+When specified, the client uses this certificate for TLS verification
+instead of the system default certificates.
+.TP
+\fB\-\-tls\-version\fR \fI<VERSION>\fR
+Minimum TLS version to use (1.2 or 1.3).
+The default allows both TLS 1.2 and 1.3.
+Use this to restrict connections to a specific TLS version.
+.TP
+\fB\-\-pin\-certs\fR [\fI<PIN_CERTS>\fR]
+Enable certificate pinning for speedtest.net servers.
+When enabled, the client only accepts connections to speedtest.net
+and ookla.com domains.
+
+⚠ SECURITY LIMITATION: This is DOMAIN\-ONLY pinning. It only validates
+that the server hostname ends with .speedtest.net or .ookla.com.
+It does NOT verify certificate hashes or the certificate chain.
+An attacker with a valid certificate from any CA for these domains
+could still perform a man\-in\-the\-middle (MITM) attack.
+
+For production security, use a custom CA certificate (\-\-ca\-cert) instead.
 .br
 
 .br

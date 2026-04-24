@@ -41,6 +41,11 @@ impl Orchestrator {
             source_ip: config.source.clone(),
             user_agent: http::Settings::default().user_agent,
             retry_enabled: true,
+            tls: http::TlsConfig {
+                ca_cert_path: config.ca_cert.as_ref().map(std::path::PathBuf::from),
+                min_tls_version: config.tls_version.clone(),
+                pin_speedtest_certs: config.pin_certs,
+            },
         };
         let client = http::create_client(&http_settings)?;
         Ok(Self {
@@ -94,8 +99,8 @@ impl Orchestrator {
         // Start test timer
         let test_start = std::time::Instant::now();
 
-        // Fetch and filter servers
-        let servers = self.fetch_and_filter_servers(is_verbose).await?;
+        // Fetch client location and servers
+        let (client_location, servers) = self.fetch_client_location_and_servers(is_verbose).await?;
 
         // Handle --list: format_list already printed, signal completion
         if self.config.list {
@@ -147,6 +152,7 @@ impl Orchestrator {
             &dl_result,
             &ul_result,
             client_ip,
+            client_location,
         );
         result.phases = TestPhases {
             ping: if self.config.no_download && self.config.no_upload {
@@ -258,13 +264,23 @@ impl Orchestrator {
         eprintln!();
     }
 
-    async fn fetch_and_filter_servers(&self, is_verbose: bool) -> Result<Vec<Server>, Error> {
+    /// Fetch client location and server list in a single pass.
+    ///
+    /// Returns the client location (for including in test results) and the
+    /// filtered server list. Makes a single API call to speedtest.net.
+    async fn fetch_client_location_and_servers(
+        &self,
+        is_verbose: bool,
+    ) -> Result<(Option<types::ClientLocation>, Vec<Server>), Error> {
         let fetch_spinner = if is_verbose {
             Some(create_spinner("Finding servers..."))
         } else {
             None
         };
-        let mut servers = fetch(&self.client).await?;
+
+        // Fetch servers - this also returns client location to avoid duplicate API call
+        let (mut servers, client_location) = fetch(&self.client).await?;
+
         if let Some(ref pb) = fetch_spinner {
             finish_ok(pb, &format!("Found {} servers", servers.len()));
             eprintln!();
@@ -273,7 +289,7 @@ impl Orchestrator {
         // Handle --list option
         if self.config.list {
             format_list(&servers)?;
-            return Ok(Vec::new()); // caller checks config.list
+            return Ok((client_location, Vec::new())); // caller checks config.list
         }
 
         // Filter servers
@@ -290,7 +306,7 @@ impl Orchestrator {
             ));
         }
 
-        Ok(servers)
+        Ok((client_location, servers))
     }
 
     async fn run_ping_test(
@@ -489,6 +505,16 @@ impl Orchestrator {
             if self.config.single {
                 eprintln!("  Streams: single");
             }
+            // TLS configuration
+            if let Some(ref ca_cert) = self.config.ca_cert {
+                eprintln!("  CA cert: {ca_cert}");
+            }
+            if let Some(ref tls_version) = self.config.tls_version {
+                eprintln!("  TLS version: {tls_version}");
+            }
+            if self.config.pin_certs {
+                eprintln!("  Cert pinning: enabled");
+            }
             eprintln!("\nDry run complete. Run without --dry-run to perform speed test.");
         } else {
             eprintln!("{}", "Configuration valid:".green().bold());
@@ -516,6 +542,16 @@ impl Orchestrator {
             }
             if self.config.single {
                 eprintln!("  {}: {}", "Streams".dimmed(), "single".yellow());
+            }
+            // TLS configuration
+            if let Some(ref ca_cert) = self.config.ca_cert {
+                eprintln!("  {}: {ca_cert}", "CA cert".dimmed());
+            }
+            if let Some(ref tls_version) = self.config.tls_version {
+                eprintln!("  {}: {tls_version}", "TLS version".dimmed());
+            }
+            if self.config.pin_certs {
+                eprintln!("  {}: {}", "Cert pinning".dimmed(), "enabled".yellow());
             }
             eprintln!(
                 "\n{}",

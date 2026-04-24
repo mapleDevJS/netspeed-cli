@@ -123,6 +123,9 @@ netspeed-cli --history
 | `--source IP` | Bind to source IP address |
 | `--timeout SEC` | HTTP timeout in seconds (default: 10, range: 1–300) |
 | `--theme THEME` | Color theme: `dark`, `light`, `high-contrast`, `monochrome` (default: `dark`) |
+| `--ca-cert PATH` | Path to custom CA certificate file (PEM/DER) |
+| `--tls-version VERSION` | Minimum TLS version: `1.2` or `1.3` |
+| `--pin-certs` | Enable certificate pinning for speedtest.net servers |
 | `--history` | Show test history |
 | `--generate-completion SHELL` | Generate shell completion script |
 | `--version` | Show version |

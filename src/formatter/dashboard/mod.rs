@@ -88,6 +88,8 @@ mod tests {
     fn make_result() -> TestResult {
         TestResult {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: None,
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "TestServer".to_string(),
@@ -109,6 +111,7 @@ mod tests {
             ping_samples: Some(vec![11.0, 12.0, 13.0]),
             timestamp: "2026-04-06T12:00:00Z".to_string(),
             client_ip: Some("192.168.1.100".to_string()),
+            client_location: None,
             download_cv: Some(0.067),
             upload_cv: Some(0.04),
             download_ci_95: Some((140.0, 160.0)),

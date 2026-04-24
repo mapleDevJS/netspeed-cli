@@ -403,6 +403,8 @@ mod tests {
     fn make_test_result(download: f64, upload: f64, timestamp: &str) -> TestResult {
         TestResult {
             status: "ok".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            test_id: None,
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -424,6 +426,7 @@ mod tests {
             ping_samples: None,
             timestamp: timestamp.to_string(),
             client_ip: None,
+            client_location: None,
             download_cv: None,
             upload_cv: None,
             download_ci_95: None,

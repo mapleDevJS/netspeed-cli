@@ -23,7 +23,7 @@ _netspeed-cli() {
 
     case "${cmd}" in
         netspeed__cli)
-            opts="-h -V --no-download --no-upload --single --bytes --simple --csv --csv-delimiter --csv-header --json --format --list --server --exclude --source --timeout --generate-completion --history --quiet --dry-run --no-emoji --minimal --profile --theme --show-config-path --strict-config --help --version"
+            opts="-h -V --no-download --no-upload --single --bytes --simple --csv --csv-delimiter --csv-header --json --format --list --server --exclude --source --timeout --generate-completion --history --quiet --dry-run --no-emoji --minimal --profile --theme --show-config-path --strict-config --ca-cert --tls-version --pin-certs --help --version"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -106,6 +106,18 @@ _netspeed-cli() {
                     return 0
                     ;;
                 --strict-config)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --ca-cert)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tls-version)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --pin-certs)
                     COMPREPLY=($(compgen -W "true false" -- "${cur}"))
                     return 0
                     ;;

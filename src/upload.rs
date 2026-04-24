@@ -44,23 +44,6 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
     data
 }
 
-/// Number of upload rounds per stream (each round uploads a chunk of test data).
-///
-/// Deprecated: Use `TestConfig::default().upload_rounds` instead.
-#[deprecated(since = "0.9.0", note = "Use TestConfig::default().upload_rounds")]
-#[allow(dead_code)]
-const UPLOAD_TEST_ROUNDS: usize = 4;
-
-/// Estimated total bytes for progress bar initialization.
-///
-/// Deprecated: Use `TestConfig::default().estimated_upload_bytes` instead.
-#[deprecated(
-    since = "0.9.0",
-    note = "Use TestConfig::default().estimated_upload_bytes"
-)]
-#[allow(dead_code)]
-const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
-
 /// Run upload bandwidth test against the given server.
 ///
 /// Returns `(avg_speed_bps, peak_speed_bps, total_bytes_uploaded, speed_samples)`.

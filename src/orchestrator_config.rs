@@ -50,6 +50,7 @@ impl OrchestratorConfig {
             source_ip: config.source.clone(),
             user_agent: Settings::default().user_agent,
             retry_enabled: true,
+            tls: crate::http::TlsConfig::default(),
         };
         let client = crate::http::create_client(&http_settings)?;
 
