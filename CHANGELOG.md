@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-17
+
 ### Changed
 
+- **Internal refactoring**: Renamed public types for clarity and consistency
+  - `CliArgs` → `Args`, `SpeedtestError` → `Error`, `BandwidthLoopState` → `LoopState`,
+    `SpeedProgress` → `Tracker`, `ConfigFile` → `File`
+  - `download_test` / `upload_test` → `download::run` / `upload::run`
+- **Stream deduplication**: Extracted `run_concurrent_streams()` into `bandwidth_loop`,
+   eliminating ~200 lines of duplicated spawn/collect/report logic between download and upload
+- **Bandwidth averaging**: Average speed now uses aggregate throughput (`total_bytes × 8 / duration`)
+  instead of per-stream averaging — more accurate representation of real-world bandwidth
+- **Cast safety**: Added explicit safety comments and clamps for float↔int casts throughout
+- **Config error handling**: Config file read/parse errors now logged to stderr instead of silently ignored
 - **Dependencies**: Updated 6 dependencies to latest versions
   - `indicatif`: 0.17.11 → 0.18.4
   - `clap_mangen`: 0.2.33 → 0.3.0

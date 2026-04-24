@@ -4,14 +4,14 @@
 //! and a trait abstraction for terminal capabilities.
 //!
 //! Functions:
-//! - [`no_color()`] — Detect if colored output should be disabled (NO_COLOR env)
-//! - [`no_emoji()`] — Detect if emojis should be disabled (NO_EMOJI env)
-//! - [`no_animation()`] — Detect if animations should be skipped (PREFER_REDUCED_MOTION)
+//! - [`no_color()`] — Detect if colored output should be disabled (`NO_COLOR` env)
+//! - [`no_emoji()`] — Detect if emojis should be disabled (`NO_EMOJI` env)
+//! - [`no_animation()`] — Detect if animations should be skipped (`PREFER_REDUCED_MOTION`)
 //!
 //! Trait:
-//! - [`TerminalDisplay`] — Abstraction for terminal display capabilities
+//! - [`Capabilities`] — Abstraction for terminal display capabilities
 
-/// Detect if `NO_COLOR` environment variable is set.
+/// Detect if [`NO_COLOR`](https://no-color.org/) environment variable is set.
 ///
 /// When set, all colorization should be disabled regardless of theme settings.
 /// This follows the standard: <https://no-color.org/>
@@ -76,7 +76,7 @@ pub fn no_animation() -> bool {
 ///
 /// Implement this trait to provide custom terminal display behavior,
 /// useful for testing or alternative terminal implementations.
-pub trait TerminalDisplay {
+pub trait Capabilities {
     /// Returns true if colored output should be disabled.
     fn is_color_disabled(&self) -> bool;
 
@@ -88,9 +88,9 @@ pub trait TerminalDisplay {
 }
 
 /// Default terminal display based on environment variables.
-pub struct DefaultTerminal;
+pub struct Env;
 
-impl TerminalDisplay for DefaultTerminal {
+impl Capabilities for Env {
     fn is_color_disabled(&self) -> bool {
         no_color()
     }
@@ -108,7 +108,7 @@ impl TerminalDisplay for DefaultTerminal {
 ///
 /// Captures terminal capabilities once to avoid repeated env var lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TerminalSettings {
+pub struct Settings {
     /// Whether colors should be disabled.
     pub no_color: bool,
     /// Whether emojis should be disabled.
@@ -117,11 +117,12 @@ pub struct TerminalSettings {
     pub no_animation: bool,
 }
 
-impl TerminalSettings {
+impl Settings {
     /// Create terminal settings from current environment.
     ///
     /// This captures the environment state at initialization time.
-    /// For testing, construct manually or use `TerminalSettings::default()`.
+    /// For testing, construct manually or use `Settings::default()`.
+    #[must_use]
     pub fn from_environment() -> Self {
         Self {
             no_color: no_color(),
@@ -131,7 +132,7 @@ impl TerminalSettings {
     }
 }
 
-impl TerminalDisplay for TerminalSettings {
+impl Capabilities for Settings {
     fn is_color_disabled(&self) -> bool {
         self.no_color
     }
@@ -167,14 +168,14 @@ mod tests {
 
     #[test]
     fn test_terminal_settings_default() {
-        let settings = TerminalSettings::default();
+        let settings = Settings::default();
         // Default is all false (unless env vars set)
         assert!(!settings.is_color_disabled() || no_color());
     }
 
     #[test]
     fn test_terminal_settings_from_environment() {
-        let settings = TerminalSettings::from_environment();
+        let settings = Settings::from_environment();
         assert_eq!(settings.is_color_disabled(), no_color());
         assert_eq!(settings.is_emoji_disabled(), no_emoji());
         assert_eq!(settings.prefers_reduced_motion(), no_animation());
@@ -182,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_default_terminal_trait() {
-        let terminal = DefaultTerminal;
+        let terminal = Env;
         // Just verify trait methods don't panic
         let _ = terminal.is_color_disabled();
         let _ = terminal.is_emoji_disabled();

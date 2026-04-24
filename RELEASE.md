@@ -16,7 +16,7 @@ develop ──(PR)──► main ──(tag)──► CI publishes
 ```bash
 git checkout develop
 git pull origin develop
-cargo test && cargo clippy -- -D warnings
+just qa
 ```
 
 #### 2. Open PR from `develop` → `main`
@@ -53,6 +53,7 @@ The `release.yml` workflow triggers automatically on the tag push and handles:
 | Job | What it does |
 |---|---|
 | `build-binaries` | Cross-compiles for macOS, Linux, Windows (7 targets) |
+| `socket-integration` | Runs ignored socket-binding integration tests |
 | `publish-github-release` | Creates GitHub Release, uploads binaries + SBOM + checksums |
 | `publish-crates-io` | Publishes the crate to crates.io |
 

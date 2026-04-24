@@ -7,20 +7,29 @@
 //! - [`estimates`] — Usage check targets and download time estimates
 
 use crate::common;
-use crate::error::SpeedtestError;
+use crate::error::Error;
 use crate::grades;
 use crate::profiles::UserProfile;
 use crate::terminal;
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 use crate::types::{CsvOutput, TestResult};
 use owo_colors::OwoColorize;
+
+/// Which test phases were skipped by the user (e.g. `--no-download`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SkipState {
+    /// Download test was skipped.
+    pub download: bool,
+    /// Upload test was skipped.
+    pub upload: bool,
+}
 
 /// Build a section header with consistent formatting.
 fn section_header(title: &str, nc: bool, theme: Theme) -> String {
     if nc {
         format!("  {title}")
     } else {
-        format!("  {}", ThemeColors::header(title, theme))
+        format!("  {}", Colors::header(title, theme))
     }
 }
 
@@ -53,8 +62,7 @@ pub enum OutputFormat {
         ul_bytes: u64,
         dl_duration: f64,
         ul_duration: f64,
-        dl_skipped: bool,
-        ul_skipped: bool,
+        skipped: SkipState,
         elapsed: std::time::Duration,
         profile: UserProfile,
         minimal: bool,
@@ -81,7 +89,7 @@ impl OutputFormat {
     /// # Errors
     ///
     /// Returns an error if output serialization or writing fails.
-    pub fn format(&self, result: &TestResult, bytes: bool) -> Result<(), SpeedtestError> {
+    pub fn format(&self, result: &TestResult, bytes: bool) -> Result<(), Error> {
         match self {
             OutputFormat::Json => format_json(result),
             OutputFormat::Jsonl => format_jsonl(result),
@@ -115,8 +123,7 @@ impl OutputFormat {
                 ul_bytes,
                 dl_duration,
                 ul_duration,
-                dl_skipped,
-                ul_skipped,
+                skipped,
                 elapsed,
                 profile,
                 minimal,
@@ -129,8 +136,7 @@ impl OutputFormat {
                     *ul_bytes,
                     *dl_duration,
                     *ul_duration,
-                    *dl_skipped,
-                    *ul_skipped,
+                    *skipped,
                     *elapsed,
                     *profile,
                     *minimal,
@@ -152,9 +158,9 @@ impl OutputFormat {
                 profile,
                 theme,
             } => {
-                dashboard::format_dashboard(
+                dashboard::show(
                     result,
-                    &dashboard::DashboardSummary {
+                    &dashboard::Summary {
                         dl_mbps: *dl_mbps,
                         dl_peak_mbps: *dl_peak_mbps,
                         dl_bytes: *dl_bytes,
@@ -183,25 +189,25 @@ impl OutputFormat {
 /// # Example
 ///
 /// ```
-/// use netspeed_cli::formatter::{OutputFormatter, OutputFormat};
+/// use netspeed_cli::formatter::{Formatter, OutputFormat};
 /// use netspeed_cli::types::{Server, TestResult};
-/// use netspeed_cli::error::SpeedtestError;
+/// use netspeed_cli::error::Error;
 ///
 /// struct MyFormatter;
 ///
-/// impl OutputFormatter for MyFormatter {
-///     fn format(&self, result: &TestResult, use_bytes: bool) -> Result<(), SpeedtestError> {
+/// impl Formatter for MyFormatter {
+///     fn format(&self, result: &TestResult, use_bytes: bool) -> Result<(), Error> {
 ///         println!("Custom: {:?}", result.ping);
 ///         Ok(())
 ///     }
 ///     
-///     fn format_list(&self, servers: &[Server]) -> Result<(), SpeedtestError> {
+///     fn format_list(&self, servers: &[Server]) -> Result<(), Error> {
 ///         println!("Servers: {}", servers.len());
 ///         Ok(())
 ///     }
 /// }
 /// ```
-pub trait OutputFormatter {
+pub trait Formatter {
     /// Format a test result for output.
     ///
     /// # Errors
@@ -211,34 +217,28 @@ pub trait OutputFormatter {
         &self,
         result: &crate::types::TestResult,
         use_bytes: bool,
-    ) -> Result<(), crate::error::SpeedtestError>;
+    ) -> Result<(), crate::error::Error>;
 
     /// Format a list of servers for output.
     ///
     /// # Errors
     ///
     /// Returns an error if output fails.
-    fn format_list(
-        &self,
-        servers: &[crate::types::Server],
-    ) -> Result<(), crate::error::SpeedtestError>;
+    fn format_list(&self, servers: &[crate::types::Server]) -> Result<(), crate::error::Error>;
 }
 
-/// Allows using OutputFormat polymorphically through the trait.
-impl OutputFormatter for OutputFormat {
+/// Allows using `OutputFormat` polymorphically through the trait.
+impl Formatter for OutputFormat {
     fn format(
         &self,
         result: &crate::types::TestResult,
         use_bytes: bool,
-    ) -> Result<(), crate::error::SpeedtestError> {
+    ) -> Result<(), crate::error::Error> {
         self.format(result, use_bytes)
     }
 
-    fn format_list(
-        &self,
-        servers: &[crate::types::Server],
-    ) -> Result<(), crate::error::SpeedtestError> {
-        sections::format_list(servers).map_err(|e| crate::error::SpeedtestError::IoError(e))
+    fn format_list(&self, servers: &[crate::types::Server]) -> Result<(), crate::error::Error> {
+        sections::format_list(servers).map_err(crate::error::Error::IoError)
     }
 }
 
@@ -251,7 +251,7 @@ pub mod sections;
 pub mod stability;
 
 // Re-export commonly used functions for backward compatibility
-pub use estimates::{format_estimates, format_targets};
+pub use estimates::{format_targets, show};
 pub use ratings::{
     bufferbloat_colorized, bufferbloat_grade, colorize_rating, connection_rating, degradation_str,
     format_duration, format_overall_rating, format_speed_colored, format_speed_plain, ping_rating,
@@ -269,7 +269,7 @@ pub use stability::{compute_cv, compute_percentiles, format_stability_line};
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
-pub fn format_simple(result: &TestResult, bytes: bool, theme: Theme) -> Result<(), SpeedtestError> {
+pub fn format_simple(result: &TestResult, bytes: bool, theme: Theme) -> Result<(), Error> {
     let nc = terminal::no_color();
     let mut parts = Vec::new();
 
@@ -277,10 +277,7 @@ pub fn format_simple(result: &TestResult, bytes: bool, theme: Theme) -> Result<(
         parts.push(if nc {
             format!("Latency: {ping:.1} ms")
         } else {
-            format!(
-                "Latency: {} ms",
-                ThemeColors::info(&format!("{ping:.1}"), theme)
-            )
+            format!("Latency: {} ms", Colors::info(&format!("{ping:.1}"), theme))
         });
     }
 
@@ -307,11 +304,12 @@ pub fn format_simple(result: &TestResult, bytes: bool, theme: Theme) -> Result<(
 }
 
 /// Minimal mode — ultra-compact: just "B+ 150.5↓ 25.3↑ 12ms"
-pub fn format_minimal(
-    result: &TestResult,
-    _bytes: bool,
-    theme: Theme,
-) -> Result<(), SpeedtestError> {
+///
+/// # Errors
+///
+/// This function does not currently return errors, but the signature is
+/// `Result` for future extensibility.
+pub fn format_minimal(result: &TestResult, _bytes: bool, theme: Theme) -> Result<(), Error> {
     let nc = terminal::no_color();
     let profile = UserProfile::default();
 
@@ -328,33 +326,36 @@ pub fn format_minimal(
         overall_grade.color_str(nc, theme)
     };
 
-    let dl_str = result
-        .download
-        .map(|d| {
+    let dl_str = result.download.map_or_else(
+        || "—↓".to_string(),
+        |d| {
             let mbps = d / 1_000_000.0;
-            format!("{:.1}↓", mbps)
-        })
-        .unwrap_or_else(|| "—↓".to_string());
+            format!("{mbps:.1}↓")
+        },
+    );
 
-    let ul_str = result
-        .upload
-        .map(|u| {
+    let ul_str = result.upload.map_or_else(
+        || "—↑".to_string(),
+        |u| {
             let mbps = u / 1_000_000.0;
-            format!("{:.1}↑", mbps)
-        })
-        .unwrap_or_else(|| "—↑".to_string());
+            format!("{mbps:.1}↑")
+        },
+    );
 
     let lat_str = result
         .ping
-        .map(|p| format!("{:.0}ms", p))
-        .unwrap_or_else(|| "—ms".to_string());
+        .map_or_else(|| "—ms".to_string(), |p| format!("{p:.0}ms"));
 
     eprintln!("{grade_str}  {dl_str}  {ul_str}  {lat_str}");
     Ok(())
 }
 
-/// JSONL mode — one JSON object per line, ideal for logging/parsing
-pub fn format_jsonl(result: &TestResult) -> Result<(), SpeedtestError> {
+/// JSONL mode — one JSON object per line, ideal for logging/parsing.
+///
+/// # Errors
+///
+/// Returns [`Error::ParseJson`] if serialization fails.
+pub fn format_jsonl(result: &TestResult) -> Result<(), Error> {
     println!("{}", serde_json::to_string(result)?);
     Ok(())
 }
@@ -409,8 +410,8 @@ pub fn format_compact(
             eprintln!(
                 "  {} {} · {}",
                 "Server:".dimmed(),
-                ThemeColors::bold(&result.server.sponsor, theme),
-                ThemeColors::muted(ip, theme),
+                Colors::bold(&result.server.sponsor, theme),
+                Colors::muted(ip, theme),
             );
         }
         eprintln!();
@@ -419,7 +420,7 @@ pub fn format_compact(
     if nc {
         eprintln!("  SUMMARY");
     } else {
-        eprintln!("  {}", ThemeColors::header("SUMMARY", theme));
+        eprintln!("  {}", Colors::header("SUMMARY", theme));
     }
     if dl_bytes > 0 {
         eprintln!(
@@ -445,7 +446,7 @@ pub fn format_compact(
         eprintln!(
             "  {}: {}",
             "Total time".dimmed(),
-            ThemeColors::info(&format!("{:.1}s", elapsed.as_secs_f64()), theme),
+            Colors::info(&format!("{:.1}s", elapsed.as_secs_f64()), theme),
         );
     }
     sections::format_footer(&result.timestamp, nc, theme);
@@ -465,13 +466,12 @@ pub fn format_detailed(
     ul_bytes: u64,
     dl_duration: f64,
     ul_duration: f64,
-    dl_skipped: bool,
-    ul_skipped: bool,
+    skipped: SkipState,
     elapsed: std::time::Duration,
     profile: UserProfile,
     minimal: bool,
     theme: Theme,
-) -> Result<(), SpeedtestError> {
+) -> Result<(), Error> {
     let nc = terminal::no_color() || minimal;
     let overall_grade = grades::grade_overall(
         result.ping,
@@ -484,7 +484,7 @@ pub fn format_detailed(
     if nc {
         eprintln!("\n  TEST RESULTS");
     } else {
-        eprintln!("\n  {}", ThemeColors::header("TEST RESULTS", theme));
+        eprintln!("\n  {}", Colors::header("TEST RESULTS", theme));
     }
     eprintln!("{}", ratings::format_overall_rating(result, nc, theme));
     if !nc {
@@ -497,8 +497,8 @@ pub fn format_detailed(
     eprintln!();
 
     sections::format_latency_section(result, nc, theme);
-    sections::format_download_section(result, bytes, nc, dl_skipped, theme);
-    sections::format_upload_section(result, bytes, nc, ul_skipped, theme);
+    sections::format_download_section(result, bytes, nc, skipped.download, theme);
+    sections::format_upload_section(result, bytes, nc, skipped.upload, theme);
     sections::format_connection_info(result, nc, theme);
     sections::format_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc);
 
@@ -509,7 +509,7 @@ pub fn format_detailed(
         eprintln!(
             "  {}: {}",
             "Total time".dimmed(),
-            ThemeColors::info(&format!("{:.1}s", elapsed.as_secs_f64()), theme),
+            Colors::info(&format!("{:.1}s", elapsed.as_secs_f64()), theme),
         );
     }
 
@@ -522,8 +522,8 @@ pub fn format_detailed(
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::ParseJson`] if serialization fails.
-pub fn format_json(result: &TestResult) -> Result<(), SpeedtestError> {
+/// Returns [`Error::ParseJson`] if serialization fails.
+pub fn format_json(result: &TestResult) -> Result<(), Error> {
     let is_tty = {
         use std::io::IsTerminal;
         std::io::stdout().is_terminal()
@@ -541,12 +541,8 @@ pub fn format_json(result: &TestResult) -> Result<(), SpeedtestError> {
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::Csv`] if CSV serialization fails.
-pub fn format_csv(
-    result: &TestResult,
-    delimiter: char,
-    print_header: bool,
-) -> Result<(), SpeedtestError> {
+/// Returns [`Error::Csv`] if CSV serialization fails.
+pub fn format_csv(result: &TestResult, delimiter: char, print_header: bool) -> Result<(), Error> {
     let stdout = std::io::stdout();
     let mut wtr = csv::WriterBuilder::new()
         .delimiter(delimiter as u8)
@@ -599,7 +595,7 @@ pub fn format_verbose_sections(
     let nc = terminal::no_color() || minimal;
 
     if profile.show_estimates() {
-        let estimates = estimates::build_estimates(result.download, nc, theme);
+        let estimates = estimates::build(result.download, nc, theme);
         if !estimates.is_empty() {
             eprintln!("{estimates}");
         }
@@ -615,7 +611,10 @@ pub fn format_verbose_sections(
             let ul_stability = format_stability_line(ul_cv, nc, theme);
             eprintln!();
             eprintln!("{}", section_header("STABILITY", nc, theme));
-            if !nc {
+            if nc {
+                eprintln!("  {:>14}:   [{dl_stability}]", "Download");
+                eprintln!("  {:>14}:   [{ul_stability}]", "Upload");
+            } else {
                 eprintln!(
                     "  {:>14}:   {} {dl_stability}",
                     "Download".dimmed(),
@@ -626,9 +625,6 @@ pub fn format_verbose_sections(
                     "Upload".dimmed(),
                     ul_grade.color_str(nc, theme)
                 );
-            } else {
-                eprintln!("  {:>14}:   [{dl_stability}]", "Download");
-                eprintln!("  {:>14}:   [{ul_stability}]", "Upload");
             }
         }
     }
@@ -647,11 +643,11 @@ pub fn format_verbose_sections(
                     eprintln!(
                         "  {}: {}  {}: {}  {}: {}",
                         "P50".dimmed(),
-                        ThemeColors::info(&p50_str, theme),
+                        Colors::info(&p50_str, theme),
                         "P95".dimmed(),
-                        ThemeColors::warn(&p95_str, theme),
+                        Colors::warn(&p95_str, theme),
                         "P99".dimmed(),
-                        ThemeColors::bad(&p99_str, theme),
+                        Colors::bad(&p99_str, theme),
                     );
                 }
             }
@@ -659,8 +655,8 @@ pub fn format_verbose_sections(
     }
 
     if profile.show_history() {
-        let dl_mbps = result.download.map(|d| d / 1_000_000.0).unwrap_or(0.0);
-        let ul_mbps = result.upload.map(|u| u / 1_000_000.0).unwrap_or(0.0);
+        let dl_mbps = result.download.map_or(0.0, |d| d / 1_000_000.0);
+        let ul_mbps = result.upload.map_or(0.0, |u| u / 1_000_000.0);
         if let Some(comparison) = crate::history::format_comparison(dl_mbps, ul_mbps, nc) {
             eprintln!();
             eprintln!("  {comparison}");
@@ -674,8 +670,9 @@ mod tests {
 
     #[test]
     fn test_format_simple_with_data() {
-        use crate::types::{ServerInfo, TestResult};
+        use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
         let result = TestResult {
+            status: "ok".to_string(),
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -705,6 +702,11 @@ mod tests {
             download_grade: None,
             upload_grade: None,
             connection_rating: None,
+            phases: TestPhases {
+                ping: PhaseResult::completed(),
+                download: PhaseResult::completed(),
+                upload: PhaseResult::completed(),
+            },
         };
 
         // Just verify it doesn't panic
@@ -728,8 +730,9 @@ mod tests {
 
     #[test]
     fn test_format_verbose_sections_integration() {
-        use crate::types::{ServerInfo, TestResult};
+        use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
         let result = TestResult {
+            status: "ok".to_string(),
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -759,6 +762,11 @@ mod tests {
             download_grade: None,
             upload_grade: None,
             connection_rating: None,
+            phases: TestPhases {
+                ping: PhaseResult::completed(),
+                download: PhaseResult::completed(),
+                upload: PhaseResult::completed(),
+            },
         };
 
         // Exercise the full integration path: targets, estimates, stability,
@@ -768,8 +776,9 @@ mod tests {
 
     #[test]
     fn test_format_verbose_sections_empty() {
-        use crate::types::{ServerInfo, TestResult};
+        use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
         let result = TestResult {
+            status: "ok".to_string(),
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
@@ -799,6 +808,11 @@ mod tests {
             download_grade: None,
             upload_grade: None,
             connection_rating: None,
+            phases: TestPhases {
+                ping: PhaseResult::completed(),
+                download: PhaseResult::completed(),
+                upload: PhaseResult::completed(),
+            },
         };
 
         // Should not panic with all None values

@@ -1,4 +1,4 @@
-use crate::cli::CliArgs;
+use crate::cli::Args;
 use crate::theme::Theme;
 use directories::ProjectDirs;
 use serde::Deserialize;
@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Default, Deserialize)]
-pub struct ConfigFile {
+pub struct File {
     pub no_download: Option<bool>,
     pub no_upload: Option<bool>,
     pub single: Option<bool>,
@@ -19,6 +19,10 @@ pub struct ConfigFile {
     pub timeout: Option<u64>,
     pub profile: Option<String>,
     pub theme: Option<String>,
+    /// Custom user agent string (optional, defaults to browser-like UA).
+    pub custom_user_agent: Option<String>,
+    /// Enable strict config mode - invalid values cause warnings.
+    pub strict: Option<bool>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -41,25 +45,20 @@ pub struct Config {
     pub profile: Option<String>,
     pub theme: Theme,
     pub minimal: bool,
+    pub custom_user_agent: Option<String>,
+    pub strict: bool,
 }
 
 impl Config {
     #[allow(deprecated)]
     #[must_use]
-    pub fn from_args(args: &CliArgs) -> Self {
+    pub fn from_args(args: &Args) -> Self {
         let file_config = load_config_file().unwrap_or_default();
 
-        // Merge strategy: CLI flags and config file are combined with OR semantics.
-        // Since clap defaults `bool` to `false`, we cannot distinguish "user didn't
-        // pass the flag" from "user explicitly passed `--no-flag`".
-        //
-        // Practical effect: if config file has `no_download = true`, downloads will
-        // be skipped unless the user passes `--no-download=false` (if supported)
-        // or removes the config line. The config file acts as a persistent default.
-        //
-        // For timeout: CLI value is used only if explicitly set (non-default).
-        // Otherwise, file config is checked, falling back to the compiled default (10).
-        let merge_bool = |cli: bool, file: Option<bool>| cli || file.unwrap_or(false);
+        // Merge strategy: CLI > config file > hardcoded defaults.
+        // Configurable booleans use Option<bool> in CLI parsing so we can
+        // distinguish "flag not supplied" from "flag supplied as true".
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
         let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
             // If CLI is at default value, check file; otherwise use CLI
             if cli == default {
@@ -68,6 +67,19 @@ impl Config {
                 cli
             }
         };
+
+        // Check for strict mode
+        let strict = merge_bool(args.strict_config, file_config.strict);
+
+        // Warn if profile is invalid
+        if let Some(ref profile_name) = args.profile {
+            if crate::profiles::UserProfile::from_name(profile_name).is_none() {
+                eprintln!(
+                    "Warning: Unknown profile '{}'. Valid options: power-user, gamer, streamer, remote-worker, casual. Using 'power-user'.",
+                    profile_name
+                );
+            }
+        }
 
         Self {
             no_download: merge_bool(args.no_download, file_config.no_download),
@@ -100,27 +112,41 @@ impl Config {
                 Theme::from_name(&args.theme).unwrap_or_default()
             },
             minimal: merge_bool(args.minimal, None),
+            custom_user_agent: file_config.custom_user_agent.clone(),
+            strict,
         }
     }
 }
 
 /// Get the configuration file path (internal — also used by orchestrator for --show-config-path).
+#[must_use]
 pub fn get_config_path_internal() -> Option<PathBuf> {
     ProjectDirs::from("dev", "vibe", "netspeed-cli").map(|proj_dirs| {
         let config_dir = proj_dirs.config_dir();
-        fs::create_dir_all(config_dir).ok();
+        if let Err(e) = fs::create_dir_all(config_dir) {
+            eprintln!("Warning: Failed to create config directory: {e}");
+        }
         config_dir.join("config.toml")
     })
 }
 
-fn load_config_file() -> Option<ConfigFile> {
+fn load_config_file() -> Option<File> {
     let path = get_config_path_internal()?;
     if !path.exists() {
         return None;
     }
 
-    let content = fs::read_to_string(path).ok()?;
-    let mut config: ConfigFile = match toml::from_str(&content) {
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!(
+                "Warning: Failed to read config file {}: {e}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    let mut config: File = match toml::from_str(&content) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Warning: Failed to parse config: {e}");
@@ -148,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_config_from_args_defaults() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
+        let args = Args::parse_from(["netspeed-cli"]);
         let config = Config::from_args(&args);
 
         assert!(!config.no_download);
@@ -169,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_config_from_args_no_download() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--no-download"]);
+        let args = Args::parse_from(["netspeed-cli", "--no-download"]);
         let config = Config::from_args(&args);
         assert!(config.no_download);
         assert!(!config.no_upload);
@@ -190,7 +216,7 @@ mod tests {
             timeout = 30
         ";
 
-        let config: ConfigFile = toml::from_str(toml_content).unwrap();
+        let config: File = toml::from_str(toml_content).unwrap();
         assert_eq!(config.no_download, Some(true));
         assert_eq!(config.no_upload, Some(false));
         assert_eq!(config.single, Some(true));
@@ -210,7 +236,7 @@ mod tests {
             timeout = 20
         ";
 
-        let config: ConfigFile = toml::from_str(toml_content).unwrap();
+        let config: File = toml::from_str(toml_content).unwrap();
         assert_eq!(config.no_download, Some(true));
         assert!(config.no_upload.is_none());
         assert!(config.single.is_none());
@@ -221,32 +247,27 @@ mod tests {
     #[test]
     fn test_config_from_args_overrides_file() {
         // Test that CLI flags override file config when explicitly set
-        let args = CliArgs::parse_from(["netspeed-cli", "--no-download"]);
+        let args = Args::parse_from(["netspeed-cli", "--no-download"]);
         let config = Config::from_args(&args);
         assert!(config.no_download);
     }
 
     #[test]
     fn test_config_merge_bool_file_true_cli_false() {
-        // When CLI flag is false (default) and file config is true, result should be false
-        // because merge_bool = cli || file.unwrap_or(false)
-        // Actually merge_bool returns true only if CLI is true OR file is Some(true)
-        // Let's verify the actual behavior
+        // When CLI omits the flag, the config file value should be used.
         let toml_content = r"
             no_download = true
         ";
-        let file_config: ConfigFile = toml::from_str(toml_content).unwrap();
+        let file_config: File = toml::from_str(toml_content).unwrap();
 
-        // CLI args with no_download=false (default)
-        let args = CliArgs::parse_from(["netspeed-cli"]);
+        // CLI args omit the flag, so clap yields None for Option<bool>.
+        let args = Args::parse_from(["netspeed-cli"]);
         let file_config_loaded = Some(file_config);
 
         // Manual merge check
-        let cli_val = args.no_download; // false
+        let cli_val = args.no_download; // None
         let file_val = file_config_loaded.and_then(|c| c.no_download); // Some(true)
-        let merged = cli_val || file_val.unwrap_or(false);
-        // Since CLI is false and file is Some(true), result depends on merge logic
-        // The current merge is: cli || file.unwrap_or(false) = false || true = true
+        let merged = cli_val.or(file_val).unwrap_or(false);
         assert!(merged);
     }
 }

@@ -7,6 +7,7 @@
 //! - Data size formatting
 //! - Terminal width detection
 
+use crate::test_config::TestConfig;
 use std::io::IsTerminal;
 
 /// Get the terminal width in columns, or a sensible default.
@@ -64,6 +65,8 @@ pub fn get_terminal_width_bounded(min_width: u16, max_width: u16, default_width:
 #[must_use]
 pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
     if elapsed_secs > 0.0 {
+        // Safe: total_bytes is bytes transferred during a test lasting seconds;
+        // cannot approach 2^53 (~9 PB) where f64 loses precision.
         (total_bytes as f64 * 8.0) / elapsed_secs
     } else {
         0.0
@@ -81,13 +84,13 @@ pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
 /// assert_eq!(determine_stream_count(true), 1);
 /// assert_eq!(determine_stream_count(false), 4);
 /// ```
+#[deprecated(
+    since = "0.9.0",
+    note = "Use TestConfig::stream_count_for(single) instead"
+)]
 #[must_use]
 pub fn determine_stream_count(single: bool) -> usize {
-    if single {
-        1
-    } else {
-        4
-    }
+    TestConfig::stream_count_for(single)
 }
 
 /// Format distance consistently: 1 decimal for < 100 km, 0 decimals for >= 100 km.
@@ -120,6 +123,8 @@ pub fn format_distance(km: f64) -> String {
 /// ```
 #[must_use]
 pub fn format_data_size(bytes: u64) -> String {
+    // Safe: bytes is u64, but human-readable formatting only needs ~3 significant
+    // digits. Even 1 TB = 1e12, well under 2^53 where f64 loses precision.
     if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else if bytes < 1024 * 1024 * 1024 {
@@ -166,7 +171,8 @@ pub fn bar_chart(value: f64, max: f64, width: usize) -> String {
         return "░".repeat(width);
     }
     let pct = (value / max).clamp(0.0, 1.0);
-    let filled = (pct * width as f64).round() as usize;
+    // Safe: pct is 0.0–1.0, width is typically ≤200, so result fits in usize.
+    let filled = (pct * width as f64).round().clamp(0.0, usize::MAX as f64) as usize;
     let empty = width.saturating_sub(filled);
     format!("{}{}", "█".repeat(filled), "░".repeat(empty))
 }
@@ -191,9 +197,11 @@ pub fn bar_chart(value: f64, max: f64, width: usize) -> String {
 #[must_use]
 pub fn tabular_number(value: f64, width: usize, decimals: usize) -> String {
     if decimals == 0 {
-        format!("{:>width$}", value as i64)
+        // Safe: tabular numbers are speeds/counts — always non-negative.
+        // Clamp to 0..i64::MAX for explicitness and to catch negative inputs.
+        format!("{:>width$}", value.clamp(0.0, i64::MAX as f64) as i64)
     } else {
-        format!("{:>width$.decimals$}", value)
+        format!("{value:>width$.decimals$}")
     }
 }
 
@@ -220,11 +228,15 @@ pub fn format_speed_tabular(bps: f64, total_width: usize) -> String {
     } else if bps >= 1_000.0 {
         (bps / 1_000.0, "Kb/s")
     } else {
-        return format!("{:>total_width$} b/s", bps as i64);
+        // Safe: bps < 1000 is a small non-negative integer, well within i64 range.
+        return format!(
+            "{:>total_width$} b/s",
+            bps.clamp(0.0, i64::MAX as f64) as i64
+        );
     };
     let unit_width = unit.len();
     let val_width = total_width.saturating_sub(unit_width + 1); // +1 for space
-    format!("{:>val_width$.2} {unit}", value)
+    format!("{value:>val_width$.2} {unit}")
 }
 
 /// Format latency in ms with tabular alignment.
@@ -239,25 +251,26 @@ pub fn format_speed_tabular(bps: f64, total_width: usize) -> String {
 /// ```
 #[must_use]
 pub fn format_latency_tabular(ms: f64, width: usize) -> String {
-    format!("{:>width$.1} ms", ms)
+    format!("{ms:>width$.1} ms")
 }
 
 /// Format jitter in ms with tabular alignment.
 #[must_use]
 pub fn format_jitter_tabular(ms: f64, width: usize) -> String {
-    format!("{:>width$.1} ms", ms)
+    format!("{ms:>width$.1} ms")
 }
 
 /// Format packet loss percentage with tabular alignment.
 #[must_use]
 pub fn format_loss_tabular(pct: f64, width: usize) -> String {
-    format!("{:>width$.1}%", pct)
+    format!("{pct:>width$.1}%")
 }
 
 /// Format data size (bytes) with tabular alignment for data transfer amounts.
 /// Returns a fixed-width string like `"  15.0 MB"`.
 #[must_use]
 pub fn format_data_size_tabular(bytes: u64, width: usize) -> String {
+    // Safe: same rationale as format_data_size — byte counts are bounded.
     let (value, unit) = if bytes < 1024 * 1024 {
         (bytes as f64 / 1024.0, "KB")
     } else if bytes < 1024 * 1024 * 1024 {
@@ -266,22 +279,23 @@ pub fn format_data_size_tabular(bytes: u64, width: usize) -> String {
         let val = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
         let unit_width = 2; // "GB"
         let val_width = width.saturating_sub(unit_width + 1);
-        return format!("{:>val_width$.2} GB", val);
+        return format!("{val:>val_width$.2} GB");
     };
     let unit_width = unit.len();
     let val_width = width.saturating_sub(unit_width + 1);
-    format!("{:>val_width$.1} {unit}", value)
+    format!("{value:>val_width$.1} {unit}")
 }
 
 /// Format duration with tabular alignment.
 #[must_use]
 pub fn format_duration_tabular(secs: f64, width: usize) -> String {
     if secs < 60.0 {
-        format!("{:>width$.1}s", secs)
+        format!("{secs:>width$.1}s")
     } else {
-        let mins = secs as u64 / 60;
+        // Safe: duration in seconds from a speed test; always non-negative and small.
+        let mins = (secs / 60.0).clamp(0.0, u64::MAX as f64) as u64;
         let rem = secs % 60.0;
-        format!("{:>width$}m {:04.1}s", mins, rem)
+        format!("{mins:>width$}m {rem:04.1}s")
     }
 }
 
@@ -291,22 +305,30 @@ mod tests {
 
     #[test]
     fn test_calculate_bandwidth_normal() {
-        assert_eq!(calculate_bandwidth(10_000_000, 2.0), 40_000_000.0);
+        assert!((calculate_bandwidth(10_000_000, 2.0) - 40_000_000.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_calculate_bandwidth_zero_elapsed() {
-        assert_eq!(calculate_bandwidth(10_000_000, 0.0), 0.0);
+        assert!(calculate_bandwidth(10_000_000, 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_determine_stream_count_single() {
-        assert_eq!(determine_stream_count(true), 1);
+        // Deprecated function test - still verify it works
+        #[allow(deprecated)]
+        {
+            assert_eq!(determine_stream_count(true), 1);
+        }
     }
 
     #[test]
     fn test_determine_stream_count_multi() {
-        assert_eq!(determine_stream_count(false), 4);
+        // Deprecated function test - still verify it works
+        #[allow(deprecated)]
+        {
+            assert_eq!(determine_stream_count(false), 4);
+        }
     }
 
     #[test]
@@ -508,7 +530,7 @@ mod tests {
             #[test]
             fn prop_bandwidth_zero_elapsed_returns_zero(bytes in 0u64..1_000_000) {
                 let result = calculate_bandwidth(bytes, 0.0);
-                prop_assert_eq!(result, 0.0);
+                prop_assert!(result.abs() < f64::EPSILON);
             }
 
             #[test]

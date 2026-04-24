@@ -29,6 +29,7 @@ pub enum Theme {
 
 impl Theme {
     /// Parse theme from string.
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "dark" => Some(Self::Dark),
@@ -40,6 +41,7 @@ impl Theme {
     }
 
     /// CLI-friendly name.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Self::Dark => "dark",
@@ -52,10 +54,11 @@ impl Theme {
 
 /// Theme-aware color wrapper.
 /// Use these instead of direct `.green()`, `.red()`, etc. to respect the active theme.
-pub struct ThemeColors;
+pub struct Colors;
 
-impl ThemeColors {
+impl Colors {
     /// Good/success color.
+    #[must_use]
     pub fn good(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -69,6 +72,7 @@ impl ThemeColors {
     }
 
     /// Warning/caution color.
+    #[must_use]
     pub fn warn(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -82,6 +86,7 @@ impl ThemeColors {
     }
 
     /// Error/bad color.
+    #[must_use]
     pub fn bad(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -95,6 +100,7 @@ impl ThemeColors {
     }
 
     /// Info/neutral color (cyan/blue).
+    #[must_use]
     pub fn info(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -109,6 +115,7 @@ impl ThemeColors {
     }
 
     /// Dimmed/secondary text.
+    #[must_use]
     pub fn dimmed(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -121,11 +128,13 @@ impl ThemeColors {
     }
 
     /// Bold/emphasized text.
+    #[must_use]
     pub fn bold(s: &str, _theme: Theme) -> String {
         s.bold().to_string()
     }
 
-    /// Muted/secondary text (bright_black equivalent).
+    /// Muted/secondary text (`bright_black` equivalent).
+    #[must_use]
     pub fn muted(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -139,6 +148,7 @@ impl ThemeColors {
     }
 
     /// Header/section title color.
+    #[must_use]
     pub fn header(s: &str, theme: Theme) -> String {
         if terminal::no_color() || theme == Theme::Monochrome {
             s.to_string()
@@ -153,7 +163,8 @@ impl ThemeColors {
 }
 
 /// Resolve the active theme from config, CLI, and environment.
-pub fn resolve_theme(config_theme: &str, minimal: bool) -> Theme {
+#[must_use]
+pub fn resolve(config_theme: &str, minimal: bool) -> Theme {
     if minimal || terminal::no_color() {
         return Theme::Monochrome;
     }
@@ -189,15 +200,15 @@ mod tests {
 
     #[test]
     fn test_resolve_theme_minimal() {
-        assert_eq!(resolve_theme("dark", true), Theme::Monochrome);
-        assert_eq!(resolve_theme("light", true), Theme::Monochrome);
+        assert_eq!(resolve("dark", true), Theme::Monochrome);
+        assert_eq!(resolve("light", true), Theme::Monochrome);
     }
 
     #[test]
     fn test_resolve_theme_default() {
-        assert_eq!(resolve_theme("dark", false), Theme::Dark);
-        assert_eq!(resolve_theme("invalid", false), Theme::Dark);
-        assert_eq!(resolve_theme("light", false), Theme::Light);
-        assert_eq!(resolve_theme("high-contrast", false), Theme::HighContrast);
+        assert_eq!(resolve("dark", false), Theme::Dark);
+        assert_eq!(resolve("invalid", false), Theme::Dark);
+        assert_eq!(resolve("light", false), Theme::Light);
+        assert_eq!(resolve("high-contrast", false), Theme::HighContrast);
     }
 }

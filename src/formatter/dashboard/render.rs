@@ -1,10 +1,10 @@
 use crate::formatter::grades;
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 use crate::types::TestResult;
 use owo_colors::OwoColorize;
 
 use super::helpers::{
-    bufferbloat_info, mini_bar, severity_icon, stability_label, DashboardSummary, LINE_WIDTH,
+    bufferbloat_info, mini_bar, severity_icon, stability_label, Summary, LINE_WIDTH,
 };
 
 // ── Tabular Column Widths ────────────────────────────────────────────────────
@@ -38,9 +38,9 @@ pub fn build_header(result: &TestResult, nc: bool, theme: Theme) -> String {
     } else {
         lines.push(format!(
             "╭{}{}{}╮",
-            ThemeColors::dimmed(&left_pad, theme),
-            ThemeColors::header(title.trim(), theme),
-            ThemeColors::dimmed(&right_pad, theme),
+            Colors::dimmed(&left_pad, theme),
+            Colors::header(title.trim(), theme),
+            Colors::dimmed(&right_pad, theme),
         ));
     }
 
@@ -57,7 +57,7 @@ pub fn build_header(result: &TestResult, nc: bool, theme: Theme) -> String {
     } else {
         lines.push(format!(
             "╰{}{:─<footer_pad$}╯",
-            ThemeColors::dimmed(footer_line, theme),
+            Colors::dimmed(footer_line, theme),
             ""
         ));
     }
@@ -68,7 +68,7 @@ pub fn build_header(result: &TestResult, nc: bool, theme: Theme) -> String {
 /// Build the 3-column metrics dashboard.
 pub fn build_metrics_dashboard(
     result: &TestResult,
-    summary: &DashboardSummary,
+    summary: &Summary,
     nc: bool,
     theme: Theme,
 ) -> String {
@@ -109,35 +109,34 @@ pub fn build_metrics_dashboard(
     } else {
         format!(
             "┌{:<col_w$}┬{:<col_w$}┬{:<col_w$}┐",
-            ThemeColors::header("PERFORMANCE", theme),
-            ThemeColors::header("STABILITY", theme),
-            ThemeColors::header("BUFFERBLOAT", theme),
+            Colors::header("PERFORMANCE", theme),
+            Colors::header("STABILITY", theme),
+            Colors::header("BUFFERBLOAT", theme),
         )
     };
     lines.push(header);
 
     let dl_color = result
         .download
-        .map(|d| speed_color(d / 1_000_000.0))
-        .unwrap_or("dimmed");
+        .map_or("dimmed", |d| speed_color(d / 1_000_000.0));
 
-    let dl_speed = result
-        .download
-        .map(|d| {
+    let dl_speed = result.download.map_or_else(
+        || "—".to_string(),
+        |d| {
             let mbps = d / 1_000_000.0;
             crate::common::tabular_number(mbps, SPEED_TAB_WIDTH, 0)
-        })
-        .unwrap_or_else(|| "—".to_string());
+        },
+    );
 
     let dl_stab = if let (Some(cv), Some(_grade)) = (dl_cv, dl_grade) {
         let (g, lbl) = stability_label(cv, nc, theme);
-        format!("DL: {} {}", g, lbl)
+        format!("DL: {g} {lbl}")
     } else {
         "DL: —".to_string()
     };
 
     let bb_col = if let Some((grade, added)) = &bb_info {
-        format!("Grade: {}   {}", grade, added)
+        format!("Grade: {grade}   {added}")
     } else {
         "N/A".to_string()
     };
@@ -151,30 +150,29 @@ pub fn build_metrics_dashboard(
         ));
     } else {
         let dl_display = match dl_color {
-            "blue" => format!("{} ↓", ThemeColors::info(dl_speed.trim(), theme)),
-            "bright_green" => format!("{} ↓", ThemeColors::good(dl_speed.trim(), theme)),
-            "yellow" => format!("{} ↓", ThemeColors::warn(dl_speed.trim(), theme)),
-            _ => format!("{} ↓", ThemeColors::bad(dl_speed.trim(), theme)),
+            "blue" => format!("{} ↓", Colors::info(dl_speed.trim(), theme)),
+            "bright_green" => format!("{} ↓", Colors::good(dl_speed.trim(), theme)),
+            "yellow" => format!("{} ↓", Colors::warn(dl_speed.trim(), theme)),
+            _ => format!("{} ↓", Colors::bad(dl_speed.trim(), theme)),
         };
-        lines.push(format!("│ {} │ {} │ {} │", dl_display, dl_stab, bb_col,));
+        lines.push(format!("│ {dl_display} │ {dl_stab} │ {bb_col} │",));
     }
 
     let ul_color = result
         .upload
-        .map(|u| speed_color(u / 1_000_000.0))
-        .unwrap_or("dimmed");
+        .map_or("dimmed", |u| speed_color(u / 1_000_000.0));
 
-    let ul_speed = result
-        .upload
-        .map(|u| {
+    let ul_speed = result.upload.map_or_else(
+        || "—".to_string(),
+        |u| {
             let mbps = u / 1_000_000.0;
             crate::common::tabular_number(mbps, SPEED_TAB_WIDTH, 0)
-        })
-        .unwrap_or_else(|| "—".to_string());
+        },
+    );
 
     let ul_stab = if let (Some(cv), Some(_grade)) = (ul_cv, ul_grade) {
         let (g, lbl) = stability_label(cv, nc, theme);
-        format!("UL: {} {}", g, lbl)
+        format!("UL: {g} {lbl}")
     } else {
         "UL: —".to_string()
     };
@@ -188,18 +186,18 @@ pub fn build_metrics_dashboard(
         ));
     } else {
         let ul_display = match ul_color {
-            "blue" => format!("{} ↑", ThemeColors::info(ul_speed.trim(), theme)),
-            "bright_green" => format!("{} ↑", ThemeColors::good(ul_speed.trim(), theme)),
-            "yellow" => format!("{} ↑", ThemeColors::warn(ul_speed.trim(), theme)),
-            _ => format!("{} ↑", ThemeColors::bad(ul_speed.trim(), theme)),
+            "blue" => format!("{} ↑", Colors::info(ul_speed.trim(), theme)),
+            "bright_green" => format!("{} ↑", Colors::good(ul_speed.trim(), theme)),
+            "yellow" => format!("{} ↑", Colors::warn(ul_speed.trim(), theme)),
+            _ => format!("{} ↑", Colors::bad(ul_speed.trim(), theme)),
         };
         lines.push(format!("│ {} │ {} │ {:<col_w$}│", ul_display, ul_stab, "",));
     }
 
-    let latency_str = result
-        .ping
-        .map(|p| crate::common::format_latency_tabular(p, LATENCY_TAB_WIDTH))
-        .unwrap_or_else(|| "—".to_string());
+    let latency_str = result.ping.map_or_else(
+        || "—".to_string(),
+        |p| crate::common::format_latency_tabular(p, LATENCY_TAB_WIDTH),
+    );
 
     let overall_display = if nc {
         format!("Overall: [{}]", overall_grade.as_str())
@@ -219,7 +217,7 @@ pub fn build_metrics_dashboard(
     } else {
         let lat_display = if let Some(p) = result.ping {
             let lat_val = crate::common::format_latency_tabular(p, LATENCY_TAB_WIDTH);
-            format!("{} {}", "🟢", ThemeColors::info(lat_val.trim(), theme))
+            format!("{} {}", "🟢", Colors::info(lat_val.trim(), theme))
         } else {
             "—".dimmed().to_string()
         };
@@ -253,13 +251,14 @@ pub fn build_capability_matrix(dl_mbps: f64, nc: bool, theme: Theme) -> String {
 
     lines.push(String::new());
     if nc {
-        lines.push(format!("CAPABILITY MATRIX ({:.0} Mbps)", dl_mbps));
+        lines.push(format!("CAPABILITY MATRIX ({dl_mbps:.0} Mbps)"));
     } else {
-        lines.push(ThemeColors::header(
-            &format!("CAPABILITY MATRIX ({:.0} Mbps)", dl_mbps),
+        lines.push(Colors::header(
+            &format!("CAPABILITY MATRIX ({dl_mbps:.0} Mbps)"),
             theme,
         ));
     }
+    lines.push("─".repeat(LINE_WIDTH));
 
     // Tiered scenarios: name, required range, icon
     let tiers: &[(&str, f64, f64, &str)] = &[
@@ -294,16 +293,16 @@ pub fn build_capability_matrix(dl_mbps: f64, nc: bool, theme: Theme) -> String {
             0
         };
         let bar = mini_bar(fill, 10, nc, headroom);
-        let range_str = if min_mbps == max_mbps {
-            format!("{:.0} Mbps", min_mbps)
+        let range_str = if (*min_mbps - *max_mbps).abs() < f64::EPSILON {
+            format!("{min_mbps:.0} Mbps")
         } else {
-            format!("{:.0}-{:.0} Mbps", min_mbps, max_mbps)
+            format!("{min_mbps:.0}-{max_mbps:.0} Mbps")
         };
 
         let concurrent_display = if concurrent_min == concurrent_max {
-            format!("{:>3}x", concurrent_min)
+            format!("{concurrent_min:>3}x")
         } else {
-            format!("{:>3}x-{:>2}x", concurrent_min, concurrent_max)
+            format!("{concurrent_min:>3}x-{concurrent_max:>2}x")
         };
 
         let (icon, _color) = severity_icon(headroom, is_met);
@@ -311,8 +310,7 @@ pub fn build_capability_matrix(dl_mbps: f64, nc: bool, theme: Theme) -> String {
         // Only show warnings for constrained tiers, otherwise just show the line
         if nc {
             lines.push(format!(
-                "  {:<18} {:>12}  {}  {}  {}",
-                name, range_str, bar, concurrent_display, icon
+                "  {name:<18} {range_str:>12}  {bar}  {concurrent_display}  {icon}"
             ));
         } else {
             lines.push(format!(
@@ -355,9 +353,9 @@ pub fn build_capability_matrix(dl_mbps: f64, nc: bool, theme: Theme) -> String {
         } else {
             lines.push(format!(
                 "  {} {} Upgrade to {}+ Mbps for better {} performance.",
-                ThemeColors::warn("⚠️", theme),
-                ThemeColors::warn("Recommendation:", theme),
-                ThemeColors::info(&recommended.to_string(), theme),
+                Colors::warn("⚠️", theme),
+                Colors::warn("Recommendation:", theme),
+                Colors::info(&recommended.to_string(), theme),
                 name,
             ));
         }
@@ -385,10 +383,10 @@ pub fn build_transfer_estimates(dl_mbps: f64, nc: bool, theme: Theme) -> String 
     lines.push(String::new());
 
     if nc {
-        lines.push(format!("TRANSFER ESTIMATES @ {:.0} Mbps", dl_mbps));
+        lines.push(format!("TRANSFER ESTIMATES @ {dl_mbps:.0} Mbps"));
     } else {
-        lines.push(ThemeColors::header(
-            &format!("TRANSFER ESTIMATES @ {:.0} Mbps", dl_mbps),
+        lines.push(Colors::header(
+            &format!("TRANSFER ESTIMATES @ {dl_mbps:.0} Mbps"),
             theme,
         ));
     }
@@ -414,25 +412,23 @@ pub fn build_transfer_estimates(dl_mbps: f64, nc: bool, theme: Theme) -> String 
             } else {
                 lines.push(format!(
                     "  {} {} {} {} {} {}",
-                    ThemeColors::dimmed(left.0, theme),
+                    Colors::dimmed(left.0, theme),
                     "→".dimmed(),
-                    ThemeColors::good(&left_time, theme),
+                    Colors::good(&left_time, theme),
                     "│".dimmed(),
-                    ThemeColors::dimmed(right.0, theme),
-                    ThemeColors::good(&format!("→ {}", right_time), theme),
+                    Colors::dimmed(right.0, theme),
+                    Colors::good(&format!("→ {right_time}"), theme),
                 ));
             }
+        } else if nc {
+            lines.push(format!("  {:<22} → {}", left.0, left_time));
         } else {
-            if nc {
-                lines.push(format!("  {:<22} → {}", left.0, left_time));
-            } else {
-                lines.push(format!(
-                    "  {} {} {}",
-                    ThemeColors::dimmed(left.0, theme),
-                    "→".dimmed(),
-                    ThemeColors::good(&left_time, theme),
-                ));
-            }
+            lines.push(format!(
+                "  {} {} {}",
+                Colors::dimmed(left.0, theme),
+                "→".dimmed(),
+                Colors::good(&left_time, theme),
+            ));
         }
     }
 
@@ -441,9 +437,9 @@ pub fn build_transfer_estimates(dl_mbps: f64, nc: bool, theme: Theme) -> String 
 
 pub fn format_time_short(secs: f64) -> String {
     if secs < 1.0 {
-        format!("{:.1}s", secs)
+        format!("{secs:.1}s")
     } else if secs < 60.0 {
-        format!("{:.0}s", secs)
+        format!("{secs:.0}s")
     } else if secs < 3600.0 {
         format!("{}m {:02}s", secs as u64 / 60, (secs % 60.0) as u64)
     } else {

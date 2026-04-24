@@ -3,38 +3,44 @@
 //! Extracted from `main.rs` to follow single-responsibility and enable
 //! unit testing of the test flow independent of the binary entry point.
 
-use crate::cli::{CliArgs, ShellType};
+use crate::cli::{Args, ShellType};
 use crate::common;
 use crate::config::Config;
-use crate::error::SpeedtestError;
+use crate::error::Error;
 use crate::formatter::format_list;
 use crate::history;
 use crate::http;
 use crate::progress::{create_spinner, finish_ok, reveal_pause, reveal_scan_complete};
-use crate::servers::{fetch_servers, ping_test, select_best_server};
+use crate::servers::{fetch, ping_test, select_best_server};
 use crate::task_runner::{self, TestRunResult};
 use crate::terminal;
 use crate::types::Server;
-use crate::types::{self, TestResult};
+use crate::types::{self, PhaseResult, TestPhases, TestResult};
 use crate::{download, upload};
 
 use owo_colors::OwoColorize;
 
 /// Orchestrates the full speed test lifecycle.
-pub struct SpeedTestOrchestrator {
-    args: CliArgs,
+pub struct Orchestrator {
+    args: Args,
     config: Config,
     client: reqwest::Client,
 }
 
-impl SpeedTestOrchestrator {
+impl Orchestrator {
     /// Create a new orchestrator from CLI arguments.
-    pub fn new(args: CliArgs) -> Result<Self, SpeedtestError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NetworkError`] if the HTTP client cannot be created
+    /// (e.g., invalid source IP, TLS backend failure).
+    pub fn new(args: Args) -> Result<Self, Error> {
         let config = Config::from_args(&args);
-        let http_settings = http::HttpSettings {
+        let http_settings = http::Settings {
             timeout_secs: config.timeout,
             source_ip: config.source.clone(),
-            user_agent: http::HttpSettings::default().user_agent,
+            user_agent: http::Settings::default().user_agent,
+            retry_enabled: true,
         };
         let client = http::create_client(&http_settings)?;
         Ok(Self {
@@ -45,19 +51,18 @@ impl SpeedTestOrchestrator {
     }
 
     /// Run the full speed test workflow.
-    pub async fn run(&self) -> Result<(), SpeedtestError> {
-        // Set NO_EMOJI env var if flag is passed (used by rating functions)
-        // Safe: single-threaded at startup, no async signal handlers
-        if self.args.no_emoji {
-            #[allow(unsafe_code)]
-            unsafe {
-                std::env::set_var("NO_EMOJI", "1");
-            }
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] for network failures, server selection errors,
+    /// or output formatting failures.
+    pub async fn run(&self) -> Result<(), Error> {
+        // NOTE: NO_EMOJI env var is now set in main.rs before the async
+        // runtime starts, eliminating the need for unsafe set_var here.
 
         // Show config path early-exit
         if self.args.show_config_path {
-            self.show_config_path();
+            Self::show_config_path();
             return Ok(());
         }
 
@@ -69,7 +74,7 @@ impl SpeedTestOrchestrator {
 
         // History display early-exit
         if self.args.history {
-            history::print_history()?;
+            history::show()?;
             return Ok(());
         }
 
@@ -105,8 +110,16 @@ impl SpeedTestOrchestrator {
             Self::print_server_info(&server);
         }
 
-        // Discover client IP
-        let client_ip = http::discover_client_ip(&self.client).await.ok();
+        // Discover client IP (non-fatal — continue even if discovery fails)
+        let client_ip = match http::discover_client_ip(&self.client).await {
+            Ok(ip) => Some(ip),
+            Err(e) => {
+                if is_verbose {
+                    eprintln!("Warning: Could not discover client IP: {e}");
+                }
+                None
+            }
+        };
 
         // Run ping test
         let (ping, jitter, packet_loss, ping_samples) =
@@ -135,10 +148,29 @@ impl SpeedTestOrchestrator {
             &ul_result,
             client_ip,
         );
+        result.phases = TestPhases {
+            ping: if self.config.no_download && self.config.no_upload {
+                PhaseResult::skipped("both bandwidth phases disabled")
+            } else {
+                PhaseResult::completed()
+            },
+            download: if self.config.no_download {
+                PhaseResult::skipped("disabled by user")
+            } else {
+                PhaseResult::completed()
+            },
+            upload: if self.config.no_upload {
+                PhaseResult::skipped("disabled by user")
+            } else {
+                PhaseResult::completed()
+            },
+        };
 
         // Save to history (unless --json or --csv)
         if !self.config.json && !self.config.csv {
-            history::save_result(&result).ok();
+            if let Err(e) = history::save_result(&result) {
+                eprintln!("Warning: Failed to save test result to history: {e}");
+            }
         }
 
         // Calculate total elapsed time
@@ -151,6 +183,7 @@ impl SpeedTestOrchestrator {
     }
 
     /// Whether verbose output should be shown.
+    #[must_use]
     pub fn is_verbose(&self) -> bool {
         use crate::cli::OutputFormatType;
         // Quiet mode suppresses all stderr output
@@ -177,11 +210,12 @@ impl SpeedTestOrchestrator {
     }
 
     /// Check if this is a simple/quiet mode — show minimal one-line progress.
+    #[must_use]
     pub fn is_simple_mode(&self) -> bool {
         #[allow(deprecated)]
         let simple = self.args.simple;
-        simple
-            || self.args.quiet
+        simple.unwrap_or(false)
+            || self.args.quiet.unwrap_or(false)
             || matches!(self.args.format, Some(crate::cli::OutputFormatType::Simple))
     }
 
@@ -224,16 +258,13 @@ impl SpeedTestOrchestrator {
         eprintln!();
     }
 
-    async fn fetch_and_filter_servers(
-        &self,
-        is_verbose: bool,
-    ) -> Result<Vec<Server>, SpeedtestError> {
+    async fn fetch_and_filter_servers(&self, is_verbose: bool) -> Result<Vec<Server>, Error> {
         let fetch_spinner = if is_verbose {
             Some(create_spinner("Finding servers..."))
         } else {
             None
         };
-        let mut servers = fetch_servers(&self.client).await?;
+        let mut servers = fetch(&self.client).await?;
         if let Some(ref pb) = fetch_spinner {
             finish_ok(pb, &format!("Found {} servers", servers.len()));
             eprintln!();
@@ -254,7 +285,7 @@ impl SpeedTestOrchestrator {
         }
 
         if servers.is_empty() {
-            return Err(SpeedtestError::ServerNotFound(
+            return Err(Error::ServerNotFound(
                 "No servers match your criteria. Try running without --server/--exclude filters, or use --list to see available servers.".to_string(),
             ));
         }
@@ -266,7 +297,7 @@ impl SpeedTestOrchestrator {
         &self,
         server: &Server,
         is_verbose: bool,
-    ) -> Result<(Option<f64>, Option<f64>, Option<f64>, Vec<f64>), SpeedtestError> {
+    ) -> Result<(Option<f64>, Option<f64>, Option<f64>, Vec<f64>), Error> {
         if self.config.no_download && self.config.no_upload {
             return Ok((None, None, None, Vec::new()));
         }
@@ -300,7 +331,7 @@ impl SpeedTestOrchestrator {
         &self,
         server: &Server,
         is_verbose: bool,
-    ) -> Result<TestRunResult, SpeedtestError> {
+    ) -> Result<TestRunResult, Error> {
         if self.config.no_download {
             return Ok(TestRunResult::default());
         }
@@ -311,7 +342,7 @@ impl SpeedTestOrchestrator {
             "Download",
             is_verbose,
             |progress| async {
-                download::download_test(&self.client, server, self.config.single, progress).await
+                download::run(&self.client, server, self.config.single, progress).await
             },
         )
         .await
@@ -321,7 +352,7 @@ impl SpeedTestOrchestrator {
         &self,
         server: &Server,
         is_verbose: bool,
-    ) -> Result<TestRunResult, SpeedtestError> {
+    ) -> Result<TestRunResult, Error> {
         if self.config.no_upload {
             return Ok(TestRunResult::default());
         }
@@ -332,7 +363,7 @@ impl SpeedTestOrchestrator {
             "Upload",
             is_verbose,
             |progress| async {
-                upload::upload_test(&self.client, server, self.config.single, progress).await
+                upload::run(&self.client, server, self.config.single, progress).await
             },
         )
         .await
@@ -344,7 +375,7 @@ impl SpeedTestOrchestrator {
         dl_result: &TestRunResult,
         ul_result: &TestRunResult,
         elapsed: std::time::Duration,
-    ) -> Result<(), SpeedtestError> {
+    ) -> Result<(), Error> {
         // Compute grades once and attach to result for JSON/machine-readable output
         let profile = crate::profiles::UserProfile::from_name(
             self.args.profile.as_deref().unwrap_or("power-user"),
@@ -395,13 +426,9 @@ impl SpeedTestOrchestrator {
         let nc = terminal::no_color();
 
         // Count total samples
-        let sample_count = result
-            .download_samples
-            .as_ref()
-            .map(|s| s.len())
-            .unwrap_or(0)
-            + result.upload_samples.as_ref().map(|s| s.len()).unwrap_or(0)
-            + result.ping_samples.as_ref().map(|s| s.len()).unwrap_or(0);
+        let sample_count = result.download_samples.as_ref().map_or(0, Vec::len)
+            + result.upload_samples.as_ref().map_or(0, Vec::len)
+            + result.ping_samples.as_ref().map_or(0, Vec::len);
 
         // Compute overall grade for reveal
         let profile = crate::profiles::UserProfile::from_name("power-user")
@@ -434,10 +461,7 @@ impl SpeedTestOrchestrator {
             ShellType::PowerShell => "_netspeed-cli.ps1",
             ShellType::Elvish => "netspeed-cli.elv",
         };
-        eprintln!(
-            "Shell completion for {:?} is available in the completions/ directory.",
-            shell
-        );
+        eprintln!("Shell completion for {shell:?} is available in the completions/ directory.");
         eprintln!("  File: {shell_name}");
         eprintln!("  Install: copy it to your shell's completion directory and reload.");
     }
@@ -517,7 +541,7 @@ impl SpeedTestOrchestrator {
     }
 
     /// Show the configuration file path and exit.
-    fn show_config_path(&self) {
+    fn show_config_path() {
         match crate::config::get_config_path_internal() {
             Some(path) => eprintln!("Configuration file: {}", path.display()),
             None => eprintln!("No configuration path available (directories crate returned None)."),
@@ -528,63 +552,63 @@ impl SpeedTestOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::CliArgs;
+    use crate::cli::Args;
     use clap::Parser;
 
     #[test]
     fn test_is_verbose_default() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        let args = Args::parse_from(["netspeed-cli"]);
+        let orch = Orchestrator::new(args).unwrap();
         assert!(orch.is_verbose());
     }
 
     #[test]
     fn test_is_verbose_simple() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--simple"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        let args = Args::parse_from(["netspeed-cli", "--simple"]);
+        let orch = Orchestrator::new(args).unwrap();
         assert!(!orch.is_verbose());
     }
 
     #[test]
     fn test_is_verbose_json() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--json"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        let args = Args::parse_from(["netspeed-cli", "--json"]);
+        let orch = Orchestrator::new(args).unwrap();
         assert!(!orch.is_verbose());
     }
 
     #[test]
     fn test_is_verbose_csv() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--csv"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        let args = Args::parse_from(["netspeed-cli", "--csv"]);
+        let orch = Orchestrator::new(args).unwrap();
         assert!(!orch.is_verbose());
     }
 
     #[test]
     fn test_is_verbose_list() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--list"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        let args = Args::parse_from(["netspeed-cli", "--list"]);
+        let orch = Orchestrator::new(args).unwrap();
         assert!(!orch.is_verbose());
     }
 
     #[test]
     fn test_orchestrator_creation() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let orch = SpeedTestOrchestrator::new(args);
+        let args = Args::parse_from(["netspeed-cli"]);
+        let orch = Orchestrator::new(args);
         assert!(orch.is_ok());
     }
 
     #[test]
     fn test_orchestrator_creation_default() {
         // Default args (no source IP) should always create successfully
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let orch = SpeedTestOrchestrator::new(args);
+        let args = Args::parse_from(["netspeed-cli"]);
+        let orch = Orchestrator::new(args);
         assert!(orch.is_ok());
     }
 
     #[test]
     fn test_dry_run_succeeds() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--dry-run"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
+        let args = Args::parse_from(["netspeed-cli", "--dry-run"]);
+        let orch = Orchestrator::new(args).unwrap();
         // run_dry_run should not panic
         orch.run_dry_run();
     }

@@ -54,6 +54,14 @@
         "mcp-server-fetch"
       ],
       "trust": true
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "trust": true
     }
   },
   "mcp": {
@@ -66,7 +74,8 @@
       "supabase",
       "chrome-devtools",
       "filesystem",
-      "fetch"
+      "fetch",
+      "playwright"
     ]
   },
   "$version": 3,

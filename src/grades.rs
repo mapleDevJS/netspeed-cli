@@ -11,7 +11,7 @@
 
 use crate::profiles::UserProfile;
 use crate::terminal;
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 
 /// Letter grade for connection quality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -31,6 +31,7 @@ pub enum LetterGrade {
 
 impl LetterGrade {
     /// Display string for the grade.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::APlus => "A+",
@@ -48,21 +49,21 @@ impl LetterGrade {
     }
 
     /// Color for the grade (green = good, red = bad).
+    #[must_use]
     pub fn color_str(&self, nc: bool, theme: Theme) -> String {
         let s = self.as_str();
         if nc {
             return format!("[{s}]");
         }
         match self {
-            Self::APlus | Self::A | Self::AMinus => ThemeColors::good(s, theme),
-            Self::BPlus | Self::B => ThemeColors::good(s, theme),
-            Self::BMinus | Self::CPlus | Self::C => ThemeColors::warn(s, theme),
-            Self::CMinus | Self::D => ThemeColors::warn(s, theme),
-            Self::F => ThemeColors::bad(s, theme),
+            Self::APlus | Self::A | Self::AMinus | Self::BPlus | Self::B => Colors::good(s, theme),
+            Self::BMinus | Self::CPlus | Self::C | Self::CMinus | Self::D => Colors::warn(s, theme),
+            Self::F => Colors::bad(s, theme),
         }
     }
 
     /// Emoji indicator for the grade.
+    #[must_use]
     pub fn emoji(&self) -> &'static str {
         if terminal::no_emoji() {
             return "";
@@ -77,6 +78,7 @@ impl LetterGrade {
     }
 
     /// Numeric score 0-100 for the grade.
+    #[must_use]
     pub fn score(&self) -> f64 {
         match self {
             Self::APlus => 100.0,
@@ -94,6 +96,7 @@ impl LetterGrade {
     }
 
     /// Human-readable description.
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             Self::APlus => "Exceptional",
@@ -113,6 +116,7 @@ impl LetterGrade {
 
 /// Grade a ping value (lower is better).
 /// Profile-aware thresholds.
+#[must_use]
 pub fn grade_ping(ping_ms: f64, profile: UserProfile) -> LetterGrade {
     let excellent = profile.excellent_ping_threshold();
     let good = excellent * 3.0;
@@ -136,6 +140,7 @@ pub fn grade_ping(ping_ms: f64, profile: UserProfile) -> LetterGrade {
 }
 
 /// Grade jitter value (lower is better).
+#[must_use]
 pub fn grade_jitter(jitter_ms: f64, profile: UserProfile) -> LetterGrade {
     let excellent = profile.excellent_jitter_threshold();
     let good = excellent * 3.0;
@@ -157,6 +162,7 @@ pub fn grade_jitter(jitter_ms: f64, profile: UserProfile) -> LetterGrade {
 }
 
 /// Grade download speed (higher is better).
+#[must_use]
 pub fn grade_download(speed_mbps: f64, profile: UserProfile) -> LetterGrade {
     let excellent = profile.excellent_speed_threshold();
     let good = excellent * 0.4;
@@ -178,6 +184,7 @@ pub fn grade_download(speed_mbps: f64, profile: UserProfile) -> LetterGrade {
 }
 
 /// Grade upload speed (higher is better).
+#[must_use]
 pub fn grade_upload(speed_mbps: f64, profile: UserProfile) -> LetterGrade {
     // Upload thresholds are typically 50% of download
     let excellent = profile.excellent_speed_threshold() * 0.5;
@@ -200,6 +207,7 @@ pub fn grade_upload(speed_mbps: f64, profile: UserProfile) -> LetterGrade {
 }
 
 /// Grade bufferbloat based on added latency under load.
+#[must_use]
 pub fn grade_bufferbloat(added_latency_ms: f64) -> LetterGrade {
     if added_latency_ms < 3.0 {
         LetterGrade::APlus
@@ -221,6 +229,7 @@ pub fn grade_bufferbloat(added_latency_ms: f64) -> LetterGrade {
 }
 
 /// Grade stability based on CV% (lower = more stable).
+#[must_use]
 pub fn grade_stability(cv_pct: f64) -> LetterGrade {
     if cv_pct < 3.0 {
         LetterGrade::APlus
@@ -238,6 +247,7 @@ pub fn grade_stability(cv_pct: f64) -> LetterGrade {
 }
 
 /// Compute overall connection grade from individual grades and profile weights.
+#[must_use]
 pub fn grade_overall(
     ping: Option<f64>,
     jitter: Option<f64>,
@@ -275,6 +285,7 @@ pub fn grade_overall(
 }
 
 /// Convert a numeric score (0-100) to a letter grade.
+#[must_use]
 pub fn score_to_grade(score: f64) -> LetterGrade {
     if score >= 97.0 {
         LetterGrade::APlus
@@ -302,6 +313,7 @@ pub fn score_to_grade(score: f64) -> LetterGrade {
 }
 
 /// Format a grade line with label, grade, and optional value.
+#[must_use]
 pub fn format_grade_line(
     label: &str,
     grade: LetterGrade,
@@ -314,19 +326,20 @@ pub fn format_grade_line(
     let value_str = value.map(|v| format!(" ({v})")).unwrap_or_default();
 
     if nc || terminal::no_emoji() {
-        format!("  {:>14}:   {grade_display}{value_str}", label)
+        format!("  {label:>14}:   {grade_display}{value_str}")
     } else {
-        format!("  {:>14}:   {emoji} {grade_display}{value_str}", label)
+        format!("  {label:>14}:   {emoji} {grade_display}{value_str}")
     }
 }
 
+#[must_use]
 pub fn grade_badge(grade: LetterGrade, nc: bool, theme: Theme) -> String {
     let emoji = grade.emoji();
     let grade_display = grade.color_str(nc, theme);
     if nc {
         format!("[{grade_display}]")
     } else if terminal::no_emoji() {
-        grade_display.to_string()
+        grade_display.clone()
     } else {
         format!("{emoji} {grade_display}")
     }

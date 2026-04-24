@@ -17,11 +17,11 @@
 mod helpers;
 mod render;
 
-pub use helpers::DashboardSummary;
+pub use helpers::Summary;
 
 use crate::formatter::grades;
 use crate::terminal;
-use crate::theme::ThemeColors;
+use crate::theme::Colors;
 use crate::types::TestResult;
 use owo_colors::OwoColorize;
 
@@ -35,10 +35,7 @@ use render::{
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
-pub fn format_dashboard(
-    result: &TestResult,
-    summary: &DashboardSummary,
-) -> Result<(), crate::error::SpeedtestError> {
+pub fn show(result: &TestResult, summary: &Summary) -> Result<(), crate::error::Error> {
     let nc = terminal::no_color();
     let theme = summary.theme;
     let dl_mbps = summary.dl_mbps;
@@ -73,7 +70,7 @@ pub fn format_dashboard(
             "{}  ·  {} {}",
             overall_grade.color_str(nc, theme),
             "Completed at:".dimmed(),
-            ThemeColors::muted(&result.timestamp, theme),
+            Colors::muted(&result.timestamp, theme),
         );
     }
     eprintln!();
@@ -86,10 +83,11 @@ mod tests {
     use super::*;
     use crate::profiles::UserProfile;
     use crate::theme::Theme;
-    use crate::types::ServerInfo;
+    use crate::types::{PhaseResult, ServerInfo, TestPhases};
 
     fn make_result() -> TestResult {
         TestResult {
+            status: "ok".to_string(),
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "TestServer".to_string(),
@@ -119,6 +117,11 @@ mod tests {
             download_grade: Some("B+".to_string()),
             upload_grade: Some("B".to_string()),
             connection_rating: Some("Good".to_string()),
+            phases: TestPhases {
+                ping: PhaseResult::completed(),
+                download: PhaseResult::completed(),
+                upload: PhaseResult::completed(),
+            },
         }
     }
 
@@ -153,7 +156,7 @@ mod tests {
     #[test]
     fn test_build_metrics_dashboard() {
         let result = make_result();
-        let summary = DashboardSummary {
+        let summary = Summary {
             dl_mbps: 150.0,
             dl_peak_mbps: 180.0,
             dl_bytes: 15_000_000,
@@ -193,7 +196,7 @@ mod tests {
     #[test]
     fn test_format_dashboard_integration() {
         let result = make_result();
-        let summary = DashboardSummary {
+        let summary = Summary {
             dl_mbps: 150.0,
             dl_peak_mbps: 180.0,
             dl_bytes: 15_000_000,
@@ -206,13 +209,13 @@ mod tests {
             profile: UserProfile::default(),
             theme: Theme::Dark,
         };
-        format_dashboard(&result, &summary).unwrap();
+        show(&result, &summary).unwrap();
     }
 
     #[test]
     fn test_format_dashboard_no_color() {
         let result = make_result();
-        let summary = DashboardSummary {
+        let summary = Summary {
             dl_mbps: 150.0,
             dl_peak_mbps: 180.0,
             dl_bytes: 15_000_000,
@@ -225,11 +228,13 @@ mod tests {
             profile: UserProfile::default(),
             theme: Theme::Dark,
         };
+        // SAFETY: This test runs single-threaded; no concurrent tokio tasks
+        // can race on the env var read/write.
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("NO_COLOR", "1");
         }
-        format_dashboard(&result, &summary).unwrap();
+        show(&result, &summary).unwrap();
         #[allow(unsafe_code)]
         unsafe {
             std::env::remove_var("NO_COLOR");

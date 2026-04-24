@@ -11,6 +11,11 @@ Command line interface for testing internet bandwidth using speedtest.net
 
 netspeed-cli is a Rust-based command line tool for testing your internet bandwidth using speedtest.net servers. It provides fast, accurate speed testing with detailed metrics including latency under load, peak speeds, jitter, and an overall connection quality rating.
 
+Runtime behavior highlights:
+- CLI configuration precedence is `CLI flags > config file > built-in defaults`.
+- Speedtest server URLs from the XML feed are normalized internally, so latency, download, and upload endpoints are derived from the same canonical server definition.
+- Corrupted local history files fail safely instead of being silently overwritten.
+
 ## Installation
 
 ### Homebrew (macOS/Linux) - Recommended
@@ -76,13 +81,13 @@ netspeed-cli --server 1234
 Output in JSON format:
 
 ```bash
-netspeed-cli --json
+netspeed-cli --format json
 ```
 
 Output in CSV format:
 
 ```bash
-netspeed-cli --csv
+netspeed-cli --format csv
 ```
 
 Test download speed only:
@@ -105,12 +110,12 @@ netspeed-cli --history
 | `--no-upload` | Skip upload test |
 | `--single` | Use single connection |
 | `--bytes` | Display values in bytes instead of bits |
-| `--simple` | Show minimal output |
+| `--simple` | Legacy alias for `--format simple` |
 | `--format TYPE` | Output format: `json`, `jsonl`, `csv`, `minimal`, `simple`, `compact`, `detailed`, `dashboard` (supersedes `--json`, `--csv`, `--simple`) |
-| `--csv` | Output in CSV format |
+| `--csv` | Legacy alias for `--format csv` |
 | `--csv-delimiter CHAR` | CSV delimiter character: `,`, `;`, `\|`, or tab (default: `,`) |
 | `--csv-header` | Include CSV header row |
-| `--json` | Output in JSON format |
+| `--json` | Legacy alias for `--format json` |
 | `--quiet` | Suppress all progress output (for cron jobs / CI) |
 | `--list` | List available servers |
 | `--server ID` | Test against specific server (can be used multiple times) |
@@ -159,32 +164,11 @@ Key metrics with quality ratings between simple and detailed:
   Total time: 5.3s
 ```
 
-### Detailed (Default)
-
-Full analysis with per-metric grades, stability metrics, and variance data.
-
-### Minimal
-
-Ultra-compact single line for status bars and scripts:
-```
-B+  450.2↓  120.5↑  12ms
-```
-  Upload:        50.45 Mb/s  ██████████████░░░░░░░░░░░░     (2.1s, 5.0 MB)
-  Peak:          60.00 Mb/s
-
-  ── History (recent tests) ───────────────────────────────
-  DL: ▃ ▅ ▄ ▇ █ ▆ ▅
-  UL: ▂ ▄ ▃ ▅ ▇ ▅ ▄
-  Apr 5  ⚡ 445.0↓ / 118.0↑ Mb/s
-  Apr 4  🟢 412.0↓ / 115.0↑ Mb/s
-  Apr 3  ⚡ 498.0↓ / 122.0↑ Mb/s
-
-  Tip: Use --list to see servers, --history for full history
-```
-
-Run with `netspeed-cli --format dashboard`.
-
 ### Detailed (default)
+
+Default full report with overall grading, latency metrics, transfer speeds, connection info, summary totals, total time, and completion timestamp.
+When available, it also includes packet loss, bufferbloat, latency under load, variance, and UL/DL ratio.
+Profile-driven extras such as transfer estimates, stability analysis, latency percentiles, and history comparison may be appended after the main report when the necessary data is available.
 
 ```
   TEST RESULTS
@@ -192,24 +176,29 @@ Run with `netspeed-cli --format dashboard`.
 
   Latency:        5.2 ms  (⚡ Excellent)
   Jitter:         1.3 ms
-  ──────────────────────────────
+  Packet Loss:    0.0%
+  Bufferbloat:    A (+7.2 ms)
   Download:     450.23 Mb/s  ████████████████████░░░░░░░░  (⚡ Excellent)
   Peak:         520.10 Mb/s
   Latency (load): 12.4 ms  +138% (significant)
+  Variance:     ±4.8% (stable)
   Upload:       120.45 Mb/s  ██████████████░░░░░░░░░░░░    (🟢 Good)
   Peak:         145.80 Mb/s
   Latency (load):  8.1 ms  +56% (significant)
-  ──────────────────────────────
-  Connection Info
+  Variance:     ±8.6% (variable)
+  UL/DL Ratio:  3.74x download-heavy
+
+  CONNECTION INFO
   Server:       Rogers (Toronto)
   Location:     CA  (12 km)
   Client IP:    192.168.1.1
-  ──────────────────────────────
-  Test Summary
+
+  TEST SUMMARY
   Download:     12.4 MB in 3.2s
   Upload:       4.1 MB in 2.1s
   Total:        16.5 MB in 5.3s
 
+  Total time: 5.3s
   Completed at: 2026-04-04T12:00:00Z
 ```
 
@@ -236,7 +225,12 @@ B+  450.2↓  120.5↑  12ms
 
 One-line JSON object:
 ```json
-{"server":{"id":"1234",...},"ping":5.2,"download":450230000,...}
+{"status":"ok","server":{"id":"1234",...},"ping":5.2,"download":450230000,"phases":{"ping":{"state":"completed"},"download":{"state":"completed"},"upload":{"state":"completed"}}}
+```
+
+Runtime failures in JSON mode also emit a JSON object with a stable error envelope and a non-zero exit code:
+```json
+{"status":"error","exit_code":69,"timestamp":"2026-04-18T12:00:00Z","error":{"code":"download_failed","category":"network","message":"Download test failed: all streams failed","suggestion":"Tip: Download may be blocked by a firewall or proxy.\n      Try with --single for a simpler test."}}
 ```
 
 ### JSONL
@@ -246,6 +240,9 @@ JSON Lines format - one JSON object per line, ideal for logging:
 {"server":{"id":"1234",...},"ping":5.2,"download":450230000,...}
 {"server":{"id":"1234",...},"ping":4.8,"download":445000000,...}
 ```
+
+On failure, JSONL emits a single error object line with the same schema as JSON mode.
+Successful JSON and JSONL payloads also include per-phase state so scripts can distinguish completed phases from user-skipped phases without inferring from missing metrics.
 
 ### CSV
 
@@ -284,6 +281,7 @@ Shows the maximum burst speed observed during each test phase, helping you under
 ### Test History
 
 Results are automatically saved and can be viewed with `--history`.
+Writes are atomic, the previous valid file is rotated to `history.json.bak`, and a corrupt primary file is preserved as `history.json.corrupt` before recovery from backup.
 
 ## Building from Source
 

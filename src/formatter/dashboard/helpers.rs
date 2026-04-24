@@ -18,7 +18,7 @@ use crate::formatter::grades;
 use crate::formatter::ratings;
 use crate::profiles::UserProfile;
 use crate::terminal;
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 use owo_colors::OwoColorize;
 
 #[allow(unused_imports)]
@@ -29,7 +29,7 @@ pub const LINE_WIDTH: usize = 60;
 // ── Summary struct ──────────────────────────────────────────────────────────
 
 /// Summary data extracted from test runs for dashboard display.
-pub struct DashboardSummary {
+pub struct Summary {
     pub dl_mbps: f64,
     pub dl_peak_mbps: f64,
     pub dl_bytes: u64,
@@ -80,16 +80,14 @@ pub fn severity_icon(headroom_pct: f64, is_met: bool) -> (&'static str, &'static
         } else {
             ("[LOW]", "red")
         }
+    } else if !is_met {
+        ("🔴", "red")
+    } else if headroom_pct > 50.0 {
+        ("✅", "green")
+    } else if headroom_pct >= 20.0 {
+        ("⚠️", "yellow")
     } else {
-        if !is_met {
-            ("🔴", "red")
-        } else if headroom_pct > 50.0 {
-            ("✅", "green")
-        } else if headroom_pct >= 20.0 {
-            ("⚠️", "yellow")
-        } else {
-            ("🔴", "red")
-        }
+        ("🔴", "red")
     }
 }
 
@@ -110,18 +108,16 @@ pub fn stability_label(cv_pct: f64, nc: bool, theme: Theme) -> (String, String) 
     if nc {
         (
             format!("[{}]", grade.as_str()),
-            format!("±{:.0}% {}", cv_pct, icon),
+            format!("±{cv_pct:.0}% {icon}"),
         )
     } else {
         let grade_display = grade.color_str(nc, theme);
         let icon_display = match color {
-            "green" => ThemeColors::good(icon, theme),
-            "bright_green" => ThemeColors::good(icon, theme),
-            "yellow" => ThemeColors::warn(icon, theme),
-            "bright_yellow" => ThemeColors::warn(icon, theme),
-            _ => ThemeColors::bad(icon, theme),
+            "green" | "bright_green" => Colors::good(icon, theme),
+            "yellow" | "bright_yellow" => Colors::warn(icon, theme),
+            _ => Colors::bad(icon, theme),
         };
-        (grade_display, format!("±{:.0}% {}", cv_pct, icon_display))
+        (grade_display, format!("±{cv_pct:.0}% {icon_display}"))
     }
 }
 

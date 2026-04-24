@@ -9,8 +9,8 @@
 //! 4. Stop latency monitoring
 //! 5. Aggregate results
 
-use crate::error::SpeedtestError;
-use crate::progress::SpeedProgress;
+use crate::error::Error;
+use crate::progress::Tracker;
 use crate::servers::measure_latency_under_load;
 use crate::types::Server;
 use std::sync::atomic::AtomicBool;
@@ -65,22 +65,22 @@ impl Default for TestRunResult {
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError`] if the test fails.
+/// Returns [`Error`] if the test fails.
 pub async fn run_bandwidth_test<F, Fut>(
     client: reqwest::Client,
     server: &Server,
     test_label: &str,
     is_verbose: bool,
     test_fn: F,
-) -> Result<TestRunResult, SpeedtestError>
+) -> Result<TestRunResult, Error>
 where
-    F: FnOnce(Arc<SpeedProgress>) -> Fut,
-    Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), SpeedtestError>>,
+    F: FnOnce(Arc<Tracker>) -> Fut,
+    Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), Error>>,
 {
     let progress = Arc::new(if is_verbose {
-        SpeedProgress::new(test_label)
+        Tracker::new(test_label)
     } else {
-        SpeedProgress::with_target(test_label, indicatif::ProgressDrawTarget::hidden())
+        Tracker::with_target(test_label, indicatif::ProgressDrawTarget::hidden())
     });
 
     // Set up latency-under-load monitoring
@@ -107,10 +107,11 @@ where
     let latency_under_load = {
         let lock = latency_samples
             .lock()
-            .map_err(|e| SpeedtestError::context(format!("latency samples lock poisoned: {e}")))?;
+            .map_err(|e| Error::context(format!("latency samples lock poisoned: {e}")))?;
         if lock.is_empty() {
             None
         } else {
+            // Safe: latency sample count is small (≤100), well under 2^53.
             Some(lock.iter().sum::<f64>() / lock.len() as f64)
         }
     };
@@ -139,17 +140,17 @@ mod tests {
             speed_samples: vec![100_000_000.0],
             latency_under_load: Some(15.0),
         };
-        assert_eq!(result.avg_bps, 100_000_000.0);
-        assert_eq!(result.peak_bps, 120_000_000.0);
+        assert!((result.avg_bps - 100_000_000.0).abs() < f64::EPSILON);
+        assert!((result.peak_bps - 120_000_000.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_test_run_result_default_values() {
         let result = TestRunResult::default();
-        assert_eq!(result.avg_bps, 0.0);
-        assert_eq!(result.peak_bps, 0.0);
+        assert!(result.avg_bps.abs() < f64::EPSILON);
+        assert!(result.peak_bps.abs() < f64::EPSILON);
         assert_eq!(result.total_bytes, 0);
-        assert_eq!(result.duration_secs, 0.0);
+        assert!(result.duration_secs.abs() < f64::EPSILON);
         assert!(result.speed_samples.is_empty());
         assert!(result.latency_under_load.is_none());
     }

@@ -14,6 +14,12 @@ test:
 test-release:
     cargo test --release --verbose
 
+# Run the socket-binding integration suite explicitly
+test-socket:
+    cargo test --test mock_network_test -- --ignored --nocapture
+    cargo test --test integration_upload_fetch_test -- --ignored --nocapture
+    cargo test --test e2e_test -- --ignored --nocapture
+
 # Run linter checks (formatting + clippy)
 lint:
     cargo fmt -- --check
@@ -30,8 +36,18 @@ build:
 
 # Full release verification
 release:
+    cargo fmt -- --check
+    cargo clippy --all-targets --all-features -- -D warnings
     cargo test --verbose
+    cargo test --doc
     cargo build --release
+
+# CI-quality gate used locally and in automation
+qa:
+    cargo fmt -- --check
+    cargo clippy --all-targets --all-features -- -D warnings
+    cargo test --verbose
+    cargo test --doc
 
 # Run security audit
 audit:
@@ -78,6 +94,10 @@ run *args:
 bench:
     cargo bench
 
-# Run benchmarks with HTML report
+# Compile benchmark targets without executing them (CI-safe smoke check)
+bench-check:
+    cargo bench --no-run
+
+# Run benchmarks with Criterion reports
 bench-report:
-    cargo bench -- --output-format criterion
+    cargo bench

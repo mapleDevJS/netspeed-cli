@@ -13,10 +13,10 @@
 //! - CLI arguments
 //! - Resolved output format
 
-use crate::cli::CliArgs;
+use crate::cli::Args;
 use crate::config::Config;
 use crate::formatter::OutputFormat;
-use crate::http::HttpSettings;
+use crate::http::Settings;
 use reqwest::Client;
 
 /// Configuration container for orchestrator dependencies.
@@ -29,7 +29,7 @@ pub struct OrchestratorConfig {
     /// Parsed configuration (CLI + config file + defaults)
     pub config: Config,
     /// Original CLI arguments
-    pub args: CliArgs,
+    pub args: Args,
     /// Resolved output format (Strategy pattern)
     pub output_format: OutputFormat,
     /// Resolved user profile for grading
@@ -42,13 +42,14 @@ impl OrchestratorConfig {
     /// # Errors
     ///
     /// Returns error if HTTP client creation fails or config is invalid.
-    pub fn from_args(args: CliArgs) -> Result<Self, crate::error::SpeedtestError> {
+    pub fn from_args(args: Args) -> Result<Self, crate::error::Error> {
         let config = Config::from_args(&args);
 
-        let http_settings = HttpSettings {
+        let http_settings = Settings {
             timeout_secs: config.timeout,
             source_ip: config.source.clone(),
-            user_agent: HttpSettings::default().user_agent,
+            user_agent: Settings::default().user_agent,
+            retry_enabled: true,
         };
         let client = crate::http::create_client(&http_settings)?;
 
@@ -79,19 +80,19 @@ impl OrchestratorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::CliArgs;
+    use crate::cli::Args;
     use clap::Parser;
 
     #[test]
     fn test_orchestrator_config_creation() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
+        let args = Args::parse_from(["netspeed-cli"]);
         let config = OrchestratorConfig::from_args(args);
         assert!(config.is_ok());
     }
 
     #[test]
     fn test_orchestrator_config_default_profile() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
+        let args = Args::parse_from(["netspeed-cli"]);
         let config = OrchestratorConfig::from_args(args).unwrap();
         // Default profile should be PowerUser
         assert_eq!(config.profile, crate::profiles::UserProfile::PowerUser);

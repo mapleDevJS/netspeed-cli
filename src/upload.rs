@@ -7,24 +7,25 @@
 //! - Real-time progress tracking with speed calculation
 //! - Peak speed detection through periodic sampling
 
-use crate::bandwidth_loop::BandwidthLoopState;
-use crate::common;
-use crate::error::SpeedtestError;
-use crate::progress::SpeedProgress;
-use crate::terminal;
+use crate::bandwidth_loop::run_concurrent_streams;
+use crate::endpoints::ServerEndpoints;
+use crate::error::Error;
+use crate::progress::Tracker;
+use crate::test_config::TestConfig;
 use crate::types::Server;
-use owo_colors::OwoColorize;
 use reqwest::Client;
 use std::sync::Arc;
 
 /// Build upload URL
 #[must_use]
 pub fn build_upload_url(server_url: &str) -> String {
-    format!("{server_url}/upload")
+    ServerEndpoints::from_server_url(server_url)
+        .upload()
+        .to_string()
 }
 
-/// Deterministic upload payload: byte[i] = i % 256.
-/// Initialized once via LazyLock — Bytes-backed for zero-copy sharing.
+/// Deterministic upload payload: byte\[i\] = i % 256.
+/// Initialized once via `LazyLock` — Bytes-backed for zero-copy sharing.
 static UPLOAD_PAYLOAD: std::sync::LazyLock<bytes::Bytes> = std::sync::LazyLock::new(|| {
     let mut data = vec![0u8; 200_000];
     for (i, byte) in data.iter_mut().enumerate() {
@@ -44,9 +45,20 @@ fn generate_upload_data(size: usize) -> Vec<u8> {
 }
 
 /// Number of upload rounds per stream (each round uploads a chunk of test data).
+///
+/// Deprecated: Use `TestConfig::default().upload_rounds` instead.
+#[deprecated(since = "0.9.0", note = "Use TestConfig::default().upload_rounds")]
+#[allow(dead_code)]
 const UPLOAD_TEST_ROUNDS: usize = 4;
 
 /// Estimated total bytes for progress bar initialization.
+///
+/// Deprecated: Use `TestConfig::default().estimated_upload_bytes` instead.
+#[deprecated(
+    since = "0.9.0",
+    note = "Use TestConfig::default().estimated_upload_bytes"
+)]
+#[allow(dead_code)]
 const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
 
 /// Run upload bandwidth test against the given server.
@@ -55,106 +67,100 @@ const ESTIMATED_UPLOAD_BYTES: u64 = 4_000_000; // 4 MB estimate
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::NetworkError`] if all upload streams fail.
-pub async fn upload_test(
+/// Returns [`Error::NetworkError`] if all upload streams fail.
+pub async fn run(
     client: &Client,
     server: &Server,
     single: bool,
-    progress: Arc<SpeedProgress>,
-) -> Result<(f64, f64, u64, Vec<f64>), SpeedtestError> {
-    let concurrent_uploads = common::determine_stream_count(single);
-    let state = Arc::new(BandwidthLoopState::new(ESTIMATED_UPLOAD_BYTES, progress));
+    progress: Arc<Tracker>,
+) -> Result<(f64, f64, u64, Vec<f64>), Error> {
+    let config = TestConfig::default();
+    let stream_count = TestConfig::stream_count_for(single);
     let upload_data: bytes::Bytes = (*UPLOAD_PAYLOAD).clone();
 
-    let mut handles = Vec::new();
+    let result = run_concurrent_streams(
+        config.estimated_upload_bytes,
+        stream_count,
+        progress,
+        "upload",
+        |_, state, sample_interval| {
+            let client = client.clone();
+            let server_url = Arc::new(server.url.clone());
+            let data = Arc::new(upload_data.clone());
+            tokio::spawn(async move {
+                for _ in 0..config.upload_rounds {
+                    let upload_url = build_upload_url(&server_url);
 
-    for _ in 0..concurrent_uploads {
-        let client = client.clone();
-        let server_url = server.url.clone();
-        let data = upload_data.clone();
-        let state = Arc::clone(&state);
+                    let response = client
+                        .post(&upload_url)
+                        .body((*data).clone())
+                        .send()
+                        .await
+                        .map_err(Error::UploadTest)?;
 
-        let handle = tokio::spawn(async move {
-            let mut uploaded_bytes = 0u64;
-
-            for _ in 0..UPLOAD_TEST_ROUNDS {
-                let upload_url = build_upload_url(&server_url);
-
-                if let Ok(response) = client.post(&upload_url).body(data.clone()).send().await {
-                    if response.status().is_success() {
-                        let chunk = u64::try_from(data.len()).unwrap_or(u64::MAX);
-                        uploaded_bytes += chunk;
-                        state.record_bytes(chunk);
+                    if !response.status().is_success() {
+                        return Err(Error::UploadFailure(format!(
+                            "server returned {} for {upload_url}",
+                            response.status()
+                        )));
                     }
+
+                    let chunk = u64::try_from(data.len()).unwrap_or(u64::MAX);
+                    state.record_bytes(chunk, sample_interval);
                 }
-            }
+                Ok(())
+            })
+        },
+    )
+    .await?;
 
-            uploaded_bytes
-        });
-
-        handles.push(handle);
-    }
-
-    // Collect results — log any task panics so failures aren't silently swallowed.
-    // Bytes are already counted via atomic counters, so we don't need the return values.
-    for (i, handle) in handles.into_iter().enumerate() {
-        if let Err(e) = handle.await {
-            let msg = format!("Warning: upload task {i} failed: {e}");
-            if terminal::no_color() {
-                eprintln!("\n{msg}");
-            } else {
-                eprintln!("\n{}", msg.yellow().bold());
-            }
-        }
-    }
-
-    let final_result = state.finish();
     Ok((
-        final_result.avg_bps,
-        final_result.peak_bps,
-        final_result.total_bytes,
-        final_result.speed_samples,
+        result.avg_bps,
+        result.peak_bps,
+        result.total_bytes,
+        result.speed_samples,
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::common;
+    use crate::test_config::TestConfig;
 
     use super::*;
 
     #[test]
     fn test_upload_bandwidth_calculation() {
         let result = common::calculate_bandwidth(1_000_000, 2.0);
-        assert_eq!(result, 4_000_000.0);
+        assert!((result - 4_000_000.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_upload_bandwidth_zero_elapsed() {
         let result = common::calculate_bandwidth(1_000_000, 0.0);
-        assert_eq!(result, 0.0);
+        assert!(result.abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_upload_concurrent_count_single() {
-        assert_eq!(common::determine_stream_count(true), 1);
+        assert_eq!(TestConfig::stream_count_for(true), 1);
     }
 
     #[test]
     fn test_upload_concurrent_count_multiple() {
-        assert_eq!(common::determine_stream_count(false), 4);
+        assert_eq!(TestConfig::stream_count_for(false), 4);
     }
 
     #[test]
     fn test_upload_url_generation() {
         let url = build_upload_url("http://server.example.com");
-        assert!(url.ends_with("/upload"));
+        assert!(url.ends_with("/upload.php"));
     }
 
     #[test]
     fn test_upload_url_generation_full_path() {
-        let url = build_upload_url("http://server.example.com/speedtest");
-        assert_eq!(url, "http://server.example.com/speedtest/upload");
+        let url = build_upload_url("http://server.example.com/speedtest/upload.php");
+        assert_eq!(url, "http://server.example.com/speedtest/upload.php");
     }
 
     #[test]
@@ -188,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_upload_data_size_constant() {
-        // Verify the upload data size used in upload_test (200KB)
+        // Verify the upload data size used in run (200KB)
         let data = generate_upload_data(200_000);
         assert_eq!(data.len(), 200_000);
     }

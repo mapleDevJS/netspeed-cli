@@ -23,14 +23,46 @@ _netspeed-cli() {
 
     case "${cmd}" in
         netspeed__cli)
-            opts="-h -V --no-download --no-upload --single --bytes --simple --csv --csv-delimiter --csv-header --json --format --list --server --exclude --source --timeout --generate-completion --history --quiet --dry-run --no-emoji --minimal --profile --theme --show-config-path --help --version"
+            opts="-h -V --no-download --no-upload --single --bytes --simple --csv --csv-delimiter --csv-header --json --format --list --server --exclude --source --timeout --generate-completion --history --quiet --dry-run --no-emoji --minimal --profile --theme --show-config-path --strict-config --help --version"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --no-download)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --no-upload)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --single)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --bytes)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --simple)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --csv)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
                 --csv-delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --csv-header)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --json)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
                     return 0
                     ;;
                 --format)
@@ -57,12 +89,24 @@ _netspeed-cli() {
                     COMPREPLY=($(compgen -W "bash zsh fish powershell elvish" -- "${cur}"))
                     return 0
                     ;;
+                --quiet)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --minimal)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
                 --profile)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --theme)
                     COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --strict-config)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
                     return 0
                     ;;
                 *)

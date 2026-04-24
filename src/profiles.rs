@@ -16,7 +16,7 @@ pub enum UserProfile {
     PowerUser,
     /// Online gamers focused on latency, jitter, and bufferbloat.
     Gamer,
-    /// Content consumers (Netflix, YouTube, etc.) focused on download speed.
+    /// Content consumers (Netflix, `YouTube`, etc.) focused on download speed.
     Streamer,
     /// Work-from-home professionals focused on upload and stability.
     RemoteWorker,
@@ -26,6 +26,7 @@ pub enum UserProfile {
 
 impl UserProfile {
     /// Get profile from string name (case-insensitive).
+    #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "power-user" | "poweruser" => Some(Self::PowerUser),
@@ -38,6 +39,7 @@ impl UserProfile {
     }
 
     /// CLI-friendly name for the profile.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Self::PowerUser => "power-user",
@@ -49,6 +51,7 @@ impl UserProfile {
     }
 
     /// Display name with emoji for headers.
+    #[must_use]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::PowerUser => "⚙️ Power User",
@@ -60,6 +63,7 @@ impl UserProfile {
     }
 
     /// Description for help text.
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             Self::PowerUser => "All metrics, historical trends, percentiles, stability analysis",
@@ -73,7 +77,8 @@ impl UserProfile {
     }
 
     /// Scoring weights for overall connection rating (ping, jitter, download, upload).
-    /// Returns (ping_weight, jitter_weight, download_weight, upload_weight).
+    /// Returns (`ping_weight`, `jitter_weight`, `download_weight`, `upload_weight`).
+    #[must_use]
     pub fn scoring_weights(&self) -> (f64, f64, f64, f64) {
         match self {
             Self::PowerUser => (0.25, 0.20, 0.30, 0.25), // Balanced
@@ -86,84 +91,94 @@ impl UserProfile {
 
     /// Speed rating thresholds for "Excellent" (in Mbps).
     /// Lower values = easier to achieve.
+    #[must_use]
     pub fn excellent_speed_threshold(&self) -> f64 {
         match self {
             Self::PowerUser => 500.0,
-            Self::Gamer => 100.0,    // Gamers don't need massive bandwidth
+            Self::Gamer | Self::RemoteWorker => 100.0, // Gamers/remote workers don't need massive bandwidth
             Self::Streamer => 200.0, // 4K streaming needs ~50 Mbps, 200 gives headroom
-            Self::RemoteWorker => 100.0,
             Self::Casual => 50.0,
         }
     }
 
     /// Ping rating thresholds for "Excellent" (in ms).
+    #[must_use]
     pub fn excellent_ping_threshold(&self) -> f64 {
         match self {
             Self::PowerUser => 10.0,
-            Self::Gamer => 5.0,     // Gamers need ultra-low latency
-            Self::Streamer => 30.0, // Streaming buffers, so higher ping is OK
+            Self::Gamer => 5.0, // Gamers need ultra-low latency
             Self::RemoteWorker => 20.0,
-            Self::Casual => 30.0,
+            Self::Streamer | Self::Casual => 30.0, // Streaming buffers / casual users tolerate higher ping
         }
     }
 
     /// Jitter rating thresholds for "Excellent" (in ms).
+    #[must_use]
     pub fn excellent_jitter_threshold(&self) -> f64 {
         match self {
             Self::PowerUser => 2.0,
             Self::Gamer => 1.0, // Gamers need consistent latency
-            Self::Streamer => 5.0,
             Self::RemoteWorker => 3.0,
-            Self::Casual => 5.0,
+            Self::Streamer | Self::Casual => 5.0,
         }
     }
 
     /// Whether to show detailed latency section.
+    #[must_use]
     pub fn show_latency_details(&self) -> bool {
         !matches!(self, Self::Casual)
     }
 
     /// Whether to show bufferbloat grade.
+    #[must_use]
     pub fn show_bufferbloat(&self) -> bool {
         matches!(self, Self::PowerUser | Self::Gamer)
     }
 
     /// Whether to show stability analysis (CV%).
+    #[must_use]
     pub fn show_stability(&self) -> bool {
         matches!(self, Self::PowerUser | Self::RemoteWorker)
     }
 
     /// Whether to show latency percentiles.
+    #[must_use]
     pub fn show_percentiles(&self) -> bool {
         matches!(self, Self::PowerUser)
     }
 
     /// Whether to show usage check targets.
+    #[must_use]
     pub fn show_usage_check(&self) -> bool {
         !matches!(self, Self::Casual)
     }
 
     /// Whether to show download time estimates.
+    #[must_use]
     pub fn show_estimates(&self) -> bool {
         matches!(self, Self::PowerUser | Self::Casual)
     }
 
     /// Whether to show historical comparison.
+    #[must_use]
     pub fn show_history(&self) -> bool {
         matches!(self, Self::PowerUser | Self::RemoteWorker)
     }
 
     /// Whether to show UL/DL ratio.
+    #[must_use]
     pub fn show_ul_dl_ratio(&self) -> bool {
         matches!(self, Self::PowerUser | Self::RemoteWorker)
     }
 
     /// Whether to show peak speeds.
+    #[must_use]
     pub fn show_peaks(&self) -> bool {
         !matches!(self, Self::Casual)
     }
 
     /// Whether to show latency under load.
+    #[must_use]
     pub fn show_latency_under_load(&self) -> bool {
         matches!(self, Self::PowerUser | Self::Gamer)
     }
@@ -177,6 +192,7 @@ pub struct UsageTarget {
 }
 
 /// Get usage check targets for a profile.
+#[must_use]
 pub fn profile_usage_targets(profile: UserProfile) -> Vec<UsageTarget> {
     match profile {
         UserProfile::Gamer => vec![
@@ -344,9 +360,9 @@ mod tests {
             UserProfile::RemoteWorker,
             UserProfile::Casual,
         ] {
-            let (p, j, d, u) = profile.scoring_weights();
+            let (ping_w, jitter_w, dl_w, ul_w) = profile.scoring_weights();
             assert!(
-                (p + j + d + u - 1.0).abs() < 0.01,
+                (ping_w + jitter_w + dl_w + ul_w - 1.0).abs() < 0.01,
                 "Weights should sum to ~1.0 for {profile:?}"
             );
         }
@@ -354,50 +370,56 @@ mod tests {
 
     #[test]
     fn test_gamer_profile_priorities() {
-        let g = UserProfile::Gamer;
-        let (p, j, d, u) = g.scoring_weights();
-        assert!(p > d, "Gamer: ping should weight more than download");
-        assert!(j > u, "Gamer: jitter should weight more than upload");
-        assert_eq!(g.excellent_ping_threshold(), 5.0);
-        assert!(g.show_bufferbloat());
+        let gamer = UserProfile::Gamer;
+        let (ping_w, jitter_w, dl_w, ul_w) = gamer.scoring_weights();
+        assert!(
+            ping_w > dl_w,
+            "Gamer: ping should weight more than download"
+        );
+        assert!(
+            jitter_w > ul_w,
+            "Gamer: jitter should weight more than upload"
+        );
+        assert!((gamer.excellent_ping_threshold() - 5.0).abs() < f64::EPSILON);
+        assert!(gamer.show_bufferbloat());
     }
 
     #[test]
     fn test_streamer_profile_priorities() {
-        let s = UserProfile::Streamer;
-        let (_, _, d, _) = s.scoring_weights();
-        assert!(d >= 0.5, "Streamer: download should have highest weight");
-        assert!(s.show_usage_check());
+        let streamer = UserProfile::Streamer;
+        let (_, _, dl_w, _) = streamer.scoring_weights();
+        assert!(dl_w >= 0.5, "Streamer: download should have highest weight");
+        assert!(streamer.show_usage_check());
     }
 
     #[test]
     fn test_remote_worker_profile_priorities() {
-        let r = UserProfile::RemoteWorker;
-        let (_, _, _, u) = r.scoring_weights();
-        assert!(u >= 0.35, "RemoteWorker: upload should have high weight");
-        assert!(r.show_stability());
-        assert!(r.show_ul_dl_ratio());
+        let remote_worker = UserProfile::RemoteWorker;
+        let (_, _, _, ul_w) = remote_worker.scoring_weights();
+        assert!(ul_w >= 0.35, "RemoteWorker: upload should have high weight");
+        assert!(remote_worker.show_stability());
+        assert!(remote_worker.show_ul_dl_ratio());
     }
 
     #[test]
     fn test_casual_profile_minimal() {
-        let c = UserProfile::Casual;
-        assert!(!c.show_latency_details());
-        assert!(!c.show_bufferbloat());
-        assert!(!c.show_stability());
-        assert!(!c.show_percentiles());
-        assert!(!c.show_history());
-        assert!(c.show_estimates());
+        let casual = UserProfile::Casual;
+        assert!(!casual.show_latency_details());
+        assert!(!casual.show_bufferbloat());
+        assert!(!casual.show_stability());
+        assert!(!casual.show_percentiles());
+        assert!(!casual.show_history());
+        assert!(casual.show_estimates());
     }
 
     #[test]
     fn test_power_user_shows_all() {
-        let p = UserProfile::PowerUser;
-        assert!(p.show_latency_details());
-        assert!(p.show_bufferbloat());
-        assert!(p.show_stability());
-        assert!(p.show_percentiles());
-        assert!(p.show_history());
+        let power_user = UserProfile::PowerUser;
+        assert!(power_user.show_latency_details());
+        assert!(power_user.show_bufferbloat());
+        assert!(power_user.show_stability());
+        assert!(power_user.show_percentiles());
+        assert!(power_user.show_history());
     }
 
     #[test]

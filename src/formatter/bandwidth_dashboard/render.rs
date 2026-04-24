@@ -10,7 +10,7 @@ use owo_colors::OwoColorize;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::terminal;
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 
 use super::scenarios::{
     CapacityLevel, ResponsiveLayout, ScenarioCategory, ScenarioStatus, BANDWIDTH_WIDTH,
@@ -21,6 +21,7 @@ use super::scenarios::{
 
 /// Get bar color based on usage percentage (0-100).
 /// Returns ANSI color specification for gradients.
+#[must_use]
 pub fn bar_color_by_usage(usage_pct: f64, nc: bool) -> Box<dyn Fn(&str) -> String> {
     if nc {
         Box::new(|s: &str| s.to_string())
@@ -37,30 +38,27 @@ pub fn bar_color_by_usage(usage_pct: f64, nc: bool) -> Box<dyn Fn(&str) -> Strin
 }
 
 /// Get capacity badge color and symbol.
+#[must_use]
 pub fn capacity_badge_style(level: CapacityLevel, nc: bool, concurrent: u32) -> String {
     if nc {
         match level {
-            CapacityLevel::Optimal => format!("{:>3}x OK", concurrent),
-            CapacityLevel::Moderate => format!("{:>3}x --", concurrent),
-            CapacityLevel::Limited => format!("{:>3}x !", concurrent),
+            CapacityLevel::Optimal => format!("{concurrent:>3}x OK"),
+            CapacityLevel::Moderate => format!("{concurrent:>3}x --"),
+            CapacityLevel::Limited => format!("{concurrent:>3}x !"),
             CapacityLevel::Exceeded => "FAIL".to_string(),
         }
     } else {
         match level {
             CapacityLevel::Optimal => {
-                format!("{} {}", format!("{:>3}x", concurrent).dimmed(), "✓".green())
+                format!("{} {}", format!("{concurrent:>3}x").dimmed(), "✓".green())
             }
             CapacityLevel::Moderate => {
-                format!(
-                    "{} {}",
-                    format!("{:>3}x", concurrent).yellow(),
-                    "●".yellow()
-                )
+                format!("{} {}", format!("{concurrent:>3}x").yellow(), "●".yellow())
             }
             CapacityLevel::Limited => {
                 format!(
                     "{} {}",
-                    format!("{:>3}x", concurrent).bright_yellow(),
+                    format!("{concurrent:>3}x").bright_yellow(),
                     "⚠".bright_yellow()
                 )
             }
@@ -78,12 +76,16 @@ pub fn capacity_badge_style(level: CapacityLevel, nc: bool, concurrent: u32) -> 
 /// * `bar_width` — Desired bar width in characters
 /// * `nc` — No-color mode flag
 /// * `minimal` — ASCII-only mode flag
+#[must_use]
 pub fn render_progress_bar(usage_pct: f64, bar_width: usize, nc: bool, minimal: bool) -> String {
     if bar_width == 0 {
         return String::new();
     }
 
-    let fill_count = ((usage_pct / 100.0) * bar_width as f64).round() as usize;
+    // Safe: usage_pct/100 is 0..1, bar_width is small (≤200), result fits usize.
+    let fill_count = ((usage_pct / 100.0) * bar_width as f64)
+        .round()
+        .clamp(0.0, usize::MAX as f64) as usize;
     let empty_count = bar_width.saturating_sub(fill_count);
 
     if minimal || nc {
@@ -98,11 +100,11 @@ pub fn render_progress_bar(usage_pct: f64, bar_width: usize, nc: bool, minimal: 
             ""
         };
         let bar = if fill_count > 0 && fill_count < bar_width {
-            format!("[{}>{}]", fill, empty)
+            format!("[{fill}>{empty}]")
         } else if fill_count == bar_width {
-            format!("[{}]", fill)
+            format!("[{fill}]")
         } else {
-            format!("[{}]", empty)
+            format!("[{empty}]")
         };
         format!("{bar}{severity}")
     } else {
@@ -110,8 +112,9 @@ pub fn render_progress_bar(usage_pct: f64, bar_width: usize, nc: bool, minimal: 
         let color_fn = bar_color_by_usage(usage_pct, nc);
 
         // Check for fractional fill (e.g., 4.7 → 4 full + 1 partial)
+        // Safe: usage_pct/100 is 0..1, bar_width is small (≤200).
         let exact_fill = (usage_pct / 100.0) * bar_width as f64;
-        let full_blocks = exact_fill.floor() as usize;
+        let full_blocks = exact_fill.floor().clamp(0.0, usize::MAX as f64) as usize;
         let fractional = exact_fill - full_blocks as f64;
 
         let mut result = String::with_capacity(bar_width);
@@ -145,6 +148,7 @@ pub fn render_progress_bar(usage_pct: f64, bar_width: usize, nc: bool, minimal: 
 // ── Icon Handling ────────────────────────────────────────────────────────────
 
 /// Get icon with guaranteed 2-character width padding.
+#[must_use]
 pub fn get_padded_icon(icon: &str, _nc: bool, minimal: bool) -> String {
     if minimal || terminal::no_emoji() {
         // ASCII fallback — use 2-char symbols
@@ -163,10 +167,7 @@ pub fn get_padded_icon(icon: &str, _nc: bool, minimal: bool) -> String {
             "👨\u{200d}👩\u{200d}👧\u{200d}👦" => "F4".to_string(),
             "🎬" => "8K".to_string(),
             "🥽" => "VR".to_string(),
-            "💬" => "  ".to_string(),
-            "🏠" => "  ".to_string(),
-            "💼" => "  ".to_string(),
-            "🚀" => "  ".to_string(),
+            "💬" | "🏠" | "💼" | "🚀" => "  ".to_string(),
             _ => "??".to_string(),
         }
     } else {
@@ -182,7 +183,8 @@ pub fn get_padded_icon(icon: &str, _nc: bool, minimal: bool) -> String {
 
 // ── Name Truncation ──────────────────────────────────────────────────────────
 
-/// Truncate name to max_width with ellipsis, respecting Unicode width.
+/// Truncate name to `max_width` with ellipsis, respecting Unicode width.
+#[must_use]
 pub fn truncate_name(name: &str, max_width: usize) -> String {
     if name.width() <= max_width {
         return name.to_string();
@@ -210,6 +212,7 @@ pub fn truncate_name(name: &str, max_width: usize) -> String {
 // ── Row Rendering ────────────────────────────────────────────────────────────
 
 /// Render a single scenario row in expanded/standard mode.
+#[must_use]
 pub fn render_scenario_row_expanded(
     status: &ScenarioStatus,
     bar_width: usize,
@@ -225,11 +228,11 @@ pub fn render_scenario_row_expanded(
 
     // Name (28 chars, left-aligned, truncated)
     let name = truncate_name(s.name, NAME_WIDTH);
-    let name_padded = format!("{:<NAME_WIDTH$}", name);
+    let name_padded = format!("{name:<NAME_WIDTH$}");
 
     // Bandwidth (tabular, right-aligned)
     let bw_display = crate::common::tabular_number(s.required_mbps, BANDWIDTH_WIDTH, 0);
-    let bw_padded = format!("{:>BANDWIDTH_WIDTH$}", bw_display);
+    let bw_padded = format!("{bw_display:>BANDWIDTH_WIDTH$}");
 
     // Progress bar (dynamic width)
     let bar = render_progress_bar(status.usage_pct, bar_width, nc, minimal);
@@ -255,31 +258,28 @@ pub fn render_scenario_row_expanded(
             }
         }
     };
-    let badge_padded = format!("{:>CAPACITY_BADGE_WIDTH$}", badge);
+    let badge_padded = format!("{badge:>CAPACITY_BADGE_WIDTH$}");
 
     // Assemble row
     if minimal || nc {
-        format!(
-            "  {} {} {}  {} {}",
-            icon, name_padded, bw_padded, bar, badge_padded
-        )
+        format!("  {icon} {name_padded} {bw_padded}  {bar} {badge_padded}")
     } else {
         // Colorize bandwidth based on whether it's met
         let bw_colored = if status.is_met {
             format!(
                 "{:>BANDWIDTH_WIDTH$}",
-                ThemeColors::dimmed(&bw_display, Theme::Dark)
+                Colors::dimmed(&bw_display, Theme::Dark)
             )
         } else {
             format!(
                 "{:>BANDWIDTH_WIDTH$}",
-                ThemeColors::bad(&bw_display, Theme::Dark)
+                Colors::bad(&bw_display, Theme::Dark)
             )
         };
 
         format!(
             "  {} {} {}  {} {}",
-            ThemeColors::info(&icon, Theme::Dark),
+            Colors::info(&icon, Theme::Dark),
             name_padded,
             bw_colored,
             bar,
@@ -289,6 +289,7 @@ pub fn render_scenario_row_expanded(
 }
 
 /// Render a scenario row in compact mode (vertical stack).
+#[must_use]
 pub fn render_scenario_row_compact(
     status: &ScenarioStatus,
     bar_width: usize,
@@ -310,17 +311,14 @@ pub fn render_scenario_row_compact(
     let badge = capacity_badge_style(level, nc, status.concurrent);
 
     if minimal || nc {
-        format!(
-            "  {} {}\n    {}\n    {} {}",
-            icon, name, bar, bw_display, badge
-        )
+        format!("  {icon} {name}\n    {bar}\n    {bw_display} {badge}")
     } else {
         format!(
             "  {} {}\n    {}\n    {} {}",
             icon,
             name,
             bar,
-            ThemeColors::dimmed(&bw_display, Theme::Dark),
+            Colors::dimmed(&bw_display, Theme::Dark),
             badge,
         )
     }
@@ -329,6 +327,7 @@ pub fn render_scenario_row_compact(
 // ── Category Rendering ───────────────────────────────────────────────────────
 
 /// Render category header with box drawing.
+#[must_use]
 pub fn render_category_header(
     cat: &ScenarioCategory,
     width: usize,
@@ -348,14 +347,14 @@ pub fn render_category_header(
     if minimal || nc {
         let border = "+".to_string();
         let dashes = "-".repeat(dashes_needed);
-        format!("  {}{}{}{}", border, dashes, title_display, dashes)
+        format!("  {border}{dashes}{title_display}{dashes}")
     } else {
         let left_dash = "─".repeat(dashes_needed / 2);
         let right_dash = "─".repeat(dashes_needed.saturating_sub(dashes_needed / 2));
         format!(
             "  {}{}{}{}",
             left_dash.dimmed(),
-            ThemeColors::header(&title_display, Theme::Dark),
+            Colors::header(&title_display, Theme::Dark),
             right_dash.dimmed(),
             "".dimmed(),
         )
@@ -363,6 +362,7 @@ pub fn render_category_header(
 }
 
 /// Render a category box with all scenarios.
+#[must_use]
 pub fn render_category_box(
     cat: &ScenarioCategory,
     statuses: &[ScenarioStatus],
@@ -406,13 +406,13 @@ pub fn render_category_box(
         if let Some(desc) = status.scenario.description {
             let indent = "     ";
             if minimal || nc {
-                lines.push(format!("{}[!] {}", indent, desc));
+                lines.push(format!("{indent}[!] {desc}"));
             } else {
                 lines.push(format!(
                     "{}{} {}",
                     indent,
                     "⚠".bright_yellow(),
-                    ThemeColors::dimmed(desc, Theme::Dark),
+                    Colors::dimmed(desc, Theme::Dark),
                 ));
             }
         }
@@ -424,11 +424,16 @@ pub fn render_category_box(
 // ── Section Header/Footer ────────────────────────────────────────────────────
 
 /// Render the overall section header.
+#[must_use]
 pub fn render_section_header(dl_mbps: f64, width: usize, nc: bool, minimal: bool) -> String {
     use super::scenarios::TOTAL_BANDWIDTH_MBPS;
 
-    let title = format!(" USAGE CAPABILITY — {:.0} Mbps Total ", dl_mbps);
-    let total_label = format!("{} Mbps Total", TOTAL_BANDWIDTH_MBPS as u32);
+    let title = format!(" USAGE CAPABILITY — {dl_mbps:.0} Mbps Total ");
+    // Safe: TOTAL_BANDWIDTH_MBPS is 277.0, trivially fits u32.
+    let total_label = format!(
+        "{} Mbps Total",
+        TOTAL_BANDWIDTH_MBPS.clamp(0.0, f64::from(u32::MAX)) as u32
+    );
 
     if minimal || nc {
         let border = "+".to_string();
@@ -443,16 +448,17 @@ pub fn render_section_header(dl_mbps: f64, width: usize, nc: bool, minimal: bool
         let title_line = format!(
             "  {} {:<width$} {}",
             "│".dimmed(),
-            ThemeColors::header(&title, Theme::Dark),
-            ThemeColors::dimmed(&total_label, Theme::Dark),
+            Colors::header(&title, Theme::Dark),
+            Colors::dimmed(&total_label, Theme::Dark),
         );
         let bottom = format!("  {}{}", "└".dimmed(), "─".repeat(line_width).dimmed());
 
-        format!("{}\n{}\n{}", top, title_line, bottom)
+        format!("{top}\n{title_line}\n{bottom}")
     }
 }
 
 /// Render section footer with legend.
+#[must_use]
 pub fn render_section_footer(nc: bool, minimal: bool) -> String {
     let mut lines = Vec::new();
 

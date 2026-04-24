@@ -8,7 +8,7 @@
 
 use crate::common;
 use crate::terminal;
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 
 // ── Target benchmarks ────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ const TARGETS: &[Target] = &[
 ];
 
 /// Build target usage check output as a string.
+#[must_use]
 pub fn build_targets(download_bps: Option<f64>, nc: bool, theme: Theme) -> String {
     let targets: Vec<crate::profiles::UsageTarget> = TARGETS
         .iter()
@@ -55,6 +56,7 @@ pub fn build_targets(download_bps: Option<f64>, nc: bool, theme: Theme) -> Strin
 }
 
 /// Build profile-specific target usage check output.
+#[must_use]
 pub fn build_profile_targets(
     download_bps: Option<f64>,
     nc: bool,
@@ -72,16 +74,16 @@ pub fn build_profile_targets(
     if nc {
         lines.push("\n  USAGE CHECK".to_string());
     } else {
-        lines.push(format!("\n  {}", ThemeColors::header("USAGE CHECK", theme)));
+        lines.push(format!("\n  {}", Colors::header("USAGE CHECK", theme)));
     }
 
     for target in targets {
         let met = dl_mbps >= target.required_mbps;
         let ratio = dl_mbps / target.required_mbps;
         let suffix = if ratio >= 10.0 {
-            format!("{:.0}x", ratio)
+            format!("{ratio:.0}x")
         } else {
-            format!("{:.1}x", ratio)
+            format!("{ratio:.1}x")
         };
         let hide_emoji = terminal::no_emoji();
         let icon = if target.icon.is_empty() {
@@ -95,7 +97,7 @@ pub fn build_profile_targets(
             if nc || hide_emoji {
                 lines.push(format!("  {line}"));
             } else {
-                lines.push(format!("  {}", ThemeColors::good(&line, theme)));
+                lines.push(format!("  {}", Colors::good(&line, theme)));
             }
         } else {
             let shortfall = target.required_mbps - dl_mbps;
@@ -107,7 +109,7 @@ pub fn build_profile_targets(
             if nc || hide_emoji {
                 lines.push(format!("  {line}"));
             } else {
-                lines.push(format!("  {}", ThemeColors::bad(&line, theme)));
+                lines.push(format!("  {}", Colors::bad(&line, theme)));
             }
         }
     }
@@ -119,7 +121,7 @@ pub fn build_profile_targets(
 pub fn format_targets(download_bps: Option<f64>, nc: bool, theme: Theme) {
     let output = build_targets(download_bps, nc, theme);
     if !output.is_empty() {
-        eprintln!("{}", output);
+        eprintln!("{output}");
     }
 }
 
@@ -159,22 +161,29 @@ const ESTIMATES: &[FileEstimate] = &[
 
 fn format_time_estimate(secs: f64, _nc: bool) -> String {
     if secs < 1.0 {
-        format!("{:.1}s", secs)
+        format!("{secs:.1}s")
     } else if secs < 60.0 {
         format!("{secs:.0}s")
     } else if secs < 3600.0 {
-        format!("{}m {:02}s", secs as u64 / 60, (secs % 60.0) as u64)
+        // Safe: secs is 60..3600, results fit in u64.
+        format!(
+            "{}m {:02}s",
+            (secs / 60.0).clamp(0.0, u64::MAX as f64) as u64,
+            (secs % 60.0).clamp(0.0, u64::MAX as f64) as u64
+        )
     } else {
+        // Safe: secs is ≥3600 but bounded by test duration (minutes), fits u64.
         format!(
             "{}h {:02}m",
-            secs as u64 / 3600,
-            ((secs % 3600.0) / 60.0) as u64
+            (secs / 3600.0).clamp(0.0, u64::MAX as f64) as u64,
+            ((secs % 3600.0) / 60.0).clamp(0.0, u64::MAX as f64) as u64
         )
     }
 }
 
 /// Build real-world download time estimates as a string.
-pub fn build_estimates(download_bps: Option<f64>, nc: bool, theme: Theme) -> String {
+#[must_use]
+pub fn build(download_bps: Option<f64>, nc: bool, theme: Theme) -> String {
     let Some(dl) = download_bps else {
         return String::new();
     };
@@ -185,10 +194,11 @@ pub fn build_estimates(download_bps: Option<f64>, nc: bool, theme: Theme) -> Str
     if nc {
         lines.push("\n  ESTIMATES".to_string());
     } else {
-        lines.push(format!("\n  {}", ThemeColors::header("ESTIMATES", theme)));
+        lines.push(format!("\n  {}", Colors::header("ESTIMATES", theme)));
     }
 
     for file in ESTIMATES {
+        // Safe: file sizes are at most ~120 GB, well under 2^53 (~9 PB).
         let secs = file.size_bytes as f64 / dl_bytes_per_sec;
         let time_str = format_time_estimate(secs, nc);
         let size_str = common::format_data_size(file.size_bytes);
@@ -196,17 +206,17 @@ pub fn build_estimates(download_bps: Option<f64>, nc: bool, theme: Theme) -> Str
         if nc {
             lines.push(format!("  {label}"));
         } else {
-            lines.push(format!("  {}", ThemeColors::good(&label, theme)));
+            lines.push(format!("  {}", Colors::good(&label, theme)));
         }
     }
 
     lines.join("\n")
 }
 
-pub fn format_estimates(download_bps: Option<f64>, nc: bool, theme: Theme) {
-    let output = build_estimates(download_bps, nc, theme);
+pub fn show(download_bps: Option<f64>, nc: bool, theme: Theme) {
+    let output = build(download_bps, nc, theme);
     if !output.is_empty() {
-        eprintln!("{}", output);
+        eprintln!("{output}");
     }
 }
 

@@ -4,7 +4,9 @@
     clippy::cast_sign_loss
 )]
 
-use crate::error::SpeedtestError;
+use crate::endpoints::ServerEndpoints;
+use crate::error::Error;
+use crate::test_config::TestConfig;
 use crate::types::Server;
 use quick_xml::de::from_str;
 use reqwest::Client;
@@ -40,6 +42,7 @@ const SPEEDTEST_CONFIG_URL: &str = "https://www.speedtest.net/api/ios-config.php
 /// let dist = calculate_distance(40.7128, -74.0060, 34.0522, -118.2437);
 /// assert!((dist - 3944.0).abs() < 200.0); // ~3944 km, NYC to LA
 /// ```
+#[must_use]
 pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     const EARTH_RADIUS_KM: f64 = 6371.0;
 
@@ -71,7 +74,7 @@ struct ClientInfo {
 }
 
 /// Fetch client location from speedtest.net config API
-async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestError> {
+async fn fetch_client_location(client: &Client) -> Result<(f64, f64), Error> {
     let response = client
         .get(SPEEDTEST_CONFIG_URL)
         .send()
@@ -83,7 +86,7 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestE
 
     match (config.client.lat, config.client.lon) {
         (Some(lat), Some(lon)) => Ok((lat, lon)),
-        _ => Err(SpeedtestError::Context {
+        _ => Err(Error::Context {
             msg: "Could not parse client location from config".to_string(),
             source: None,
         }),
@@ -94,9 +97,9 @@ async fn fetch_client_location(client: &Client) -> Result<(f64, f64), SpeedtestE
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::NetworkError`] if fetching the server list fails.
-/// Returns [`SpeedtestError::DeserializeXml`] if the XML response cannot be parsed.
-pub async fn fetch_servers(client: &Client) -> Result<Vec<Server>, SpeedtestError> {
+/// Returns [`Error::NetworkError`] if fetching the server list fails.
+/// Returns [`Error::DeserializeXml`] if the XML response cannot be parsed.
+pub async fn fetch(client: &Client) -> Result<Vec<Server>, Error> {
     let (client_lat, client_lon) = match fetch_client_location(client).await {
         Ok(coords) => coords,
         Err(ref e) => {
@@ -135,12 +138,10 @@ pub async fn fetch_servers(client: &Client) -> Result<Vec<Server>, SpeedtestErro
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::ServerNotFound`] if the server list is empty.
-pub fn select_best_server(servers: &[Server]) -> Result<Server, SpeedtestError> {
+/// Returns [`Error::ServerNotFound`] if the server list is empty.
+pub fn select_best_server(servers: &[Server]) -> Result<Server, Error> {
     if servers.is_empty() {
-        return Err(SpeedtestError::ServerNotFound(
-            "No servers available".to_string(),
-        ));
+        return Err(Error::ServerNotFound("No servers available".to_string()));
     }
 
     // Select server with lowest distance (closest)
@@ -152,29 +153,30 @@ pub fn select_best_server(servers: &[Server]) -> Result<Server, SpeedtestError> 
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .cloned()
-        .ok_or_else(|| SpeedtestError::ServerNotFound("No servers available".to_string()))?;
+        .ok_or_else(|| Error::ServerNotFound("No servers available".to_string()))?;
 
     Ok(best)
 }
 
-/// Run a ping test against the given server, returning (average latency, jitter, packet_loss%, individual_samples).
+/// Run a ping test against the given server, returning (average latency, jitter, `packet_loss`%, `individual_samples`).
 ///
 /// # Errors
 ///
-/// Returns [`SpeedtestError::NetworkError`] if all ping attempts fail.
+/// Returns [`Error::NetworkError`] if all ping attempts fail.
 pub async fn ping_test(
     client: &Client,
     server: &Server,
-) -> Result<(f64, f64, f64, Vec<f64>), SpeedtestError> {
-    const PING_ATTEMPTS: usize = 8;
+) -> Result<(f64, f64, f64, Vec<f64>), Error> {
+    let config = TestConfig::default();
+    let ping_attempts = config.ping_attempts;
     let mut latencies = Vec::new();
 
     // Perform multiple ping measurements
-    for _ in 0..PING_ATTEMPTS {
+    for _ in 0..ping_attempts {
         let start = std::time::Instant::now();
 
         let response = client
-            .get(format!("{}/latency.txt", server.url))
+            .get(ServerEndpoints::from_server_url(&server.url).latency())
             .send()
             .await;
 
@@ -188,12 +190,13 @@ pub async fn ping_test(
 
     // Calculate average latency
     if latencies.is_empty() {
-        return Err(SpeedtestError::Context {
+        return Err(Error::Context {
             msg: "All ping attempts failed".to_string(),
             source: None,
         });
     }
 
+    // Safe: len() is at most PING_ATTEMPTS (8), well under 2^53.
     let avg = latencies.iter().sum::<f64>() / latencies.len() as f64;
 
     // Calculate jitter (average of absolute differences between consecutive latencies)
@@ -202,13 +205,15 @@ pub async fn ping_test(
         for i in 1..latencies.len() {
             jitter_sum += (latencies[i] - latencies[i - 1]).abs();
         }
+        // Safe: len() is at most PING_ATTEMPTS (8).
         jitter_sum / (latencies.len() - 1) as f64
     } else {
         0.0
     };
 
     // Calculate packet loss percentage
-    let packet_loss = ((PING_ATTEMPTS - latencies.len()) as f64 / PING_ATTEMPTS as f64) * 100.0;
+    // Safe: both operands are at most PING_ATTEMPTS (8), tiny values.
+    let packet_loss = ((ping_attempts - latencies.len()) as f64 / ping_attempts as f64) * 100.0;
 
     Ok((avg, jitter, packet_loss, latencies))
 }
@@ -219,9 +224,15 @@ pub async fn measure_latency_under_load(
     samples: Arc<std::sync::Mutex<Vec<f64>>>,
     stop: Arc<AtomicBool>,
 ) {
+    let config = TestConfig::default();
+    let poll_interval = config.latency_poll_interval_ms;
+
     while !stop.load(Ordering::Relaxed) {
         let start = std::time::Instant::now();
-        let response = client.get(format!("{server_url}/latency.txt")).send().await;
+        let response = client
+            .get(ServerEndpoints::from_server_url(&server_url).latency())
+            .send()
+            .await;
 
         if let Ok(resp) = response {
             if resp.status().is_success() {
@@ -232,7 +243,7 @@ pub async fn measure_latency_under_load(
             }
         }
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(poll_interval)).await;
     }
 }
 
@@ -267,7 +278,7 @@ mod tests {
 
         let best = select_best_server(&servers).unwrap();
         assert_eq!(best.id, "2");
-        assert_eq!(best.distance, 100.0);
+        assert!((best.distance - 100.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -275,10 +286,7 @@ mod tests {
         let servers: Vec<Server> = vec![];
         let result = select_best_server(&servers);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            SpeedtestError::ServerNotFound(_)
-        ));
+        assert!(matches!(result.unwrap_err(), Error::ServerNotFound(_)));
     }
 
     #[test]
@@ -371,7 +379,7 @@ mod tests {
     fn test_ping_test_average_calculation() {
         let latencies = [10.0, 20.0, 15.0, 25.0];
         let avg = latencies.iter().sum::<f64>() / latencies.len() as f64;
-        assert_eq!(avg, 17.5);
+        assert!((avg - 17.5).abs() < f64::EPSILON);
     }
 
     #[test]

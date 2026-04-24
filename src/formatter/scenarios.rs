@@ -199,6 +199,7 @@ const ALL_CATEGORIES: &[&ScenarioCategory] = &[
 ];
 
 /// Get all scenario categories.
+#[must_use]
 pub fn all_categories() -> &'static [&'static ScenarioCategory] {
     ALL_CATEGORIES
 }
@@ -206,6 +207,7 @@ pub fn all_categories() -> &'static [&'static ScenarioCategory] {
 // ── Status Computation ───────────────────────────────────────────────────────
 
 /// Compute status for all scenarios given download speed in Mbps.
+#[must_use]
 pub fn compute_all_statuses(dl_mbps: f64) -> Vec<Vec<ScenarioStatus>> {
     all_categories()
         .iter()
@@ -219,8 +221,12 @@ pub fn compute_all_statuses(dl_mbps: f64) -> Vec<Vec<ScenarioStatus>> {
 }
 
 fn compute_scenario_status(dl_mbps: f64, scenario: &'static UsageScenario) -> ScenarioStatus {
+    // Safe: dl_mbps/required_mbps is a small ratio; floor→u32 is bounded by
+    // realistic bandwidth values (never approaching u32::MAX).
     let concurrent = if scenario.required_mbps > 0.0 {
-        (dl_mbps / scenario.required_mbps).floor() as u32
+        (dl_mbps / scenario.required_mbps)
+            .floor()
+            .clamp(0.0, f64::from(u32::MAX)) as u32
     } else {
         0
     };
@@ -240,6 +246,7 @@ fn compute_scenario_status(dl_mbps: f64, scenario: &'static UsageScenario) -> Sc
 }
 
 /// Determine the worst headroom level across all statuses.
+#[must_use]
 pub fn worst_headroom_level(statuses: &[Vec<ScenarioStatus>]) -> HeadroomLevel {
     let mut worst = HeadroomLevel::Green;
     for cat in statuses {
@@ -329,10 +336,7 @@ fn render_scenario_row(status: &ScenarioStatus, nc: bool, minimal: bool) -> Stri
 
     // Build inner content (everything between the │ borders)
     let inner = if minimal || nc {
-        format!(
-            "{:<NAME_WIDTH$} {}  {} {:>3}x {:<5}",
-            name_display, req_display, bar, concurrent, symbol,
-        )
+        format!("{name_display:<NAME_WIDTH$} {req_display}  {bar} {concurrent:>3}x {symbol:<5}",)
     } else {
         // Colorize the requirement based on whether it's met
         let req_colored = if status.is_met {
@@ -340,15 +344,12 @@ fn render_scenario_row(status: &ScenarioStatus, nc: bool, minimal: bool) -> Stri
         } else {
             req_display.red().bold().to_string()
         };
-        format!(
-            "{:<NAME_WIDTH$} {}  {} {:>3}x {:<5}",
-            name_display, req_colored, bar, concurrent, symbol,
-        )
+        format!("{name_display:<NAME_WIDTH$} {req_colored}  {bar} {concurrent:>3}x {symbol:<5}",)
     };
 
     // Right-pad to exactly LINE_WIDTH - 2 (1 space padding each side inside borders)
     let content_width = LINE_WIDTH - 2;
-    let padded = format!("{:<content_width$}", inner);
+    let padded = format!("{inner:<content_width$}");
     format!("  │ {padded} │")
 }
 
@@ -359,7 +360,7 @@ fn render_category_header(cat: &ScenarioCategory, nc: bool, minimal: bool) -> St
     let dashes = "─".repeat(content_width.saturating_sub(title.len()));
     let inner = format!("{title}{dashes}");
     // Right-pad to exactly content_width so the closing │ always aligns
-    let padded = format!("{:<content_width$}", inner);
+    let padded = format!("{inner:<content_width$}");
     if minimal || nc {
         format!("  │ {padded} │")
     } else {
@@ -407,7 +408,7 @@ fn render_category_box(
 
 /// Render the overall section header.
 fn render_section_header(dl_mbps: f64, nc: bool, minimal: bool) -> String {
-    let title = format!(" USAGE CAPABILITY — {:.0} Mbps ", dl_mbps);
+    let title = format!(" USAGE CAPABILITY — {dl_mbps:.0} Mbps ");
     let left = (LINE_WIDTH.saturating_sub(title.len())) / 2;
     let right = LINE_WIDTH.saturating_sub(left).saturating_sub(title.len());
     if minimal || nc {
@@ -455,7 +456,7 @@ fn render_summary(
         ));
     }
 
-    lines.push(format!("  Your {:.0} Mbps connection supports:", dl_mbps));
+    lines.push(format!("  Your {dl_mbps:.0} Mbps connection supports:"));
 
     // Find most notable concurrent counts
     let mut highlights: Vec<(&'static UsageScenario, u32)> = Vec::new();
@@ -534,7 +535,10 @@ fn render_recommendation(
     };
 
     let s = worst_s.scenario;
-    let recommended = (s.required_mbps * 3.0).ceil() as u32; // 3x headroom target
+    // Safe: required_mbps is small (≤200), *3 → ≤600, fits u32.
+    let recommended = (s.required_mbps * 3.0)
+        .ceil()
+        .clamp(0.0, f64::from(u32::MAX)) as u32; // 3x headroom target
 
     let mut lines = Vec::new();
     lines.push(String::new());
@@ -545,8 +549,7 @@ fn render_recommendation(
             s.name, worst_s.headroom_pct,
         ));
         lines.push(format!(
-            "      Consider upgrading to {}+ Mbps for better performance.",
-            recommended,
+            "      Consider upgrading to {recommended}+ Mbps for better performance.",
         ));
     } else {
         let warning_icon = if worst_s.headroom_pct < 20.0 {
@@ -572,6 +575,7 @@ fn render_recommendation(
 }
 
 /// Format the full scenario grid output.
+#[must_use]
 pub fn format_scenario_grid(dl_mbps: f64, nc: bool, minimal: bool) -> String {
     let statuses = compute_all_statuses(dl_mbps);
     let mut lines = Vec::new();

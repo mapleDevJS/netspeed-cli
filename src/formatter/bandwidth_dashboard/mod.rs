@@ -26,6 +26,7 @@ pub use scenarios::*;
 
 use crate::terminal;
 
+#[must_use]
 pub fn format_capability_report(dl_mbps: f64) -> String {
     let (terminal_width, layout) = ResponsiveLayout::detect();
     let nc = terminal::no_color() || layout == ResponsiveLayout::Minimal;
@@ -231,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_total_bandwidth_constant() {
-        assert_eq!(TOTAL_BANDWIDTH_MBPS, 277.0);
+        assert!((TOTAL_BANDWIDTH_MBPS - 277.0).abs() < f64::EPSILON);
     }
 
     #[test]

@@ -4,7 +4,7 @@
 .SH NAME
 netspeed\-cli \- Test internet bandwidth via speedtest.net servers
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-\-strict\-config\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Test internet bandwidth via speedtest.net servers.
 .PP
@@ -15,41 +15,122 @@ The default workflow runs a full bandwidth test:
   4. Measure upload speed (multi\-stream, concurrent uploads)
   5. Grade results (A+ to F) and show real\-world usage estimates
 .PP
+Configuration precedence: CLI flags override config file values, which override built\-in defaults.
 Results are saved to a local history file for trend tracking.
 .SH OPTIONS
 .TP
-\fB\-\-no\-download\fR
+\fB\-\-no\-download\fR [\fI<NO_DOWNLOAD>\fR]
 Do not perform download test
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-no\-upload\fR
+\fB\-\-no\-upload\fR [\fI<NO_UPLOAD>\fR]
 Do not perform upload test
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-single\fR
+\fB\-\-single\fR [\fI<SINGLE>\fR]
 Use a single TCP connection for testing (measures sustained throughput).
 The default uses multiple connections (measures burst/bandwidth capacity).
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-bytes\fR
+\fB\-\-bytes\fR [\fI<BYTES>\fR]
 Display values in bytes instead of bits per second.
 The default uses bits (standard for ISP advertising).
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-simple\fR
+\fB\-\-simple\fR [\fI<SIMPLE>\fR]
 Suppress verbose output, only show basic information.
 Basic information = one\-line summary: latency, download, upload.
 Deprecated: use \-\-format simple instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-csv\fR
+\fB\-\-csv\fR [\fI<CSV>\fR]
 Output in CSV format for spreadsheet analysis.
 Deprecated: use \-\-format csv instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-\-csv\-delimiter\fR \fI<CSV_DELIMITER>\fR [default: ,]
 Single character delimiter for CSV output (default: ",")
 .TP
-\fB\-\-csv\-header\fR
+\fB\-\-csv\-header\fR [\fI<CSV_HEADER>\fR]
 Print CSV headers
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-json\fR
+\fB\-\-json\fR [\fI<JSON>\fR]
 Output in JSON format (machine\-readable).
 Deprecated: use \-\-format json instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-\-format\fR \fI<FORMAT>\fR
 Output format (supersedes \-\-json, \-\-csv, \-\-simple)
@@ -116,9 +197,19 @@ elvish
 Display test history from the local JSON file.
 Does not run a bandwidth test.
 .TP
-\fB\-\-quiet\fR
+\fB\-\-quiet\fR [\fI<QUIET>\fR]
 Suppress all progress output during the test.
 JSON/CSV output still goes to stdout.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-\-dry\-run\fR
 Validate configuration and exit without running tests.
@@ -127,8 +218,18 @@ Prints the server that would be selected and confirms connectivity.
 \fB\-\-no\-emoji\fR
 Disable emoji output (for environments where emojis don\*(Aqt render well)
 .TP
-\fB\-\-minimal\fR
+\fB\-\-minimal\fR [\fI<MINIMAL>\fR]
 Minimal ASCII\-only output (no Unicode box\-drawing characters)
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-\-profile\fR \fI<PROFILE>\fR
 User profile for customized output.
@@ -144,6 +245,19 @@ Output color theme (dark, light, high\-contrast, monochrome)
 .TP
 \fB\-\-show\-config\-path\fR
 Show the configuration file path and exit
+.TP
+\fB\-\-strict\-config\fR [\fI<STRICT_CONFIG>\fR]
+Enable strict config mode \- show warnings for invalid config values
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

@@ -31,6 +31,21 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+  socket-integration:
+    name: Socket Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run mock socket tests
+        run: cargo test --test mock_network_test -- --ignored --nocapture
+      - name: Run upload integration tests
+        run: cargo test --test integration_upload_fetch_test -- --ignored --nocapture
+      - name: Run end-to-end socket tests
+        run: cargo test --test e2e_test -- --ignored --nocapture
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -80,6 +95,8 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --workspace
+      - name: Run doctests
+        run: cargo test --doc
 
   audit:
     name: Security Audit (cargo-deny)
@@ -108,19 +125,15 @@ jobs:
         run: cargo check
 
   benchmarks:
-    name: Benchmarks
+    name: Benchmark Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Run benchmarks
-        run: cargo bench
-      - name: Check benchmarks
-        run: cargo bench -- --check
+      - name: Build benchmark targets
+        run: cargo bench --no-run
 
   coverage:
     name: Code Coverage

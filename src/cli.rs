@@ -20,6 +20,7 @@ The default workflow runs a full bandwidth test:
   4. Measure upload speed (multi-stream, concurrent uploads)
   5. Grade results (A+ to F) and show real-world usage estimates
 
+Configuration precedence: CLI flags override config file values, which override built-in defaults.
 Results are saved to a local history file for trend tracking."
 )]
 #[command(
@@ -37,14 +38,14 @@ Examples:
   netspeed-cli --quiet                  Suppress progress output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
-pub struct CliArgs {
+pub struct Args {
     /// Do not perform download test
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub no_download: bool,
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    pub no_download: Option<bool>,
 
     /// Do not perform upload test
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub no_upload: bool,
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    pub no_upload: Option<bool>,
 
     /// Only use a single connection instead of multiple
     ///
@@ -52,20 +53,24 @@ pub struct CliArgs {
     /// The default uses multiple connections to measure burst/bandwidth capacity.
     #[arg(
         long,
-        action = ArgAction::SetTrue,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
         long_help = "Use a single TCP connection for testing (measures sustained throughput).\nThe default uses multiple connections (measures burst/bandwidth capacity)."
     )]
-    pub single: bool,
+    pub single: Option<bool>,
 
     /// Display values in bytes instead of bits
     ///
     /// The default displays values in bits (standard for ISP advertising).
     #[arg(
         long,
-        action = ArgAction::SetTrue,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
         long_help = "Display values in bytes instead of bits per second.\nThe default uses bits (standard for ISP advertising)."
     )]
-    pub bytes: bool,
+    pub bytes: Option<bool>,
 
     /// Suppress verbose output, only show basic information
     ///
@@ -73,9 +78,12 @@ pub struct CliArgs {
     #[deprecated(since = "0.9.0", note = "Use --format simple instead")]
     #[arg(
         long,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
         long_help = "Suppress verbose output, only show basic information.\nBasic information = one-line summary: latency, download, upload.\nDeprecated: use --format simple instead."
     )]
-    pub simple: bool,
+    pub simple: Option<bool>,
 
     /// Output in CSV format
     ///
@@ -84,17 +92,20 @@ pub struct CliArgs {
     #[deprecated(since = "0.9.0", note = "Use --format csv instead")]
     #[arg(
         long,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
         long_help = "Output in CSV format for spreadsheet analysis.\nDeprecated: use --format csv instead."
     )]
-    pub csv: bool,
+    pub csv: Option<bool>,
 
     /// Single character delimiter for CSV output (default: ",")
     #[arg(long, default_value = ",", value_parser = validate_csv_delimiter)]
     pub csv_delimiter: char,
 
     /// Print CSV headers
-    #[arg(long)]
-    pub csv_header: bool,
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    pub csv_header: Option<bool>,
 
     /// Output in JSON format
     ///
@@ -102,9 +113,12 @@ pub struct CliArgs {
     #[deprecated(since = "0.9.0", note = "Use --format json instead")]
     #[arg(
         long,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
         long_help = "Output in JSON format (machine-readable).\nDeprecated: use --format json instead."
     )]
-    pub json: bool,
+    pub json: Option<bool>,
 
     /// Output format (supersedes --json, --csv, --simple)
     #[arg(long, value_enum)]
@@ -147,9 +161,12 @@ pub struct CliArgs {
     /// Suppress all progress output (JSON/CSV still go to stdout)
     #[arg(
         long,
+        action = ArgAction::Set,
+        default_missing_value = "true",
+        num_args = 0..=1,
         long_help = "Suppress all progress output during the test.\nJSON/CSV output still goes to stdout."
     )]
-    pub quiet: bool,
+    pub quiet: Option<bool>,
 
     /// Validate configuration and exit without running tests
     #[arg(
@@ -163,8 +180,8 @@ pub struct CliArgs {
     pub no_emoji: bool,
 
     /// Minimal ASCII-only output (no Unicode box-drawing characters)
-    #[arg(long)]
-    pub minimal: bool,
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    pub minimal: Option<bool>,
 
     /// User profile for customized output (gamer, streamer, remote-worker, power-user, casual)
     ///
@@ -184,6 +201,10 @@ pub struct CliArgs {
     /// Show the configuration file path and exit
     #[arg(long)]
     pub show_config_path: bool,
+
+    /// Enable strict config mode - show warnings for invalid config values
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    pub strict_config: Option<bool>,
 }
 
 fn validate_csv_delimiter(s: &str) -> Result<char, String> {

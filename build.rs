@@ -18,7 +18,7 @@ fn main() -> std::io::Result<()> {
     fs::create_dir_all(out_dir)?;
 
     // Generate shell completions
-    let mut cmd = CliArgs::command();
+    let mut cmd = Args::command();
 
     generate_to(Shell::Bash, &mut cmd, "netspeed-cli", out_dir)?;
     generate_to(Shell::Zsh, &mut cmd, "netspeed-cli", out_dir)?;

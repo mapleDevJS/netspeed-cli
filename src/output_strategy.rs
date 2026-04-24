@@ -4,16 +4,16 @@
 //! Add new variants in `OutputFormat` (formatter/mod.rs) and extend the
 //! `resolve` function below — no caller changes needed.
 
-use crate::cli::CliArgs;
+use crate::cli::Args;
 use crate::config::Config;
-use crate::formatter::OutputFormat;
+use crate::formatter::{OutputFormat, SkipState};
 use crate::profiles::UserProfile;
 use crate::task_runner::TestRunResult;
 
 /// Resolve the active output format from CLI args and test results.
 #[must_use]
 pub fn resolve_output_format(
-    args: &CliArgs,
+    args: &Args,
     config: &Config,
     dl_result: &TestRunResult,
     ul_result: &TestRunResult,
@@ -64,8 +64,10 @@ pub fn resolve_output_format(
             ul_bytes: ul_result.total_bytes,
             dl_duration: dl_result.duration_secs,
             ul_duration: ul_result.duration_secs,
-            dl_skipped: config.no_download,
-            ul_skipped: config.no_upload,
+            skipped: SkipState {
+                download: config.no_download,
+                upload: config.no_upload,
+            },
             elapsed,
             profile,
             minimal: config.minimal,
@@ -78,8 +80,10 @@ pub fn resolve_output_format(
                 ul_bytes: ul_result.total_bytes,
                 dl_duration: dl_result.duration_secs,
                 ul_duration: ul_result.duration_secs,
-                dl_skipped: config.no_download,
-                ul_skipped: config.no_upload,
+                skipped: SkipState {
+                    download: config.no_download,
+                    upload: config.no_upload,
+                },
                 elapsed,
                 profile,
                 minimal: config.minimal,

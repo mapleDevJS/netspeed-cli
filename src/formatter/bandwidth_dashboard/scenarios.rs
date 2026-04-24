@@ -39,6 +39,7 @@ pub enum ResponsiveLayout {
 
 impl ResponsiveLayout {
     /// Detect layout mode from terminal width.
+    #[must_use]
     pub fn from_width(width: u16) -> Self {
         if width >= 120 {
             Self::Expanded
@@ -52,11 +53,10 @@ impl ResponsiveLayout {
     }
 
     /// Detect current terminal width and layout mode.
+    #[must_use]
     pub fn detect() -> (u16, Self) {
         let width = if std::io::stdout().is_terminal() {
-            terminal_size::terminal_size()
-                .map(|(w, _)| w.0)
-                .unwrap_or(100)
+            terminal_size::terminal_size().map_or(100, |(w, _)| w.0)
         } else {
             100 // Default for piped output
         };
@@ -64,16 +64,19 @@ impl ResponsiveLayout {
     }
 
     /// Check if we should use ASCII-only output.
+    #[must_use]
     pub fn is_ascii_only(&self) -> bool {
         matches!(self, Self::Minimal)
     }
 
     /// Check if we should show multiplier column.
+    #[must_use]
     pub fn show_multiplier(&self) -> bool {
         matches!(self, Self::Expanded)
     }
 
     /// Check if we should use vertical stack layout.
+    #[must_use]
     pub fn is_compact(&self) -> bool {
         matches!(self, Self::Compact | Self::Minimal)
     }
@@ -114,6 +117,7 @@ pub enum CapacityLevel {
 }
 
 impl CapacityLevel {
+    #[must_use]
     pub fn from_concurrent(concurrent: u32, is_met: bool) -> Self {
         if !is_met {
             Self::Exceeded
@@ -279,6 +283,7 @@ const ALL_CATEGORIES: &[&ScenarioCategory] = &[
 ];
 
 /// Get all scenario categories.
+#[must_use]
 pub fn all_categories() -> &'static [&'static ScenarioCategory] {
     ALL_CATEGORIES
 }
@@ -286,6 +291,7 @@ pub fn all_categories() -> &'static [&'static ScenarioCategory] {
 // ── Status Computation ───────────────────────────────────────────────────────
 
 /// Compute status for all scenarios given download speed in Mbps.
+#[must_use]
 pub fn compute_all_statuses(dl_mbps: f64) -> Vec<Vec<ScenarioStatus>> {
     all_categories()
         .iter()
@@ -293,8 +299,12 @@ pub fn compute_all_statuses(dl_mbps: f64) -> Vec<Vec<ScenarioStatus>> {
             cat.scenarios
                 .iter()
                 .map(|s| {
+                    // Safe: dl_mbps/required_mbps is a small ratio; floor→u32 is
+                    // bounded by realistic bandwidth values (never approaching u32::MAX).
                     let concurrent = if s.required_mbps > 0.0 {
-                        (dl_mbps / s.required_mbps).floor() as u32
+                        (dl_mbps / s.required_mbps)
+                            .floor()
+                            .clamp(0.0, f64::from(u32::MAX)) as u32
                     } else {
                         0
                     };

@@ -17,10 +17,18 @@ cd netspeed-cli
 cargo build
 ```
 
+Note: the repo includes [.cargo/config.toml](/Users/alexey.ivanov/vibe.dev/netspeed-cli/.cargo/config.toml) to set `SDKROOT` on macOS. This avoids sandbox-related `xcrun` SDK cache warnings during local builds and CI.
+
 ### Running Tests
 
 ```bash
-cargo test
+just qa
+```
+
+Socket-binding integration tests are run separately:
+
+```bash
+just test-socket
 ```
 
 ### Code Style
@@ -35,8 +43,10 @@ cargo clippy -- -D warnings  # Fail on any warning
 
 All CI checks must pass before a PR can be merged:
 - `cargo test` on Ubuntu, macOS, and Windows
+- socket-binding integration tests on Linux
 - `cargo fmt -- --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --doc`
 - `cargo deny check` (security + license audit)
 - MSRV verification with Rust 1.86
 
@@ -45,7 +55,7 @@ All CI checks must pass before a PR can be merged:
 1. **Fork** the repository
 2. **Create a branch** from `develop` (or `main` for hotfixes)
 3. **Make your changes** with tests
-4. **Run verification**: `cargo fmt && cargo clippy -- -D warnings && cargo test`
+4. **Run verification**: `just qa`
 5. **Submit a PR** against `develop` (or `main` for hotfixes)
 
 ### Branch Strategy
@@ -118,12 +128,15 @@ The README includes live version badges that auto-update on every release:
 - Use `wiremock` for HTTP mocking in network tests
 - Tests should be fast and deterministic
 - Avoid tests that require real network access
+- Mark socket-binding tests as ignored unless they are meant for the dedicated socket lane
 
 ### Test Locations
 
 - `src/*/mod.rs` — inline unit tests in `#[cfg(test)]` modules
 - `tests/integration_test.rs` — CLI integration tests
-- `tests/mock_network_test.rs` — HTTP mocking tests
+- `tests/mock_network_test.rs` — socket-binding HTTP mocking tests
+- `tests/integration_upload_fetch_test.rs` — socket-binding upload/protocol tests
+- `tests/e2e_test.rs` — socket-binding mocked end-to-end tests
 
 ## Code Conventions
 

@@ -1,14 +1,14 @@
 //! Terminal progress bars and spinners for test feedback.
 //!
 //! This module provides user interface components for test progress:
-//! - [`SpeedProgress`] — Progress bar with real-time speed display
+//! - [`Tracker`] — Progress bar with real-time speed display
 //! - Spinners for individual test phases (server discovery, ping, etc.)
 //! - Colorized finish messages with test results
 //! - Grade reveal animation for intentional friction
 //!
 //! ## Note
 //!
-//! Terminal environment detection (`no_color`, `no_emoji`, `no_animation`)
+//! Terminal environment detection ([`crate::terminal::no_color`], [`crate::terminal::no_emoji`], [`crate::terminal::no_animation`])
 //! has been moved to the [`crate::terminal`] module.
 
 use crate::common;
@@ -21,12 +21,12 @@ use std::time::Duration;
 
 /// A progress tracker for download/upload tests.
 /// Updates a single shared progress bar with live speed.
-pub struct SpeedProgress {
+pub struct Tracker {
     bar: ProgressBar,
     done: Arc<AtomicBool>,
 }
 
-impl SpeedProgress {
+impl Tracker {
     /// Create a new progress tracker for a test phase.
     /// `label` is something like "Download" or "Upload".
     #[must_use]
@@ -35,6 +35,10 @@ impl SpeedProgress {
     }
 
     /// Create with a custom draw target (use `ProgressDrawTarget::hidden()` for silent mode).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the progress bar template string is invalid (should never happen).
     #[must_use]
     pub fn with_target(label: &str, target: ProgressDrawTarget) -> Self {
         let done = Arc::new(AtomicBool::new(false));
@@ -78,7 +82,8 @@ impl SpeedProgress {
         };
 
         self.bar.set_message(msg);
-        let pct = (progress * 100.0) as u64;
+        // Safe: progress is 0.0..1.0, *100 → 0..100, fits u64.
+        let pct = (progress * 100.0).clamp(0.0, u64::MAX as f64) as u64;
         self.bar.set_position(pct.min(100));
     }
 
@@ -109,6 +114,10 @@ impl SpeedProgress {
 }
 
 /// Simple spinner for non-speed phases (server fetch, ping).
+///
+/// # Panics
+///
+/// Panics if the spinner template string is invalid (should never happen).
 #[must_use]
 pub fn create_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(10));
@@ -199,7 +208,11 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    /// Safely set NO_COLOR env var
+    /// Set `NO_COLOR` env var for testing.
+    ///
+    /// SAFETY: Tests run single-threaded under `#[serial]`, so there is no
+    /// concurrent read/write race on the environment variable. The var is
+    /// removed in `unset_no_color()` after each test to avoid leaking state.
     fn set_no_color() {
         #[allow(unsafe_code)]
         unsafe {
@@ -207,6 +220,10 @@ mod tests {
         }
     }
 
+    /// Remove `NO_COLOR` env var after testing.
+    ///
+    /// SAFETY: Same rationale as `set_no_color()` — serial test execution
+    /// guarantees no concurrent env access.
     fn unset_no_color() {
         #[allow(unsafe_code)]
         unsafe {
@@ -237,17 +254,28 @@ mod tests {
 
     #[test]
     fn test_speed_progress_new() {
-        let sp = SpeedProgress::new("Download");
+        let sp = Tracker::new("Download");
         assert!(!sp.done.load(Ordering::Relaxed));
         sp.bar.finish_and_clear();
     }
 
     #[test]
     fn test_speed_progress_update() {
-        let sp = SpeedProgress::new("Download");
-        sp.update(125.4, 0.5, 5_000_000);
-        sp.finish(125.40, 10_000_000);
+        let sp = Tracker::new("Download");
+        sp.update(150.5, 0.5, 1024 * 1024);
+        assert_eq!(sp.bar.position(), 50);
+        sp.bar.finish_and_clear();
+    }
+
+    #[test]
+    fn test_speed_progress_nc() {
+        set_no_color();
+        let sp = Tracker::new("Upload");
+        sp.update(50.0, 0.25, 512 * 1024);
+        assert_eq!(sp.bar.position(), 25);
+        sp.finish(50.0, 1024 * 1024);
         assert!(sp.done.load(Ordering::Relaxed));
+        unset_no_color();
     }
 
     #[test]
@@ -280,29 +308,23 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_speed_progress_nc() {
+    fn test_reveal_grade_nc() {
         set_no_color();
-        let sp = SpeedProgress::new("Download");
-        sp.update(125.4, 0.5, 5_000_000);
-        sp.finish(125.40, 10_000_000);
-        assert!(sp.done.load(Ordering::Relaxed));
+        reveal_grade("Overall", "A", "A", true);
         unset_no_color();
     }
 
     #[test]
-    fn test_reveal_grade_nc() {
-        // Just verify it doesn't panic — actual output goes to stderr
-        reveal_grade("Overall", "[A]", "A", true);
-    }
-
-    #[test]
+    #[serial]
     fn test_reveal_scan_complete_nc() {
-        reveal_scan_complete(42, "[B+]", "B+", true);
+        set_no_color();
+        reveal_scan_complete(42, "B+", "B+", true);
+        unset_no_color();
     }
 
     #[test]
     fn test_reveal_pause() {
-        // Verify pause doesn't panic
+        // Just verify it doesn't panic
         reveal_pause();
     }
 }

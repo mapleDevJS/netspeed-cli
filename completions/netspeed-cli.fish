@@ -1,4 +1,20 @@
+complete -c netspeed-cli -l no-download -d 'Do not perform download test' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l no-upload -d 'Do not perform upload test' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l single -d 'Only use a single connection instead of multiple' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l bytes -d 'Display values in bytes instead of bits' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l simple -d 'Suppress verbose output, only show basic information' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l csv -d 'Output in CSV format' -r -f -a "true\t''
+false\t''"
 complete -c netspeed-cli -l csv-delimiter -d 'Single character delimiter for CSV output (default: ",")' -r
+complete -c netspeed-cli -l csv-header -d 'Print CSV headers' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l json -d 'Output in JSON format' -r -f -a "true\t''
+false\t''"
 complete -c netspeed-cli -l format -d 'Output format (supersedes --json, --csv, --simple)' -r -f -a "json\t'Machine-readable JSON output'
 jsonl\t'JSON Lines for logging (one JSON object per line)'
 csv\t'CSV format for spreadsheet analysis'
@@ -16,22 +32,18 @@ zsh\t''
 fish\t''
 powershell\t''
 elvish\t''"
+complete -c netspeed-cli -l quiet -d 'Suppress all progress output (JSON/CSV still go to stdout)' -r -f -a "true\t''
+false\t''"
+complete -c netspeed-cli -l minimal -d 'Minimal ASCII-only output (no Unicode box-drawing characters)' -r -f -a "true\t''
+false\t''"
 complete -c netspeed-cli -l profile -d 'User profile for customized output (gamer, streamer, remote-worker, power-user, casual)' -r
 complete -c netspeed-cli -l theme -d 'Output color theme (dark, light, high-contrast, monochrome)' -r
-complete -c netspeed-cli -l no-download -d 'Do not perform download test'
-complete -c netspeed-cli -l no-upload -d 'Do not perform upload test'
-complete -c netspeed-cli -l single -d 'Only use a single connection instead of multiple'
-complete -c netspeed-cli -l bytes -d 'Display values in bytes instead of bits'
-complete -c netspeed-cli -l simple -d 'Suppress verbose output, only show basic information'
-complete -c netspeed-cli -l csv -d 'Output in CSV format'
-complete -c netspeed-cli -l csv-header -d 'Print CSV headers'
-complete -c netspeed-cli -l json -d 'Output in JSON format'
+complete -c netspeed-cli -l strict-config -d 'Enable strict config mode - show warnings for invalid config values' -r -f -a "true\t''
+false\t''"
 complete -c netspeed-cli -l list -d 'Display a list of speedtest.net servers sorted by distance'
 complete -c netspeed-cli -l history -d 'Display test history'
-complete -c netspeed-cli -l quiet -d 'Suppress all progress output (JSON/CSV still go to stdout)'
 complete -c netspeed-cli -l dry-run -d 'Validate configuration and exit without running tests'
 complete -c netspeed-cli -l no-emoji -d 'Disable emoji output (for environments where emojis don\'t render well)'
-complete -c netspeed-cli -l minimal -d 'Minimal ASCII-only output (no Unicode box-drawing characters)'
 complete -c netspeed-cli -l show-config-path -d 'Show the configuration file path and exit'
 complete -c netspeed-cli -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c netspeed-cli -s V -l version -d 'Print version'

@@ -6,7 +6,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::theme::{Theme, ThemeColors};
+use crate::theme::{Colors, Theme};
 
 /// Compute coefficient of variation (CV) as a percentage.
 #[must_use]
@@ -14,6 +14,7 @@ pub fn compute_cv(speeds: &[f64]) -> f64 {
     if speeds.is_empty() {
         return 0.0;
     }
+    // Safe: sample counts are small (≤1000), well under 2^53.
     let n = speeds.len() as f64;
     let mean = speeds.iter().sum::<f64>() / n;
     if mean <= 0.0 {
@@ -24,6 +25,7 @@ pub fn compute_cv(speeds: &[f64]) -> f64 {
     (stddev / mean) * 100.0
 }
 
+#[must_use]
 pub fn format_stability_line(cv: f64, nc: bool, theme: Theme) -> String {
     let label = if cv < 5.0 {
         "rock-solid"
@@ -40,14 +42,15 @@ pub fn format_stability_line(cv: f64, nc: bool, theme: Theme) -> String {
     if nc {
         text
     } else if cv < 5.0 {
-        ThemeColors::good(&text, theme)
+        Colors::good(&text, theme)
     } else if cv < 20.0 {
-        ThemeColors::warn(&text, theme)
+        Colors::warn(&text, theme)
     } else {
-        ThemeColors::bad(&text, theme)
+        Colors::bad(&text, theme)
     }
 }
 
+#[must_use]
 pub fn compute_percentiles(samples: &[f64]) -> Option<(f64, f64, f64)> {
     let n = samples.len();
     if n < 3 {
@@ -86,17 +89,17 @@ mod tests {
     #[test]
     fn test_compute_cv_constant() {
         let speeds = vec![100.0, 100.0, 100.0];
-        assert_eq!(compute_cv(&speeds), 0.0);
+        assert!(compute_cv(&speeds).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_compute_cv_empty() {
-        assert_eq!(compute_cv(&[]), 0.0);
+        assert!(compute_cv(&[]).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_compute_percentiles_basic() {
-        let samples: Vec<f64> = (1..=100).map(|x| f64::from(x)).collect();
+        let samples: Vec<f64> = (1..=100).map(f64::from).collect();
         let result = compute_percentiles(&samples);
         assert!(result.is_some());
         let (p50, p95, p99) = result.unwrap();
