@@ -200,7 +200,7 @@ impl OutputFormat {
 ///         println!("Custom: {:?}", result.ping);
 ///         Ok(())
 ///     }
-///     
+///
 ///     fn format_list(&self, servers: &[Server]) -> Result<(), Error> {
 ///         println!("Servers: {}", servers.len());
 ///         Ok(())

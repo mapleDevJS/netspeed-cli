@@ -23,8 +23,8 @@ just qa
 
 ```bash
 gh pr create --base main --head develop \
-  --title "Release v0.5.0" \
-  --body "Merge develop into main for v0.5.0 release"
+  --title "Release v<version>" \
+  --body "Merge develop into main for v<version> release"
 ```
 
 Review the PR, ensure all CI checks pass, then **merge to `main`**.
@@ -36,7 +36,7 @@ Check out `main` and run the release script:
 ```bash
 git checkout main
 git pull origin main
-./scripts/release.sh 0.5.0
+./scripts/release.sh <version>
 ```
 
 The script will:
@@ -68,7 +68,7 @@ After CI completes:
 
 ```bash
 # Check GitHub Release
-gh release view v0.5.0 --repo mapleDevJS/netspeed-cli
+gh release view v<version> --repo mapleDevJS/netspeed-cli
 
 # Test Homebrew install
 brew upgrade mapledevjs/netspeed-cli/netspeed-cli
@@ -97,7 +97,7 @@ git commit -m "fix: critical bug description"
 git push origin hotfix/critical-fix
 gh pr create --base main --head hotfix/critical-fix
 # Merge PR, then run release script with patch version
-./scripts/release.sh 0.4.1
+./scripts/release.sh <patch-version>
 ```
 
 ## What CI Publishes

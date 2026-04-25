@@ -8,7 +8,7 @@ netspeed-cli follows a **modular layered architecture** with clear separation be
 - **CLI Layer** (`cli.rs`, `config.rs`) — Argument parsing and configuration merging
 - **Core Layer** (`download.rs`, `upload.rs`, `servers.rs`) — Network operations
 - **Protocol Layer** (`endpoints.rs`) — Canonical speedtest endpoint derivation
-- **Orchestration Layer** (`test_runner.rs`) — Test coordination and result aggregation
+- **Orchestration Layer** (`task_runner.rs`) — Test coordination and result aggregation
 - **Presentation Layer** (`formatter/`) — Output formatting with Strategy pattern
 - **Infrastructure Layer** (`http.rs`, `history.rs`, `progress.rs`) — Cross-cutting concerns
 
@@ -235,7 +235,7 @@ strip = true        # Remove debug symbols to reduce binary size
 | `http.rs` | HTTP client creation, client IP discovery |
 | `progress.rs` | Terminal progress bars and spinners |
 | `servers.rs` | Server discovery, distance calculation, ping testing |
-| `test_runner.rs` | Test orchestration with template method |
+| `task_runner.rs` | Test orchestration with template method |
 | `types.rs` | Shared data structures (Server, TestResult) |
 
 ## Dependencies Rationale
