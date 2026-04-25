@@ -41,7 +41,7 @@ just test-socket
 
 ### Code Style
 
-This project follows standard Rust formatting with clippy pedantic mode enabled:
+This project follows standard Rust formatting with clippy lints enabled:
 
 ```bash
 cargo fmt          # Format code

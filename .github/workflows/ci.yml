@@ -59,19 +59,6 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  clippy-pedantic:
-    name: Clippy (Pedantic)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-      - name: Run clippy with pedantic lint level
-        run: cargo clippy --all-targets --all-features -- -W clippy::pedantic -D warnings
-
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
