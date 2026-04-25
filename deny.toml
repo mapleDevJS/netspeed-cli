@@ -15,6 +15,7 @@ yanked = "warn"
 ignore = [
     { id = "RUSTSEC-2026-0097", reason = "transitive-only (reqwest→quinn→rand, proptest→rand); no custom logger configured; no patched version available" },
     { id = "RUSTSEC-2026-0104", reason = "transitive (reqwest→quinn→rustls→rustls-webpki); no patch available in tree; only affects CRL-enabled server configs which speedtest.net does not use" },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained (archived); no replacement in tree; functionality covered by rustls-pki-types which is already used" },
 ]
 
 [licenses]
