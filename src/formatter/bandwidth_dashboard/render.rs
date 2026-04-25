@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn test_render_category_header_basic() {
         let cat = make_category_with_scenarios();
-        let result = render_category_header(&cat, 50, true, false);
+        let result = render_category_header(cat, 50, true, false);
         assert!(!result.is_empty());
         assert!(result.contains("TEST CATEGORY"));
     }
@@ -913,21 +913,21 @@ mod tests {
     #[test]
     fn test_render_category_header_minimal() {
         let cat = make_category_with_scenarios();
-        let result = render_category_header(&cat, 50, true, true);
+        let result = render_category_header(cat, 50, true, true);
         assert!(!result.is_empty());
     }
 
     #[test]
     fn test_render_category_header_colored() {
         let cat = make_category_with_scenarios();
-        let result = render_category_header(&cat, 50, false, false);
+        let result = render_category_header(cat, 50, false, false);
         assert!(!result.is_empty());
     }
 
     #[test]
     fn test_render_category_header_narrow() {
         let cat = make_category_with_scenarios();
-        let result = render_category_header(&cat, 20, true, false);
+        let result = render_category_header(cat, 20, true, false);
         assert!(!result.is_empty());
     }
 
@@ -940,14 +940,8 @@ mod tests {
             make_status(10.0, 10, true, 36.1),
             make_status(20.0, 5, false, 72.2),
         ];
-        let result = render_category_box(
-            &cat,
-            &statuses,
-            ResponsiveLayout::Expanded,
-            120,
-            true,
-            false,
-        );
+        let result =
+            render_category_box(cat, &statuses, ResponsiveLayout::Expanded, 120, true, false);
         assert!(!result.is_empty());
         assert!(result.contains("TEST CATEGORY"));
     }
@@ -956,14 +950,8 @@ mod tests {
     fn test_render_category_box_standard() {
         let cat = make_category_with_scenarios();
         let statuses = vec![make_status(10.0, 10, true, 36.1)];
-        let result = render_category_box(
-            &cat,
-            &statuses,
-            ResponsiveLayout::Standard,
-            100,
-            true,
-            false,
-        );
+        let result =
+            render_category_box(cat, &statuses, ResponsiveLayout::Standard, 100, true, false);
         assert!(!result.is_empty());
     }
 
@@ -972,7 +960,7 @@ mod tests {
         let cat = make_category_with_scenarios();
         let statuses = vec![make_status(10.0, 10, true, 36.1)];
         let result =
-            render_category_box(&cat, &statuses, ResponsiveLayout::Compact, 85, true, false);
+            render_category_box(cat, &statuses, ResponsiveLayout::Compact, 85, true, false);
         assert!(!result.is_empty());
     }
 
@@ -980,8 +968,7 @@ mod tests {
     fn test_render_category_box_minimal() {
         let cat = make_category_with_scenarios();
         let statuses = vec![make_status(10.0, 10, true, 36.1)];
-        let result =
-            render_category_box(&cat, &statuses, ResponsiveLayout::Minimal, 70, true, true);
+        let result = render_category_box(cat, &statuses, ResponsiveLayout::Minimal, 70, true, true);
         assert!(!result.is_empty());
     }
 
@@ -990,7 +977,7 @@ mod tests {
         let cat = make_category_with_scenarios();
         let statuses = vec![make_status(10.0, 10, true, 36.1)];
         let result = render_category_box(
-            &cat,
+            cat,
             &statuses,
             ResponsiveLayout::Expanded,
             120,

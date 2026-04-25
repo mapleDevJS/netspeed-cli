@@ -206,8 +206,8 @@ mod tests {
     #[test]
     fn test_level_clone() {
         let level = Level::Debug;
-        let cloned = level.clone();
-        assert_eq!(cloned, level);
+        let _cloned = level; // Copy is implicit for Copy types
+        assert_eq!(_cloned, level);
     }
 
     #[test]

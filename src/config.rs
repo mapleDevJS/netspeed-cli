@@ -1605,8 +1605,10 @@ mod tests {
 
     #[test]
     fn test_config_from_source_strict_mode() {
-        let mut source = ConfigSource::default();
-        source.strict_config = Some(true);
+        let source = ConfigSource {
+            strict_config: Some(true),
+            ..Default::default()
+        };
         let file_config = File::default();
         let config = Config::from_source_with_file(&source, Some(file_config));
         assert!(config.strict());
@@ -1935,8 +1937,8 @@ mod tests {
             .with_warning("just a warning")
             .with_error("actual error");
         assert!(!result.valid);
-        assert!(result.warnings.len() >= 1);
-        assert!(result.errors.len() >= 1);
+        assert!(!result.warnings.is_empty());
+        assert!(!result.errors.is_empty());
     }
 
     #[test]
@@ -2380,6 +2382,7 @@ mod tests {
     // ==================== Deprecated Flags Tests ====================
 
     #[test]
+    #[allow(deprecated)]
     fn test_deprecated_simple_flag() {
         let args = Args::parse_from(["netspeed-cli", "--simple"]);
         assert_eq!(args.simple, Some(true));
@@ -2388,6 +2391,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_deprecated_json_flag() {
         let args = Args::parse_from(["netspeed-cli", "--json"]);
         assert_eq!(args.json, Some(true));
@@ -2396,6 +2400,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_deprecated_csv_flag() {
         let args = Args::parse_from(["netspeed-cli", "--csv"]);
         assert_eq!(args.csv, Some(true));

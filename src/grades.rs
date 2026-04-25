@@ -889,8 +889,8 @@ mod tests {
     #[test]
     fn test_letter_grade_is_clone() {
         let grade = LetterGrade::BPlus;
-        let cloned = grade.clone();
-        assert_eq!(grade, cloned);
+        let _cloned = grade; // Copy is implicit for Copy types
+        assert_eq!(grade, _cloned);
     }
 
     // ── Debug trait verification ────────────────────────────────────────────
