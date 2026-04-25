@@ -1197,7 +1197,13 @@ dependencies = [
 
 [[package]]
 name = "netspeed-cli"
+<<<<<<< HEAD
 version = "0.8.0"
+||||||| parent of e6a4bed (chore: remove .qwen folder from repository tracking)
+version = "0.8.0-SNAPSHOT"
+=======
+version = "0.7.0"
+>>>>>>> e6a4bed (chore: remove .qwen folder from repository tracking)
 dependencies = [
  "bytes",
  "chrono",
