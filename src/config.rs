@@ -1737,14 +1737,19 @@ mod tests {
     #[test]
     fn test_tls_config_cli_ca_cert() {
         // Test that --ca-cert CLI flag is parsed correctly
-        // Create a temp file since the validator checks file existence
-        // Use unique filename with process ID to avoid race conditions in parallel testing
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("netspeed_test_ca_cert_{}.pem", std::process::id()));
-        std::fs::write(&temp_path, "fake cert content").unwrap();
-        let args = Args::parse_from(["netspeed-cli", "--ca-cert", temp_path.to_str().unwrap()]);
-        assert_eq!(args.ca_cert, Some(temp_path.to_string_lossy().to_string()));
-        std::fs::remove_file(temp_path).ok();
+        // Use tempfile for guaranteed unique file with automatic cleanup
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), "fake cert content").unwrap();
+        let args = Args::parse_from([
+            "netspeed-cli",
+            "--ca-cert",
+            temp_file.path().to_str().unwrap(),
+        ]);
+        assert_eq!(
+            args.ca_cert,
+            Some(temp_file.path().to_string_lossy().to_string())
+        );
+        // tempfile auto-cleans on drop
     }
 
     #[test]
@@ -1771,24 +1776,25 @@ mod tests {
     #[test]
     fn test_tls_config_all_cli_options() {
         // Test all TLS options via CLI
-        // Create a temp file since the validator checks file existence
-        // Use unique filename with process ID to avoid race conditions in parallel testing
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("netspeed_test_ca_cert_{}.pem", std::process::id()));
-        std::fs::write(&temp_path, "fake cert content").unwrap();
+        // Use tempfile for guaranteed unique file with automatic cleanup
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), "fake cert content").unwrap();
         let args = Args::parse_from([
             "netspeed-cli",
             "--ca-cert",
-            temp_path.to_str().unwrap(),
+            temp_file.path().to_str().unwrap(),
             "--tls-version",
             "1.2",
             "--pin-certs",
         ]);
 
-        assert_eq!(args.ca_cert, Some(temp_path.to_string_lossy().to_string()));
+        assert_eq!(
+            args.ca_cert,
+            Some(temp_file.path().to_string_lossy().to_string())
+        );
         assert_eq!(args.tls_version, Some("1.2".to_string()));
         assert_eq!(args.pin_certs, Some(true));
-        std::fs::remove_file(temp_path).ok();
+        // tempfile auto-cleans on drop
     }
 
     #[test]

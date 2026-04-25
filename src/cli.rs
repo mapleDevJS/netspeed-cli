@@ -454,8 +454,9 @@ mod tests {
     #[test]
     fn test_validate_ca_cert_path_is_directory() {
         // Use temp directory (cross-platform - works on Windows too)
-        let temp_dir = std::env::temp_dir();
-        let result = validate_ca_cert_path(temp_dir.to_str().unwrap());
+        // Use tempfile::TempDir for guaranteed unique directory
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let result = validate_ca_cert_path(temp_dir.path().to_str().unwrap());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("not a file"));
