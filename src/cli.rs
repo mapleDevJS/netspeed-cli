@@ -299,7 +299,7 @@ pub enum ShellType {
 }
 
 /// Unified output format selection (supersedes --json, --csv, --simple).
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormatType {
     /// Machine-readable JSON output
     Json,

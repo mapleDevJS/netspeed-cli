@@ -51,7 +51,9 @@ fn main() {
     }
 
     // Build orchestrator (may fail for invalid --source IP, etc.)
-    let orchestrator = match Orchestrator::new(args) {
+    // Load file config once for validation (avoids double-loading in from_args)
+    let file_config = netspeed_cli::config::load_config_file();
+    let orchestrator = match Orchestrator::new(args, file_config) {
         Ok(o) => o,
         Err(e) => {
             print_error(&e, exit_codes::CONFIG_ERROR, machine_error_format);

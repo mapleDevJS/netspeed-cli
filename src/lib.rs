@@ -49,7 +49,6 @@ pub mod history;
 pub mod http;
 pub mod logging;
 pub mod orchestrator;
-pub mod orchestrator_config;
 pub mod output_strategy;
 pub mod profiles;
 pub mod progress;

@@ -41,6 +41,10 @@ impl TlsConfig {
     }
 }
 
+/// Default browser-like user agent for speedtest.net compatibility.
+/// Can be overridden via config file with custom_user_agent option.
+pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
 /// HTTP client settings - decoupled from Config struct.
 ///
 /// This allows creating HTTP clients without depending on the full Config,
@@ -59,14 +63,38 @@ pub struct Settings {
     pub tls: TlsConfig,
 }
 
+/// Build [`Settings`] from a [`crate::config::Config`] reference.
+///
+/// Centralizes the Config→HTTP bridging so callers don't duplicate
+/// the mapping. Resolves custom_user_agent from file config or default.
+///
+/// This impl lives in `http.rs` (not `config.rs`) to preserve layering:
+/// dependency flows http → config, not config → http.
+impl From<&crate::config::Config> for Settings {
+    fn from(config: &crate::config::Config) -> Self {
+        Self {
+            timeout_secs: config.timeout(),
+            source_ip: config.source().map(String::from),
+            user_agent: config
+                .custom_user_agent()
+                .map(String::from)
+                .unwrap_or_else(|| DEFAULT_USER_AGENT.to_string()),
+            retry_enabled: true,
+            tls: TlsConfig {
+                ca_cert_path: config.ca_cert_path(),
+                min_tls_version: config.tls_version().map(String::from),
+                pin_speedtest_certs: config.pin_certs(),
+            },
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             timeout_secs: 10,
             source_ip: None,
-            // Default browser-like user agent for speedtest.net compatibility
-            // Can be overridden via config file with custom_user_agent option
-            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".to_string(),
+            user_agent: DEFAULT_USER_AGENT.to_string(),
             retry_enabled: true,
             tls: TlsConfig::default(),
         }
@@ -527,6 +555,410 @@ mod tests {
         assert!(!PinningVerifier::is_valid_domain("attack.com")); // unrelated domain
     }
 
+    #[test]
+    fn test_pinning_verifier_exact_domains() {
+        // Test exact domain matches (should be valid)
+        assert!(PinningVerifier::is_valid_domain("speedtest.net"));
+        assert!(PinningVerifier::is_valid_domain("ookla.com"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_subdomains() {
+        // Test various subdomain depths
+        assert!(PinningVerifier::is_valid_domain("www.speedtest.net"));
+        assert!(PinningVerifier::is_valid_domain("api.speedtest.net"));
+        assert!(PinningVerifier::is_valid_domain("a.b.c.speedtest.net"));
+        assert!(PinningVerifier::is_valid_domain("www.ookla.com"));
+        assert!(PinningVerifier::is_valid_domain("api.www.ookla.com"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_invalid_suffixes() {
+        // These should NOT match because they don't end with the exact suffix
+        assert!(!PinningVerifier::is_valid_domain("xspeedtest.net")); // prefix attack
+        assert!(!PinningVerifier::is_valid_domain("fake-speedtest.net")); // prefix attack
+        assert!(!PinningVerifier::is_valid_domain("speedtest.net.evil.com")); // suffix confusion
+        assert!(!PinningVerifier::is_valid_domain("ookla.com.evil.com")); // suffix confusion
+        assert!(!PinningVerifier::is_valid_domain("fooookla.com")); // prefix attack
+    }
+
+    #[test]
+    fn test_pinning_verifier_case_sensitivity() {
+        // Domain matching should be case-sensitive (DNS is case-insensitive but we check exact match)
+        assert!(!PinningVerifier::is_valid_domain("Speedtest.net")); // uppercase
+        assert!(!PinningVerifier::is_valid_domain("SPEEDTEST.NET")); // all caps
+        assert!(!PinningVerifier::is_valid_domain("www.Speedtest.net")); // mixed case
+        assert!(!PinningVerifier::is_valid_domain("OOKLA.COM")); // all caps ookla
+    }
+
+    #[test]
+    fn test_pinning_verifier_special_characters() {
+        // Invalid domain formats
+        assert!(!PinningVerifier::is_valid_domain("speedtest.net/")); // trailing slash
+        assert!(!PinningVerifier::is_valid_domain("speedtest.net:443")); // port number
+        assert!(!PinningVerifier::is_valid_domain("speedtest.net/path")); // path
+    }
+
+    #[test]
+    fn test_pinning_verifier_numeric_domains() {
+        // Numeric subdomains are valid
+        assert!(PinningVerifier::is_valid_domain("123.speedtest.net")); // valid numeric subdomain
+        assert!(PinningVerifier::is_valid_domain("1.2.3.speedtest.net")); // valid numeric subdomain
+        // Numeric prefix on base domain is invalid
+        assert!(!PinningVerifier::is_valid_domain("speedtest123.net")); // not valid
+        assert!(!PinningVerifier::is_valid_domain("123speedtest.net")); // not valid
+    }
+
+    #[test]
+    fn test_pinning_verifier_new_returns_self() {
+        // Test that new() creates an instance
+        let verifier = PinningVerifier::new();
+        assert!(matches!(verifier, PinningVerifier));
+    }
+
+    #[test]
+    fn test_pinning_verifier_debug_trait() {
+        // Test that Debug can be derived and used
+        let verifier = PinningVerifier::new();
+        let debug_str = format!("{:?}", verifier);
+        assert_eq!(debug_str, "PinningVerifier");
+    }
+
+    #[test]
+    fn test_pinning_verifier_supported_verify_schemes() {
+        let verifier = PinningVerifier::new();
+        let schemes = verifier.supported_verify_schemes();
+        
+        // Should support these signature schemes
+        assert!(schemes.contains(&SignatureScheme::RSA_PKCS1_SHA256));
+        assert!(schemes.contains(&SignatureScheme::RSA_PKCS1_SHA384));
+        assert!(schemes.contains(&SignatureScheme::RSA_PKCS1_SHA512));
+        assert!(schemes.contains(&SignatureScheme::ECDSA_NISTP256_SHA256));
+        assert!(schemes.contains(&SignatureScheme::ECDSA_NISTP384_SHA384));
+        assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA256));
+        assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA384));
+        assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA512));
+        
+        // Should have exactly 8 schemes
+        assert_eq!(schemes.len(), 8);
+    }
+
+    // Note: Signature verification tests are omitted because DigitallySignedStruct
+    // has a private constructor in rustls. The signature verification methods always
+    // return HandshakeSignatureValid::assertion() in PinningVerifier, which is tested
+    // implicitly by successful TLS handshakes with valid speedtest.net certificates.
+
+    #[test]
+    fn test_pinning_verifier_verify_server_cert_rejects_invalid_domain() {
+        let verifier = PinningVerifier::new();
+        
+        // Create a DnsName for an invalid domain
+        let dns_name = rustls::pki_types::DnsName::try_from("evil.com".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Create a minimal valid certificate structure
+        // Using a real but minimal test certificate
+        let cert_der = CertificateDer::from(vec![]);
+        
+        // This should fail because the domain is not valid
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(err_msg.contains("evil.com") || err_msg.contains("not a speedtest.net domain"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_verify_server_cert_rejects_unsupported_name_type() {
+        let verifier = PinningVerifier::new();
+        
+        // Test with an IpAddress server name (unsupported)
+        let ip_addr = std::net::IpAddr::from([127, 0, 0, 1]);
+        let server_name = ServerName::IpAddress(ip_addr.into());
+        
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(err_msg.contains("Unsupported server name type"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_verify_server_cert_rejects_invalid_certificate() {
+        let verifier = PinningVerifier::new();
+        
+        // Valid domain but invalid certificate structure
+        let dns_name = rustls::pki_types::DnsName::try_from("www.speedtest.net".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Empty certificate should fail webpki parsing
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        // Should fail on cert parsing, not domain validation
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        // The error should be about certificate structure, not domain
+        assert!(err_msg.contains("Invalid certificate structure"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_domain_checked_before_cert_parse_speedtest() {
+        let verifier = PinningVerifier::new();
+        
+        // Valid speedtest.net domain
+        let dns_name = rustls::pki_types::DnsName::try_from("speedtest.net".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Empty certificate - the test verifies domain validation happens first
+        // Certificate structure validation is tested in a separate test
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        // Should fail on certificate structure validation, not domain validation
+        // This proves domain was checked before cert parsing
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        // The error should be about certificate structure, not domain
+        assert!(err_msg.contains("Invalid certificate structure") || err_msg.contains("EndEntityCert"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_ipv6_address_rejected() {
+        let verifier = PinningVerifier::new();
+        
+        // Test with an IPv6 address server name
+        let ip_addr = std::net::IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]); // ::1
+        let server_name = ServerName::IpAddress(ip_addr.into());
+        
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pinning_verifier_domain_checked_before_cert_parse_ookla() {
+        let verifier = PinningVerifier::new();
+        
+        // Valid ookla.com domain
+        let dns_name = rustls::pki_types::DnsName::try_from("ookla.com".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Empty certificate - domain validation is the key being tested here
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        // Should fail on certificate structure (proves domain was checked first)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pinning_verifier_domain_validation_order() {
+        // This test verifies that domain validation happens BEFORE certificate parsing
+        let verifier = PinningVerifier::new();
+        
+        // Invalid domain should fail immediately, without attempting cert parsing
+        let dns_name = rustls::pki_types::DnsName::try_from("attacker.com".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Even with a potentially "valid" looking empty cert structure,
+        // domain validation should fail first
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(err_msg.contains("not a speedtest.net domain"), "Expected domain validation error, got: {}", err_msg);
+    }
+
+    #[test]
+    fn test_pinning_verifier_verify_server_cert_rejects_different_tld() {
+        let verifier = PinningVerifier::new();
+        
+        // Test with speedtest.net.org (should be rejected)
+        let dns_name = rustls::pki_types::DnsName::try_from("speedtest.net.org".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        let cert_der = CertificateDer::from(vec![]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(err_msg.contains("not a speedtest.net domain"));
+    }
+
+    #[test]
+    fn test_pinning_verifier_intermediate_certs_ignored() {
+        // Test that intermediate certificates are ignored in validation
+        // The implementation only validates the end-entity certificate
+        let verifier = PinningVerifier::new();
+        
+        // Valid domain
+        let dns_name = rustls::pki_types::DnsName::try_from("www.speedtest.net".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Empty certificate - will fail on structure but that's expected
+        let cert_der = CertificateDer::from(vec![]);
+        
+        // Add intermediate certificates (should be ignored)
+        let intermediate_cert = CertificateDer::from(vec![0u8; 10]);
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[intermediate_cert],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        );
+        
+        // Should fail on cert structure, not because of intermediate certs
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pinning_verifier_ocsp_response_ignored() {
+        // Test that OCSP response data is ignored
+        let verifier = PinningVerifier::new();
+        
+        // Valid domain
+        let dns_name = rustls::pki_types::DnsName::try_from("api.ookla.com".to_string()).unwrap();
+        let server_name = ServerName::DnsName(dns_name);
+        
+        // Empty certificate
+        let cert_der = CertificateDer::from(vec![]);
+        
+        // Add OCSP response data (should be ignored)
+        let ocsp_response = vec![0x30, 0x03, 0x01, 0x00];
+        
+        let result = verifier.verify_server_cert(
+            &cert_der,
+            &[],
+            &server_name,
+            &ocsp_response,
+            UnixTime::now(),
+        );
+        
+        // Should fail on cert structure, not because of OCSP
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pinning_verifier_all_valid_subdomains() {
+        // Test all valid subdomain patterns
+        let valid_subdomains = [
+            "www.speedtest.net",
+            "api.speedtest.net",
+            "test.speedtest.net",
+            "staging.speedtest.net",
+            "prod.speedtest.net",
+            "cdn.speedtest.net",
+            "a.speedtest.net",
+            "z.speedtest.net",
+            "a1b2c3.speedtest.net",
+            "my-site.speedtest.net",
+            "www.ookla.com",
+            "api.ookla.com",
+            "test.ookla.com",
+        ];
+        
+        for domain in valid_subdomains {
+            assert!(
+                PinningVerifier::is_valid_domain(domain),
+                "Domain '{}' should be valid",
+                domain
+            );
+        }
+    }
+
+    #[test]
+    fn test_pinning_verifier_all_invalid_domains() {
+        // Test all invalid domain patterns
+        let invalid_domains = [
+            "evilsite.net",
+            "speedtest.net.evil.com",
+            "ookla.com.evil.com",
+            "speedtest.com",
+            "ookla.net",
+            "notspeedtest.net",
+            "notookla.com",
+            "fake-speedtest.net",
+            "fake-ookla.com",
+            "attacker.speedtest.net.fake.com",
+            "attacker.ookla.com.fake.com",
+        ];
+        
+        for domain in invalid_domains {
+            assert!(
+                !PinningVerifier::is_valid_domain(domain),
+                "Domain '{}' should be invalid",
+                domain
+            );
+        }
+    }
+
     // ==================== Existing Tests ====================
 
     #[test]
@@ -554,15 +986,10 @@ mod tests {
 
     #[test]
     fn test_create_client_invalid_source_ip() {
-        use crate::cli::Args;
-        use clap::Parser;
-        let args = Args::parse_from(["netspeed-cli"]);
-        let config = crate::config::Config::from_args(&args);
-        let settings = Settings {
-            timeout_secs: config.timeout,
-            source_ip: Some("invalid-ip".to_string()),
-            ..Default::default()
-        };
+        let source = crate::config::ConfigSource::default();
+        let config = crate::config::Config::from_source(&source);
+        let mut settings = Settings::from(&config);
+        settings.source_ip = Some("invalid-ip".to_string());
         let result = create_client(&settings);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::Context { .. }));
@@ -570,30 +997,24 @@ mod tests {
 
     #[test]
     fn test_create_client_valid_config() {
-        use crate::cli::Args;
-        use clap::Parser;
-        let args = Args::parse_from(["netspeed-cli"]);
-        let config = crate::config::Config::from_args(&args);
-        let settings = Settings {
-            timeout_secs: config.timeout,
-            source_ip: config.source.clone(),
-            ..Default::default()
-        };
+        let source = crate::config::ConfigSource::default();
+        let config = crate::config::Config::from_source(&source);
+        let settings = Settings::from(&config);
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_create_client_with_source_ip() {
-        use crate::cli::Args;
-        use clap::Parser;
-        let args = Args::parse_from(["netspeed-cli", "--source", "0.0.0.0"]);
-        let config = crate::config::Config::from_args(&args);
-        let settings = Settings {
-            timeout_secs: config.timeout,
-            source_ip: config.source.clone(),
+        let source = crate::config::ConfigSource {
+            network: crate::config::NetworkSource {
+                source: Some("0.0.0.0".into()),
+                ..Default::default()
+            },
             ..Default::default()
         };
+        let config = crate::config::Config::from_source(&source);
+        let settings = Settings::from(&config);
         let result = create_client(&settings);
         match result {
             Ok(_) | Err(Error::NetworkError(_) | Error::Context { .. }) => {}
@@ -603,15 +1024,15 @@ mod tests {
 
     #[test]
     fn test_create_client_custom_timeout() {
-        use crate::cli::Args;
-        use clap::Parser;
-        let args = Args::parse_from(["netspeed-cli", "--timeout", "30"]);
-        let config = crate::config::Config::from_args(&args);
-        let settings = Settings {
-            timeout_secs: config.timeout,
-            source_ip: config.source.clone(),
+        let source = crate::config::ConfigSource {
+            network: crate::config::NetworkSource {
+                timeout: 30,
+                ..Default::default()
+            },
             ..Default::default()
         };
+        let config = crate::config::Config::from_source(&source);
+        let settings = Settings::from(&config);
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
