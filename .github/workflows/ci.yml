@@ -124,7 +124,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Install cargo-benchcmp
-        uses: taiki-e/install-action@cargo-benchcmp
+        run: cargo install cargo-benchcmp
       - name: Run benchmarks
         run: |
           cargo bench 2>&1 | tee benchmark_results.txt
@@ -174,7 +174,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines=80
       - name: Print coverage summary

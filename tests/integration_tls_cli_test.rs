@@ -16,6 +16,17 @@ fn temp_cert_path() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("netspeed_test_cert_{}.pem", pid))
 }
 
+/// Returns a path that should not exist (cross-platform).
+fn nonexistent_path() -> std::path::PathBuf {
+    let temp = std::env::temp_dir();
+    temp.join(format!("netspeed_nonexistent_{}.pem", std::process::id()))
+}
+
+/// Returns a path to an existing directory (cross-platform).
+fn existing_directory_path() -> std::path::PathBuf {
+    std::env::temp_dir()
+}
+
 /// Helper to create a test certificate file.
 fn create_test_cert(path: &std::path::Path) {
     let cert_content = "-----BEGIN CERTIFICATE-----\nMIIDXTCCAkWgAwIBAgIJAKJ8h5L7V3R2MA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNV\nBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1TYW4gRnJhbmNp\nc2NvMRUwEwYDVQQKDAxUZXN0IERlbW8gQ0EwHhcNMjMwMTAxMDAwMDAwWhcNMjQw\nMTAxMDAwMDAwWjBFMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEW\nMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzEVMBMGA1UECgwMVGVzdCBEZW1vIENBMIIB\nIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw1s3xfn8Z8c3R1hL+8jK2w0F\nkZmJkZnJmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZm\nZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZm\nZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZm\nAgMBAAGjUzBRMB0GA1UdDgQWBBQYT9W7dF2R2P7L5D3K9Z2Y5Q3Z8DAfBgNVHSME\nGDAWgBQYT9W7dF2R2P7L5D3K9Z2Y5Q3Z8DAPBgNVHRMBAf8EBTADAQH/MA0GCSqG\nSIb3DQEBCwUAA4IBAQCQ4e1H8gZ+8f3F5N3F6hK7L5J2N4L9K8Q0L1M2N3O4P5Q6\nR7S8T9U0V1W2X3Y4Z5A6B7C8D9E0F1G2H3I4J5K6L7M8N9O0P1Q2R3S4T5U6V7W8\n-----END CERTIFICATE-----".as_bytes();
@@ -92,13 +103,14 @@ fn test_ca_cert_accepts_valid_pem_file() {
 
 #[test]
 fn test_ca_cert_rejects_nonexistent_path() {
+    let cert_path = nonexistent_path();
     let output = Command::new("cargo")
         .args([
             "run",
             "--quiet",
             "--",
             "--ca-cert",
-            "/nonexistent/path/to/cert.pem",
+            cert_path.to_str().unwrap(),
         ])
         .output()
         .expect("Failed to execute command");
@@ -108,15 +120,24 @@ fn test_ca_cert_rejects_nonexistent_path() {
         "Non-existent CA cert path should be rejected"
     );
     assert!(
-        stderr.contains("not found") || stderr.contains("does not exist"),
+        stderr.contains("not found")
+            || stderr.contains("does not exist")
+            || stderr.contains("No such file"),
         "Error should mention file not found. stderr: {stderr}"
     );
 }
 
 #[test]
 fn test_ca_cert_rejects_directory() {
+    let dir_path = existing_directory_path();
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", "/tmp"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            dir_path.to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -335,8 +356,15 @@ fn test_tls_options_with_other_flags() {
 
 #[test]
 fn test_ca_cert_error_message_format() {
+    let cert_path = nonexistent_path();
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", "/nonexistent/cert.pem"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            cert_path.to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
