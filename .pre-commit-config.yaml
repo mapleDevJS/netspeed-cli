@@ -21,7 +21,16 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
 
-  # Rust formatting and linting
+  # Commit message linting (conventional commits)
+  - repo: https://github.com/conventional-commits/commitlint
+    rev: v20.0.0
+    hooks:
+      - id: commitlint
+        name: Commitlint
+        entry: commitlint --edit $@
+        stages: [commit-msg]
+
+  # Rust formatting, linting, and completions
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -42,3 +51,9 @@ repos:
         language: system
         types: [cargo]
         pass_filenames: false
+      - id: generate-completions
+        name: Generate completions & man page
+        entry: bash -c 'git diff --quiet src/cli.rs Cargo.toml build.rs 2>/dev/null || (cargo build && git add completions/ netspeed-cli.1)'
+        language: system
+        pass_filenames: false
+        pass_env: [GIT_DIR]

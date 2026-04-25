@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **TLS configuration options**: Custom CA certificates (`--ca-cert`), minimum TLS version (`--tls-version 1.2|1.3`), and certificate pinning (`--pin-certs`) for enterprise/secure network environments
+- **Config source refactoring**: CLI→config bridge using DIP pattern with semantic sub-structs (`OutputSource`, `TestSource`, `NetworkSource`, `ServerSource`) for better separation of concerns
+- Integration tests for TLS CLI options
+
 ## [0.8.0] - 2026-04-17
 
 ### Changed

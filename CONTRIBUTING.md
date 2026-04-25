@@ -8,6 +8,7 @@ Thank you for your interest in contributing to netspeed-cli! All contributions a
 
 - Rust 1.86 or later
 - `cargo` package manager
+- Node.js (for commitlint, optional but recommended)
 
 ### Setup
 
@@ -15,6 +16,13 @@ Thank you for your interest in contributing to netspeed-cli! All contributions a
 git clone https://github.com/mapleDevJS/netspeed-cli.git
 cd netspeed-cli
 cargo build
+
+# Install commitlint for commit message validation (optional but recommended)
+npm install -D @commitlint/config-conventional
+
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
 ```
 
 Note: the repo includes [.cargo/config.toml](/Users/alexey.ivanov/vibe.dev/netspeed-cli/.cargo/config.toml) to set `SDKROOT` on macOS. This avoids sandbox-related `xcrun` SDK cache warnings during local builds and CI.
@@ -39,6 +47,10 @@ This project follows standard Rust formatting with clippy pedantic mode enabled:
 cargo fmt          # Format code
 cargo clippy       # Run linter
 cargo clippy -- -D warnings  # Fail on any warning
+
+# Generate changelog from conventional commits (requires git-cliff)
+cargo install git-cliff
+just changelog     # Updates CHANGELOG.md
 ```
 
 All CI checks must pass before a PR can be merged:
@@ -158,6 +170,10 @@ docs: update README installation instructions
 test: add config file loading tests
 ci: add cargo-audit job
 ```
+
+**Commit types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+
+A pre-commit hook validates commit messages. Use `npm install -D @commitlint/config-conventional` to enable local validation.
 
 ## Questions?
 
