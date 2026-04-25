@@ -323,6 +323,12 @@ or
 netspeed-cli --help
 ```
 
+## Security
+
+For security-related documentation and audit procedures, see [docs/security-audit.md](docs/security-audit.md).
+
+To report a security vulnerability, please follow our [Security Policy](SECURITY.md#reporting-a-vulnerability).
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

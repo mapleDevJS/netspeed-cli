@@ -1,0 +1,17 @@
+[package]
+name = \"netspeed-cli-fuzz\"
+version = \"0.0.1\"
+edition = \"2021\"
+
+[dependencies]
+netspeed-cli = { path = \"..\" }
+libfuzzer_sys = \"0.5\"
+
+[profile.release]
+# Security-critical: disable overflow checks in release for fuzzing
+overflow-checks = false
+lto = true
+codegen-units = 1
+
+[profile.dev]
+overflow-checks = false

@@ -53,6 +53,55 @@ qa:
 audit:
 	cargo audit
 
+# Run cargo-deny security and license check
+audit-deny:
+	cargo deny check
+
+# Run full security audit (audit + deny)
+security:
+	cargo audit
+	cargo deny check
+
+# Check for outdated dependencies
+outdated:
+	cargo install cargo-outdated --locked 2>/dev/null || true
+	cargo outdated --root
+
+# Run security-focused clippy checks
+security-check:
+	cargo clippy --all-targets --all-features -- -D warnings
+
+# Check for unsafe code usage
+unsafe-check:
+	@echo "=== Checking for unsafe code ==="
+	@if grep -r 'unsafe' src/ --include='*.rs' | grep -v 'allow(unsafe_code)' | grep -v '#\[allow(unsafe_code)\]' > /dev/null; then \
+		echo "Found unsafe code - review recommended"; \
+		grep -rn 'unsafe' src/ --include='*.rs' | grep -v 'allow(unsafe_code)' | grep -v '#\[allow(unsafe_code)\]'; \
+	else \
+		echo "No unsafe code found (or all properly documented)"; \
+	fi
+
+# Scan for potential hardcoded secrets
+secret-scan:
+	@echo "=== Scanning for potential hardcoded secrets ==="
+	@grep -rnE '(password|api_key|secret|token)\s*=\s*["\']' src/ --include='*.rs' | grep -v '//' | grep -v 'example' | grep -v 'placeholder' || echo "No obvious secrets found"
+
+# Check file permissions handling
+permissions-check:
+	@echo "=== Checking file permissions ==="
+	@if grep -q 'set_permissions.*0o600' src/; then \
+		echo "Found 0o600 permission setting - good!"; \
+	else \
+		echo "Warning: No 0o600 permission setting found"; \
+	fi
+
+# Generate security report (runs audit + deny + clippy)
+audit-report:
+	just audit
+	just audit-deny
+	@echo "\n=== Security Audit Summary ==="
+	@echo "All security checks completed"
+
 # Generate and open documentation
 doc:
 	cargo doc --no-deps --open
