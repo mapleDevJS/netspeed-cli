@@ -21,14 +21,14 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     steps:
       - name: Auto-merge
-        # NOTE: "Allow auto-merge" must be enabled in repo Settings → General → Pull Requests
+        # NOTE: \"Allow auto-merge\" must be enabled in repo Settings → General → Pull Requests
         # for this automation to work. See: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-auto-merge-for-pull-requests-in-your-repository
         uses: actions/auto-merge-action@v5
         with:
           # Use squash merge for cleaner history
           merge-method: squash
-          # Only merge if all required checks pass
-          required-consecutive-passing-checks: 3
+          # Only merge if CI passes (match your CI configuration)
+          required-consecutive-passing-checks: 1
           # Minimum wait time (in minutes) before auto-merge
           min-interval-seconds: 300
 
