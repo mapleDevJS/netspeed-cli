@@ -167,3 +167,232 @@ pub fn speed_icon(mbps: f64, _nc: bool) -> (&'static str, &'static str) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    #[test]
+    fn test_mini_bar_full() {
+        let bar = mini_bar(10, 10, true, 100.0);
+        assert_eq!(bar, "[##########]");
+    }
+
+    #[test]
+    fn test_mini_bar_empty() {
+        let bar = mini_bar(0, 10, true, 0.0);
+        assert_eq!(bar, "[----------]");
+    }
+
+    #[test]
+    fn test_mini_bar_half() {
+        let bar = mini_bar(5, 10, true, 50.0);
+        assert_eq!(bar, "[#####-----]");
+    }
+
+    #[test]
+    fn test_mini_bar_width_larger_than_fill() {
+        let bar = mini_bar(3, 10, true, 30.0);
+        assert_eq!(bar, "[###-------]");
+    }
+
+    #[test]
+    fn test_mini_bar_nc_mode() {
+        let bar = mini_bar(5, 8, true, 50.0);
+        assert_eq!(bar, "[#####---]");
+    }
+
+    #[test]
+    fn test_mini_bar_colored_high_headroom() {
+        // With colored output and >50% headroom, should use green
+        let bar = mini_bar(8, 10, false, 80.0);
+        assert!(bar.contains('█'));
+        assert!(bar.contains('░'));
+    }
+
+    #[test]
+    fn test_mini_bar_colored_medium_headroom() {
+        // With colored output and 20-50% headroom, should use yellow
+        let bar = mini_bar(5, 10, false, 30.0);
+        assert!(bar.contains('█'));
+        assert!(bar.contains('░'));
+    }
+
+    #[test]
+    fn test_mini_bar_colored_low_headroom() {
+        // With colored output and <20% headroom, should use red
+        let bar = mini_bar(2, 10, false, 10.0);
+        assert!(bar.contains('█'));
+        assert!(bar.contains('░'));
+    }
+
+    #[test]
+    fn test_severity_icon_met_high_headroom() {
+        let (icon, label) = severity_icon(80.0, true);
+        assert!(!icon.is_empty());
+        assert!(!label.is_empty());
+    }
+
+    #[test]
+    fn test_severity_icon_met_medium_headroom() {
+        let (icon, label) = severity_icon(30.0, true);
+        assert!(!icon.is_empty());
+        assert!(!label.is_empty());
+    }
+
+    #[test]
+    fn test_severity_icon_met_low_headroom() {
+        let (icon, label) = severity_icon(10.0, true);
+        assert!(!icon.is_empty());
+        assert!(!label.is_empty());
+    }
+
+    #[test]
+    fn test_severity_icon_not_met() {
+        let (icon, label) = severity_icon(50.0, false);
+        assert!(!icon.is_empty());
+        assert!(!label.is_empty());
+    }
+
+    #[test]
+    fn test_severity_icon_zero_headroom() {
+        let (icon, _) = severity_icon(0.0, true);
+        assert!(!icon.is_empty());
+    }
+
+    #[test]
+    fn test_stability_label_rock_solid() {
+        let (grade, label) = stability_label(2.0, false, Theme::Dark);
+        assert!(grade.contains('A'));
+        assert!(label.contains("rock-solid"));
+    }
+
+    #[test]
+    fn test_stability_label_stable() {
+        let (grade, label) = stability_label(7.0, false, Theme::Dark);
+        assert!(grade.contains('A') || grade.contains('B'));
+        assert!(label.contains("stable"));
+    }
+
+    #[test]
+    fn test_stability_label_variable() {
+        // 14.9% gives C grade (>=8.0 && <15.0)
+        let (grade, label) = stability_label(14.9, false, Theme::Dark);
+        assert!(grade.contains('C'));
+        assert!(label.contains("variable"));
+    }
+
+    #[test]
+    fn test_stability_label_unstable() {
+        // 24.9% gives D grade (>=15.0 && <25.0)
+        let (grade, label) = stability_label(24.9, false, Theme::Dark);
+        assert!(grade.contains('D'));
+        assert!(label.contains("unstable"));
+    }
+
+    #[test]
+    fn test_stability_label_chaotic() {
+        let (grade, label) = stability_label(50.0, false, Theme::Dark);
+        assert!(grade.contains('F'));
+        assert!(label.contains("chaotic"));
+    }
+
+    #[test]
+    fn test_stability_label_nc_mode() {
+        // 6.5% gives B grade (>=5.0 && <8.0)
+        let (grade, label) = stability_label(6.5, true, Theme::Dark);
+        assert!(grade.contains('[')); // NC mode uses brackets
+        assert!(label.contains("stable"));
+    }
+
+    #[test]
+    fn test_bufferbloat_info_basic() {
+        let (grade, label) = bufferbloat_info(20.0, Some(10.0), false, Theme::Dark);
+        assert!(!grade.is_empty());
+        assert!(label.contains("+10ms")); // 20 - 10 = 10ms added
+    }
+
+    #[test]
+    fn test_bufferbloat_info_no_idle() {
+        let (grade, label) = bufferbloat_info(25.0, None, false, Theme::Dark);
+        assert!(!grade.is_empty());
+        assert!(label.contains("+25ms")); // Uses load latency as-is
+    }
+
+    #[test]
+    fn test_bufferbloat_info_zero_idle() {
+        let (grade, label) = bufferbloat_info(30.0, Some(0.0), false, Theme::Dark);
+        assert!(!grade.is_empty());
+        assert!(label.contains("+30ms")); // Uses load latency when idle is 0
+    }
+
+    #[test]
+    fn test_bufferbloat_info_nc_mode() {
+        let (grade, label) = bufferbloat_info(15.0, Some(5.0), true, Theme::Dark);
+        assert!(grade.contains('[')); // NC mode uses brackets
+        assert!(label.contains("+10ms"));
+    }
+
+    #[test]
+    fn test_speed_icon_excellent() {
+        let (icon, _) = speed_icon(1000.0, false);
+        assert!(!icon.is_empty());
+    }
+
+    #[test]
+    fn test_speed_icon_good() {
+        let (icon, _) = speed_icon(100.0, false);
+        assert!(!icon.is_empty());
+    }
+
+    #[test]
+    fn test_speed_icon_fair() {
+        let (icon, _) = speed_icon(25.0, false);
+        assert!(!icon.is_empty());
+    }
+
+    #[test]
+    fn test_speed_icon_poor() {
+        let (icon, _) = speed_icon(1.0, false);
+        assert!(!icon.is_empty());
+    }
+
+    #[test]
+    fn test_speed_icon_nc_mode() {
+        let (icon, _) = speed_icon(500.0, true);
+        assert!(!icon.is_empty());
+        // NC mode should return text like "FAST" instead of emoji
+    }
+
+    #[test]
+    fn test_line_width_constant() {
+        assert_eq!(LINE_WIDTH, 60);
+    }
+
+    #[test]
+    fn test_summary_struct_creation() {
+        let summary = Summary {
+            dl_mbps: 100.0,
+            dl_peak_mbps: 120.0,
+            dl_bytes: 10_000_000,
+            dl_duration: 2.0,
+            ul_mbps: 50.0,
+            ul_peak_mbps: 60.0,
+            ul_bytes: 5_000_000,
+            ul_duration: 1.0,
+            elapsed: std::time::Duration::from_secs(10),
+            profile: crate::profiles::UserProfile::PowerUser,
+            theme: Theme::Dark,
+        };
+        assert_eq!(summary.dl_mbps, 100.0);
+        assert_eq!(summary.ul_mbps, 50.0);
+    }
+
+    #[test]
+    fn test_bufferbloat_info_negative_added() {
+        // When load latency is less than idle, added should be 0 (not negative)
+        let (_, label) = bufferbloat_info(5.0, Some(10.0), false, Theme::Dark);
+        assert!(label.contains("+0ms") || label.contains("+5ms"));
+    }
+}

@@ -729,4 +729,287 @@ mod tests {
         let output = format_scenario_grid(5.0, true, false);
         assert!(output.contains("insufficient") || output.contains("limited"));
     }
+
+    // ==================== Rendering Function Tests ====================
+
+    #[test]
+    fn test_render_status_symbol_met_high_headroom() {
+        // is_met=true, headroom>50% -> OK/✅
+        let result = render_status_symbol(75.0, true);
+        assert!(result.contains("OK") || result.contains("✅"));
+    }
+
+    #[test]
+    fn test_render_status_symbol_met_medium_headroom() {
+        // is_met=true, 20<=headroom<=50% -> WARN/⚠️
+        let result = render_status_symbol(35.0, true);
+        assert!(result.contains("WARN") || result.contains("⚠️"));
+    }
+
+    #[test]
+    fn test_render_status_symbol_met_low_headroom() {
+        // is_met=true, headroom<20% -> LOW/🔴
+        let result = render_status_symbol(10.0, true);
+        assert!(result.contains("LOW") || result.contains("🔴"));
+    }
+
+    #[test]
+    fn test_render_status_symbol_not_met() {
+        // is_met=false -> FAIL/❌
+        let result = render_status_symbol(100.0, false);
+        assert!(result.contains("FAIL") || result.contains("❌"));
+    }
+
+    #[test]
+    fn test_render_category_header_colored() {
+        let cat = &CAT_COMMUNICATION;
+        let result = render_category_header(cat, false, false);
+        assert!(result.contains("COMMUNICATION"));
+        assert!(result.contains("│"));
+    }
+
+    #[test]
+    fn test_render_category_header_minimal() {
+        let cat = &CAT_STREAMING;
+        let result = render_category_header(cat, true, true);
+        assert!(result.contains("STREAMING"));
+        assert!(result.contains("│"));
+    }
+
+    #[test]
+    fn test_render_category_box_colored() {
+        let cat = &CAT_SMART_HOME;
+        let statuses = vec![
+            compute_scenario_status(100.0, &cat.scenarios[0]),
+            compute_scenario_status(100.0, &cat.scenarios[1]),
+        ];
+        let result = render_category_box(cat, &statuses, false, false);
+        assert!(result.contains("SMART HOME"));
+        assert!(result.contains("│"));
+        assert!(result.contains("─"));
+    }
+
+    #[test]
+    fn test_render_category_box_minimal() {
+        let cat = &CAT_NEXTGEN;
+        let statuses = vec![compute_scenario_status(1000.0, &cat.scenarios[0])];
+        let result = render_category_box(cat, &statuses, true, true);
+        assert!(result.contains("NEXT-GEN"));
+        assert!(result.contains("│"));
+    }
+
+    #[test]
+    fn test_render_scenario_row_colored_met() {
+        let s = &CAT_COMMUNICATION.scenarios[0]; // 8 Mbps
+        let status = compute_scenario_status(100.0, s);
+        let result = render_scenario_row(&status, false, false);
+        assert!(result.contains("8 Mbps"));
+        assert!(result.contains("12x"));
+    }
+
+    #[test]
+    fn test_render_scenario_row_minimal_not_met() {
+        let s = &CAT_NEXTGEN.scenarios[2]; // 200 Mbps
+        let status = compute_scenario_status(50.0, s);
+        let result = render_scenario_row(&status, true, true);
+        assert!(result.contains("200 Mbps"));
+        // Not met should show FAIL or ❌ depending on emoji mode
+        assert!(result.contains("FAIL") || result.contains("❌"));
+    }
+
+    #[test]
+    fn test_render_section_header_colored() {
+        let result = render_section_header(500.0, false, false);
+        assert!(result.contains("500"));
+        assert!(result.contains("Mbps"));
+        assert!(result.contains("┌"));
+    }
+
+    #[test]
+    fn test_render_section_header_minimal() {
+        let result = render_section_header(100.0, true, true);
+        assert!(result.contains("100"));
+        assert!(result.contains("+"));
+    }
+
+    #[test]
+    fn test_render_section_footer_colored() {
+        let result = render_section_footer(false, false);
+        assert!(result.contains("└"));
+        assert!(result.contains("┘"));
+    }
+
+    #[test]
+    fn test_render_section_footer_minimal() {
+        let result = render_section_footer(true, true);
+        assert!(result.contains("+"));
+    }
+
+    #[test]
+    fn test_render_summary_colored() {
+        let statuses = compute_all_statuses(500.0);
+        let result = render_summary(&statuses, 500.0, false, false);
+        assert!(result.contains("SUMMARY"));
+        assert!(result.contains("500 Mbps"));
+    }
+
+    #[test]
+    fn test_render_summary_minimal() {
+        let statuses = compute_all_statuses(100.0);
+        let result = render_summary(&statuses, 100.0, true, true);
+        assert!(result.contains("SUMMARY"));
+        assert!(result.contains("100"));
+    }
+
+    #[test]
+    fn test_render_recommendation_warning_case() {
+        // At 80 Mbps, most scenarios met but 4K upload (80 Mbps) has limited headroom
+        let statuses = compute_all_statuses(80.0);
+        let result = render_recommendation(&statuses, 80.0, true, true);
+        assert!(result.contains("limited") || result.contains("headroom"));
+    }
+
+    #[test]
+    fn test_render_recommendation_insufficient() {
+        // At 5 Mbps, nothing is met
+        let statuses = compute_all_statuses(5.0);
+        let result = render_recommendation(&statuses, 5.0, true, true);
+        // Should contain some indication of insufficient capacity
+        assert!(!result.is_empty());
+        // Check for the message content (insufficient or upgrading recommendation)
+        assert!(
+            result.contains("insufficient")
+                || result.contains("upgrading")
+                || result.contains("100 Mbps")
+                || result.contains("[!]")
+        );
+    }
+
+    #[test]
+    fn test_render_recommendation_colored_warning() {
+        let statuses = compute_all_statuses(80.0);
+        let result = render_recommendation(&statuses, 80.0, false, false);
+        assert!(!result.is_empty());
+        // Should contain recommendation text
+        assert!(result.contains("headroom") || result.contains("upgrading"));
+    }
+
+    #[test]
+    fn test_render_recommendation_colored_insufficient() {
+        let statuses = compute_all_statuses(5.0);
+        let result = render_recommendation(&statuses, 5.0, false, false);
+        // Should contain recommendation text
+        assert!(!result.is_empty());
+        // Check for warning icon or insufficient/upgrading text
+        assert!(
+            result.contains("insufficient")
+                || result.contains("upgrading")
+                || result.contains("⚠️")
+                || result.contains("🔴")
+        );
+    }
+
+    #[test]
+    fn test_headroom_level_boundary_green_yellow() {
+        // Exactly at 50.0 should be Yellow (>=20 && <=50)
+        assert_eq!(headroom_level(50.0), HeadroomLevel::Yellow);
+    }
+
+    #[test]
+    fn test_headroom_level_boundary_yellow_red() {
+        // Exactly at 20.0 should be Yellow (>=20)
+        assert_eq!(headroom_level(20.0), HeadroomLevel::Yellow);
+    }
+
+    #[test]
+    fn test_headroom_level_just_above_50() {
+        // Just above 50.0 should be Green
+        assert_eq!(headroom_level(50.01), HeadroomLevel::Green);
+    }
+
+    #[test]
+    fn test_headroom_level_just_below_20() {
+        // Just below 20.0 should be Red
+        assert_eq!(headroom_level(19.99), HeadroomLevel::Red);
+    }
+
+    #[test]
+    fn test_compute_all_statuses_empty_connection() {
+        let statuses = compute_all_statuses(0.0);
+        assert_eq!(statuses.len(), 5); // All 5 categories
+        for cat in &statuses {
+            for s in cat {
+                assert!(!s.is_met); // Nothing met at 0 Mbps
+                assert_eq!(s.concurrent, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_all_statuses_high_connection() {
+        let statuses = compute_all_statuses(10000.0); // 10 Gbps
+        for cat in &statuses {
+            for s in cat {
+                assert!(s.is_met); // Everything met at 10 Gbps
+                assert!(s.concurrent > 10); // High concurrent count
+            }
+        }
+    }
+
+    #[test]
+    fn test_worst_headroom_level_all_yellow() {
+        // 35 Mbps is just below AI Model Download (200 Mbps) threshold
+        let statuses = compute_all_statuses(35.0);
+        let worst = worst_headroom_level(&statuses);
+        // Should be Red because AI Model Download won't be met
+        assert_eq!(worst, HeadroomLevel::Red);
+    }
+
+    #[test]
+    fn test_worst_headroom_level_mixed() {
+        // 30 Mbps - some met, some not
+        let statuses = compute_all_statuses(30.0);
+        let worst = worst_headroom_level(&statuses);
+        assert_eq!(worst, HeadroomLevel::Red); // AI Model Download won't be met
+    }
+
+    #[test]
+    fn test_format_scenario_grid_all_categories() {
+        let output = format_scenario_grid(200.0, true, false);
+        // All 5 categories should appear
+        assert!(output.contains("COMMUNICATION"));
+        assert!(output.contains("STREAMING"));
+        assert!(output.contains("PRODUCTIVITY"));
+        assert!(output.contains("SMART HOME"));
+        assert!(output.contains("NEXT-GEN"));
+    }
+
+    #[test]
+    fn test_format_scenario_grid_has_summary() {
+        let output = format_scenario_grid(100.0, true, false);
+        assert!(output.contains("SUMMARY"));
+    }
+
+    #[test]
+    fn test_format_scenario_grid_has_recommendation() {
+        let output = format_scenario_grid(100.0, true, false);
+        // Recommendation section should exist
+        assert!(
+            output.contains("Recommendation")
+                || output.contains("recommend")
+                || output.contains("upgrading")
+        );
+    }
+
+    #[test]
+    fn test_print_scenario_grid_runs() {
+        // Just verify it doesn't panic
+        print_scenario_grid(100.0, false);
+    }
+
+    #[test]
+    fn test_print_scenario_grid_minimal() {
+        // Just verify it doesn't panic
+        print_scenario_grid(500.0, true);
+    }
 }

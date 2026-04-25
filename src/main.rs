@@ -248,9 +248,23 @@ fn suggestion_for_error(e: &Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // OutputFormatType is already imported via netspeed_cli::cli::OutputFormatType
+
+    // ── Exit codes tests ──────────────────────────────────────────────────────
 
     #[test]
-    fn test_machine_error_format_prefers_explicit_json() {
+    fn test_exit_codes_values() {
+        assert_eq!(exit_codes::SUCCESS, 0);
+        assert_eq!(exit_codes::USAGE_ERROR, 64);
+        assert_eq!(exit_codes::CONFIG_ERROR, 65);
+        assert_eq!(exit_codes::NETWORK_ERROR, 69);
+        assert_eq!(exit_codes::INTERNAL_ERROR, 70);
+    }
+
+    // ── machine_error_format tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_machine_error_format_json() {
         let args = Args::try_parse_from(["netspeed-cli", "--format", "json"]).unwrap();
         assert!(matches!(
             machine_error_format(&args),
@@ -259,7 +273,16 @@ mod tests {
     }
 
     #[test]
-    fn test_machine_error_format_supports_legacy_json_flag() {
+    fn test_machine_error_format_jsonl() {
+        let args = Args::try_parse_from(["netspeed-cli", "--format", "jsonl"]).unwrap();
+        assert!(matches!(
+            machine_error_format(&args),
+            Some(OutputFormatType::Jsonl)
+        ));
+    }
+
+    #[test]
+    fn test_machine_error_format_legacy_json_flag() {
         let args = Args::try_parse_from(["netspeed-cli", "--json"]).unwrap();
         assert!(matches!(
             machine_error_format(&args),
@@ -274,10 +297,120 @@ mod tests {
     }
 
     #[test]
+    fn test_machine_error_format_ignores_dashboard() {
+        let args = Args::try_parse_from(["netspeed-cli", "--format", "dashboard"]).unwrap();
+        assert!(machine_error_format(&args).is_none());
+    }
+
+    #[test]
+    fn test_machine_error_format_ignores_detailed() {
+        let args = Args::try_parse_from(["netspeed-cli", "--format", "detailed"]).unwrap();
+        assert!(machine_error_format(&args).is_none());
+    }
+
+    #[test]
+    fn test_machine_error_format_ignores_simple() {
+        let args = Args::try_parse_from(["netspeed-cli", "--format", "simple"]).unwrap();
+        assert!(machine_error_format(&args).is_none());
+    }
+
+    #[test]
+    fn test_machine_error_format_none_by_default() {
+        let args = Args::try_parse_from(["netspeed-cli"]).unwrap();
+        assert!(machine_error_format(&args).is_none());
+    }
+
+    // ── is_list_sentinel tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_list_sentinel_true() {
+        let sentinel = Error::Context {
+            msg: "__list_displayed__".into(),
+            source: None,
+        };
+        assert!(is_list_sentinel(&sentinel));
+    }
+
+    #[test]
+    fn test_is_list_sentinel_false_different_message() {
+        let other = Error::Context {
+            msg: "other error".into(),
+            source: None,
+        };
+        assert!(!is_list_sentinel(&other));
+    }
+
+    #[test]
+    fn test_is_list_sentinel_false_different_error_type() {
+        assert!(!is_list_sentinel(&Error::DownloadFailure("test".into())));
+        assert!(!is_list_sentinel(&Error::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not found"
+        ))));
+    }
+
+    // ── is_network_error tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_network_error_download_failure() {
+        assert!(is_network_error(&Error::DownloadFailure("test".into())));
+    }
+
+    #[test]
+    fn test_is_network_error_upload_failure() {
+        assert!(is_network_error(&Error::UploadFailure("test".into())));
+    }
+
+    #[test]
+    fn test_is_network_error_false_context() {
+        assert!(!is_network_error(&Error::Context {
+            msg: "config error".into(),
+            source: None,
+        }));
+    }
+
+    #[test]
+    fn test_is_network_error_false_server_not_found() {
+        assert!(!is_network_error(&Error::ServerNotFound("missing".into())));
+    }
+
+    // ── is_config_error tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_config_error_server_not_found() {
+        assert!(is_config_error(&Error::ServerNotFound("missing".into())));
+    }
+
+    #[test]
+    fn test_is_config_error_context() {
+        let err = Error::Context {
+            msg: "config error".into(),
+            source: None,
+        };
+        assert!(is_config_error(&err));
+    }
+
+    #[test]
+    fn test_is_config_error_false_network() {
+        assert!(!is_config_error(&Error::DownloadFailure("test".into())));
+        assert!(!is_config_error(&Error::UploadFailure("test".into())));
+    }
+
+    // ── machine_error_identity tests ──────────────────────────────────────────
+
+    #[test]
     fn test_machine_error_identity_download_failure() {
-        let (code, category) =
-            machine_error_identity(&Error::DownloadFailure("zero bytes".to_string()));
+        let err = Error::DownloadFailure("zero bytes".into());
+        let (code, category) = machine_error_identity(&err);
         assert_eq!(code, "download_failed");
+        assert_eq!(category, "network");
+    }
+
+    #[test]
+    fn test_machine_error_identity_upload_failure() {
+        let err = Error::UploadFailure("timeout".into());
+        let (code, category) = machine_error_identity(&err);
+        assert_eq!(code, "upload_failed");
         assert_eq!(category, "network");
     }
 
@@ -288,6 +421,86 @@ mod tests {
         assert_eq!(code, "server_not_found");
         assert_eq!(category, "config");
     }
+
+    #[test]
+    fn test_machine_error_identity_parse_json() {
+        let (code, category) = machine_error_identity(&Error::ParseJson(
+            serde_json::from_str::<serde_json::Value>("invalid").unwrap_err(),
+        ));
+        assert_eq!(code, "json_parse_failed");
+        assert_eq!(category, "parse");
+    }
+
+    #[test]
+    fn test_machine_error_identity_parse_xml() {
+        // Create a valid quick_xml::Error from an io error (requires Arc<IoError>)
+        let io_err = std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid xml");
+        let xml_err = quick_xml::Error::Io(io_err.into());
+        let err = Error::ParseXml(xml_err);
+        let (code, category) = machine_error_identity(&err);
+        assert_eq!(code, "xml_parse_failed");
+        assert_eq!(category, "parse");
+    }
+
+    #[test]
+    fn test_machine_error_identity_deserialize_xml() {
+        // Create a valid quick_xml::de::DeError by attempting to deserialize invalid XML
+        let invalid_xml = "<unclosed>";
+        let result: Result<serde_json::Value, _> = quick_xml::de::from_str(invalid_xml);
+        assert!(result.is_err());
+        let err = Error::DeserializeXml(result.unwrap_err());
+        let (code, category) = machine_error_identity(&err);
+        assert_eq!(code, "xml_parse_failed");
+        assert_eq!(category, "parse");
+    }
+
+    #[test]
+    fn test_machine_error_identity_csv() {
+        // Create a valid csv::Error from an io error
+        let io_err = std::io::Error::new(std::io::ErrorKind::InvalidData, "csv error");
+        let csv_err = csv::Error::from(io_err);
+        let err = Error::Csv(csv_err);
+        let (code, category) = machine_error_identity(&err);
+        assert_eq!(code, "csv_output_failed");
+        assert_eq!(category, "output");
+    }
+
+    #[test]
+    fn test_machine_error_identity_io_error() {
+        let (code, category) = machine_error_identity(&Error::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not found",
+        )));
+        assert_eq!(code, "io_error");
+        assert_eq!(category, "io");
+    }
+
+    #[test]
+    fn test_machine_error_identity_context() {
+        let (code, category) = machine_error_identity(&Error::Context {
+            msg: "test".into(),
+            source: None,
+        });
+        assert_eq!(code, "context_error");
+        assert_eq!(category, "internal");
+    }
+
+    #[test]
+    fn test_machine_error_identity_context_with_source() {
+        // Use IoError as source for Context
+        let source_err = Error::IoError(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timed out",
+        ));
+        let (code, category) = machine_error_identity(&Error::Context {
+            msg: "nested error".into(),
+            source: Some(Box::new(source_err)),
+        });
+        assert_eq!(code, "context_error");
+        assert_eq!(category, "internal");
+    }
+
+    // ── render_machine_error tests ────────────────────────────────────────────
 
     #[test]
     fn test_render_machine_error_jsonl() {
@@ -301,5 +514,176 @@ mod tests {
         assert_eq!(payload["exit_code"], exit_codes::NETWORK_ERROR);
         assert_eq!(payload["error"]["code"], "download_failed");
         assert_eq!(payload["error"]["category"], "network");
+        assert!(payload["error"]["message"].is_string());
+        assert!(payload["error"]["suggestion"].is_string());
+        // JSONL should be a single line (no newlines in output)
+        assert!(!output.contains('\n'));
+    }
+
+    #[test]
+    fn test_render_machine_error_json() {
+        let output = render_machine_error(
+            &Error::DownloadFailure("test error".to_string()),
+            exit_codes::NETWORK_ERROR,
+            OutputFormatType::Json,
+        );
+        let payload: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(payload["status"], "error");
+        assert_eq!(payload["error"]["code"], "download_failed");
+        assert!(payload["error"]["message"].is_string());
+        assert!(payload["error"]["suggestion"].is_string());
+    }
+
+    #[test]
+    fn test_render_machine_error_timestamp_format() {
+        let output = render_machine_error(
+            &Error::ServerNotFound("missing".to_string()),
+            exit_codes::CONFIG_ERROR,
+            OutputFormatType::Json,
+        );
+        let payload: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let timestamp = payload["timestamp"].as_str().unwrap();
+        // Should be RFC3339 format
+        assert!(timestamp.contains("T") || timestamp.contains(" "));
+        assert!(timestamp.ends_with('Z') || timestamp.ends_with("+00:00"));
+    }
+
+    #[test]
+    fn test_render_machine_error_all_fields_present() {
+        let output = render_machine_error(
+            &Error::UploadFailure("connection reset".to_string()),
+            exit_codes::NETWORK_ERROR,
+            OutputFormatType::Json,
+        );
+        let payload: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        // Verify all required fields
+        assert!(payload.get("status").is_some());
+        assert!(payload.get("exit_code").is_some());
+        assert!(payload.get("timestamp").is_some());
+        assert!(payload.get("error").is_some());
+
+        let error = &payload["error"];
+        assert!(error.get("code").is_some());
+        assert!(error.get("category").is_some());
+        assert!(error.get("message").is_some());
+        assert!(error.get("suggestion").is_some());
+    }
+
+    // ── suggestion_for_error tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_suggestion_for_error_download_failure() {
+        let err = Error::DownloadFailure("connection timed out".into());
+        let suggestion = suggestion_for_error(&err);
+        assert!(suggestion.contains("firewall") || suggestion.contains("--single"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_upload_failure() {
+        let err = Error::UploadFailure("timeout".into());
+        let suggestion = suggestion_for_error(&err);
+        assert!(suggestion.contains("firewall") || suggestion.contains("--no-upload"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_server_not_found() {
+        let suggestion = suggestion_for_error(&Error::ServerNotFound("missing".into()));
+        assert!(suggestion.contains("--list"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_io_error() {
+        let suggestion = suggestion_for_error(&Error::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not found",
+        )));
+        assert!(suggestion.contains("permissions") || suggestion.contains("disk"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_parse_json() {
+        let suggestion = suggestion_for_error(&Error::ParseJson(
+            serde_json::from_str::<serde_json::Value>("invalid").unwrap_err(),
+        ));
+        assert!(suggestion.contains("malformed") || suggestion.contains("Try again"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_parse_xml() {
+        // Create a valid quick_xml::Error from an io error (requires Arc<IoError>)
+        let io_err = std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid xml");
+        let xml_err = quick_xml::Error::Io(io_err.into());
+        let err = Error::ParseXml(xml_err);
+        let suggestion = suggestion_for_error(&err);
+        assert!(suggestion.contains("malformed") || suggestion.contains("Try again"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_deserialize_xml() {
+        // Create a valid quick_xml::de::DeError by attempting to deserialize invalid XML
+        let invalid_xml = "<unclosed>";
+        let result: Result<serde_json::Value, _> = quick_xml::de::from_str(invalid_xml);
+        assert!(result.is_err());
+        let err = Error::DeserializeXml(result.unwrap_err());
+        let suggestion = suggestion_for_error(&err);
+        assert!(suggestion.contains("malformed") || suggestion.contains("Try again"));
+    }
+
+    #[test]
+    fn test_suggestion_for_error_default() {
+        let err = Error::Context {
+            msg: "unknown".into(),
+            source: None,
+        };
+        let suggestion = suggestion_for_error(&err);
+        assert!(suggestion.contains("--help"));
+    }
+
+    // ── MachineErrorOutput struct tests ───────────────────────────────────────
+
+    #[test]
+    fn test_machine_error_output_serialization() {
+        let output = MachineErrorOutput {
+            status: "error",
+            exit_code: 69,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            error: MachineErrorBody {
+                code: "test_code",
+                category: "test_category",
+                message: "Test error message".to_string(),
+                suggestion: "Test suggestion",
+            },
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["status"], "error");
+        assert_eq!(parsed["exit_code"], 69);
+        assert_eq!(parsed["error"]["code"], "test_code");
+        assert_eq!(parsed["error"]["category"], "test_category");
+        assert_eq!(parsed["error"]["message"], "Test error message");
+        assert_eq!(parsed["error"]["suggestion"], "Test suggestion");
+    }
+
+    // ── MachineErrorBody struct tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_machine_error_body_serialization() {
+        let body = MachineErrorBody {
+            code: "network_error",
+            category: "network",
+            message: "Connection failed".to_string(),
+            suggestion: "Check connection",
+        };
+
+        let json = serde_json::to_string(&body).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["code"], "network_error");
+        assert_eq!(parsed["category"], "network");
+        assert_eq!(parsed["message"], "Connection failed");
+        assert_eq!(parsed["suggestion"], "Check connection");
     }
 }

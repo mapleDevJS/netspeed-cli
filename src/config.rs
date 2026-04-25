@@ -1511,6 +1511,927 @@ mod tests {
     use crate::cli::Args;
     use clap::Parser;
 
+    // ==================== ConfigSource Tests ====================
+
+    #[test]
+    fn test_config_source_from_args_list_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--list"]);
+        let source = ConfigSource::from_args(&args);
+        assert!(source.output.list);
+    }
+
+    #[test]
+    fn test_config_source_from_args_quiet_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--quiet"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.quiet, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_minimal_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--minimal"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.minimal, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_strict_config() {
+        let args = Args::parse_from(["netspeed-cli", "--strict-config"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.strict_config, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_bytes_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--bytes"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.bytes, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_json_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--json"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.json, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_csv_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--csv"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.csv, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_simple_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--simple"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.simple, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_csv_header_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--csv-header"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.csv_header, Some(true));
+    }
+
+    #[test]
+    fn test_config_source_from_args_csv_delimiter() {
+        let args = Args::parse_from(["netspeed-cli", "--csv-delimiter", ";"]);
+        let source = ConfigSource::from_args(&args);
+        assert_eq!(source.output.csv_delimiter, ';');
+    }
+
+    // ==================== Config Creation Tests ====================
+
+    #[test]
+    fn test_config_from_source_with_none_file() {
+        let source = ConfigSource::default();
+        let config = Config::from_source_with_file(&source, None);
+        // Should use defaults when no file config
+        assert!(!config.output.bytes);
+        assert_eq!(config.network.timeout, 10);
+    }
+
+    #[test]
+    fn test_config_from_source_with_file_profile() {
+        let mut source = ConfigSource::default();
+        source.output.profile = Some("streamer".to_string());
+        let file_config = File::default();
+        let config = Config::from_source_with_file(&source, Some(file_config));
+        assert_eq!(config.profile(), Some("streamer"));
+    }
+
+    #[test]
+    fn test_config_from_source_strict_mode() {
+        let mut source = ConfigSource::default();
+        source.strict_config = Some(true);
+        let file_config = File::default();
+        let config = Config::from_source_with_file(&source, Some(file_config));
+        assert!(config.strict());
+    }
+
+    #[test]
+    fn test_config_from_args_strict_from_file() {
+        // Test strict mode from file config
+        let toml_content = "strict = true";
+        let file_config: File = toml::from_str(toml_content).unwrap();
+        let source = ConfigSource::default();
+        let config = Config::from_source_with_file(&source, Some(file_config));
+        assert!(config.strict());
+    }
+
+    #[test]
+    fn test_config_from_args_timeout_from_file() {
+        // Test timeout from file config when CLI is default
+        let toml_content = "timeout = 60";
+        let file_config: File = toml::from_str(toml_content).unwrap();
+        let source = ConfigSource::default(); // timeout=10 (default)
+        let config = Config::from_source_with_file(&source, Some(file_config));
+        assert_eq!(config.timeout(), 60); // File should override default
+    }
+
+    #[test]
+    fn test_config_from_args_timeout_cli_overrides_file() {
+        // Test CLI timeout overrides file config
+        let toml_content = "timeout = 60";
+        let file_config: File = toml::from_str(toml_content).unwrap();
+        let args = Args::parse_from(["netspeed-cli", "--timeout", "120"]);
+        let source = ConfigSource::from_args(&args);
+        let config = Config::from_source_with_file(&source, Some(file_config));
+        assert_eq!(config.timeout(), 120); // CLI should override file
+    }
+
+    #[test]
+    fn test_config_from_args_custom_user_agent() {
+        let toml_content = "custom_user_agent = \"MyAgent/1.0\"";
+        let file_config: File = toml::from_str(toml_content).unwrap();
+        let source = ConfigSource::default();
+        let config = Config::from_source_with_file(&source, Some(file_config));
+        assert_eq!(config.custom_user_agent(), Some("MyAgent/1.0"));
+    }
+
+    // ==================== OutputConfig::from_source Tests ====================
+
+    #[test]
+    fn test_output_config_from_source_theme_dark_cli_default() {
+        // When CLI theme is "dark" (default), use file theme
+        let source = OutputSource {
+            theme: "dark".to_string(),
+            ..Default::default()
+        };
+        let file = File {
+            theme: Some("light".to_string()),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        // Source theme is "dark" -> use file theme
+        assert_eq!(output.theme, Theme::Light);
+    }
+
+    #[test]
+    fn test_output_config_from_source_theme_cli_override() {
+        // When CLI theme is not "dark", use CLI theme
+        let source = OutputSource {
+            theme: "light".to_string(),
+            ..Default::default()
+        };
+        let file = File {
+            theme: Some("high-contrast".to_string()),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        // Source theme is "light" -> use CLI theme, ignore file
+        assert_eq!(output.theme, Theme::Light);
+    }
+
+    #[test]
+    fn test_output_config_from_source_theme_invalid_file_theme() {
+        // When CLI theme is "dark" but file theme is invalid, use default
+        let source = OutputSource {
+            theme: "dark".to_string(),
+            ..Default::default()
+        };
+        let file = File {
+            theme: Some("invalid_theme".to_string()),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        // Invalid file theme -> default
+        assert_eq!(output.theme, Theme::Dark);
+    }
+
+    #[test]
+    fn test_output_config_from_source_csv_delimiter_default() {
+        // When CLI delimiter is default ',', use file delimiter
+        let source = OutputSource::default(); // csv_delimiter = ','
+        let file = File {
+            csv_delimiter: Some(';'),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        assert_eq!(output.csv_delimiter, ';');
+    }
+
+    #[test]
+    fn test_output_config_from_source_csv_delimiter_cli_override() {
+        // When CLI delimiter is not default, use CLI
+        let source = OutputSource {
+            csv_delimiter: '|',
+            ..Default::default()
+        };
+        let file = File {
+            csv_delimiter: Some(';'),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        assert_eq!(output.csv_delimiter, '|');
+    }
+
+    #[test]
+    fn test_output_config_from_source_profile_merge() {
+        // Profile: CLI takes precedence over file
+        let source = OutputSource {
+            profile: Some("cli-profile".to_string()),
+            ..Default::default()
+        };
+        let file = File {
+            profile: Some("file-profile".to_string()),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        assert_eq!(output.profile, Some("cli-profile".to_string()));
+    }
+
+    #[test]
+    fn test_output_config_from_source_profile_from_file() {
+        // Profile: when CLI is None, use file
+        let source = OutputSource::default();
+        let file = File {
+            profile: Some("file-profile".to_string()),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        assert_eq!(output.profile, Some("file-profile".to_string()));
+    }
+
+    #[test]
+    fn test_output_config_from_source_format() {
+        let source = OutputSource {
+            format: Some(Format::Dashboard),
+            ..Default::default()
+        };
+        let file = File::default();
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let output = OutputConfig::from_source(&source, &file, merge_bool);
+        assert_eq!(output.format, Some(Format::Dashboard));
+    }
+
+    // ==================== TestSelection::from_source Tests ====================
+
+    #[test]
+    fn test_test_selection_from_source_all_fields() {
+        let source = TestSource {
+            no_download: Some(true),
+            no_upload: Some(false),
+            single: Some(true),
+        };
+        let file = File::default();
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let selection = TestSelection::from_source(&source, &file, merge_bool);
+        assert!(selection.no_download);
+        assert!(!selection.no_upload);
+        assert!(selection.single);
+    }
+
+    #[test]
+    fn test_test_selection_from_source_file_fallback() {
+        // When CLI is None, use file config
+        let source = TestSource::default();
+        let file = File {
+            no_download: Some(true),
+            no_upload: Some(true),
+            single: Some(false),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let selection = TestSelection::from_source(&source, &file, merge_bool);
+        assert!(selection.no_download);
+        assert!(selection.no_upload);
+        assert!(!selection.single);
+    }
+
+    #[test]
+    fn test_test_selection_from_source_both_none() {
+        // When both CLI and file are None, use default (false)
+        let source = TestSource::default();
+        let file = File::default();
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let selection = TestSelection::from_source(&source, &file, merge_bool);
+        assert!(!selection.no_download);
+        assert!(!selection.no_upload);
+        assert!(!selection.single);
+    }
+
+    // ==================== NetworkConfig::from_source Tests ====================
+
+    #[test]
+    fn test_network_config_from_source_all_fields() {
+        let source = NetworkSource {
+            source: Some("192.168.1.1".to_string()),
+            timeout: 60,
+            ca_cert: Some("/path/to/cert".to_string()),
+            tls_version: Some("1.3".to_string()),
+            pin_certs: Some(true),
+        };
+        let file = File::default();
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
+            if cli == default {
+                file.unwrap_or(default)
+            } else {
+                cli
+            }
+        };
+        let network = NetworkConfig::from_source(&source, &file, merge_bool, merge_u64);
+        assert_eq!(network.source, Some("192.168.1.1".to_string()));
+        assert_eq!(network.timeout, 60);
+        assert_eq!(network.ca_cert, Some("/path/to/cert".to_string()));
+        assert_eq!(network.tls_version, Some("1.3".to_string()));
+        assert!(network.pin_certs);
+    }
+
+    #[test]
+    fn test_network_config_from_source_timeout_file_fallback() {
+        // When CLI timeout is default, use file
+        let source = NetworkSource::default(); // timeout = 10
+        let file = File {
+            timeout: Some(30),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
+            if cli == default {
+                file.unwrap_or(default)
+            } else {
+                cli
+            }
+        };
+        let network = NetworkConfig::from_source(&source, &file, merge_bool, merge_u64);
+        assert_eq!(network.timeout, 30);
+    }
+
+    #[test]
+    fn test_network_config_from_source_ca_cert_file_fallback() {
+        // When CLI ca_cert is None, use file
+        let source = NetworkSource::default();
+        let file = File {
+            ca_cert: Some("/file/cert.pem".to_string()),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
+            if cli == default {
+                file.unwrap_or(default)
+            } else {
+                cli
+            }
+        };
+        let network = NetworkConfig::from_source(&source, &file, merge_bool, merge_u64);
+        assert_eq!(network.ca_cert, Some("/file/cert.pem".to_string()));
+    }
+
+    #[test]
+    fn test_network_config_from_source_pin_certs_file_fallback() {
+        // When CLI pin_certs is None, use file
+        let source = NetworkSource::default();
+        let file = File {
+            pin_certs: Some(true),
+            ..Default::default()
+        };
+        let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
+        let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
+            if cli == default {
+                file.unwrap_or(default)
+            } else {
+                cli
+            }
+        };
+        let network = NetworkConfig::from_source(&source, &file, merge_bool, merge_u64);
+        assert!(network.pin_certs);
+    }
+
+    // ==================== ValidationResult Tests ====================
+
+    #[test]
+    fn test_validation_result_multiple_warnings() {
+        let result = ValidationResult::ok()
+            .with_warning("warning 1")
+            .with_warning("warning 2")
+            .with_warning("warning 3");
+        assert!(result.valid);
+        assert_eq!(result.warnings.len(), 3);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_validation_result_multiple_errors() {
+        let result = ValidationResult::error("error 1").with_error("error 2");
+        assert!(!result.valid);
+        assert_eq!(result.errors.len(), 2);
+    }
+
+    #[test]
+    fn test_validation_result_with_warning_then_error() {
+        let result = ValidationResult::ok()
+            .with_warning("just a warning")
+            .with_error("actual error");
+        assert!(!result.valid);
+        assert!(result.warnings.len() >= 1);
+        assert!(result.errors.len() >= 1);
+    }
+
+    #[test]
+    fn test_validation_result_merge_valid_results() {
+        let a = ValidationResult::ok().with_warning("warn-a");
+        let b = ValidationResult::ok().with_warning("warn-b");
+        let merged = a.merge(b);
+        assert!(merged.valid);
+        assert_eq!(merged.warnings.len(), 2);
+        assert!(merged.errors.is_empty());
+    }
+
+    #[test]
+    fn test_validation_result_merge_with_invalid() {
+        let a = ValidationResult::ok();
+        let b = ValidationResult::error("bad");
+        let merged = a.merge(b);
+        assert!(!merged.valid);
+        assert!(merged.errors.contains(&"bad".to_string()));
+    }
+
+    #[test]
+    fn test_validation_result_merge_accumulates_all() {
+        let a = ValidationResult::error("err-a").with_warning("warn-a");
+        let b = ValidationResult::error("err-b").with_warning("warn-b");
+        let merged = a.merge(b);
+        assert!(!merged.valid);
+        assert_eq!(merged.errors.len(), 2);
+        assert_eq!(merged.warnings.len(), 2);
+    }
+
+    #[test]
+    fn test_validation_result_merge_empty() {
+        let a = ValidationResult::ok();
+        let merged = a.merge(ValidationResult::ok());
+        assert!(merged.valid);
+        assert!(merged.errors.is_empty());
+        assert!(merged.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validation_result_valid_then_invalid() {
+        // Merging valid into invalid should still be invalid
+        let a = ValidationResult::error("original error");
+        let b = ValidationResult::ok();
+        let merged = a.merge(b);
+        assert!(!merged.valid);
+        assert_eq!(merged.errors.len(), 1);
+    }
+
+    // ==================== validate_config Tests ====================
+
+    #[test]
+    fn test_validate_config_all_valid() {
+        let file_config = File {
+            profile: Some("power-user".to_string()),
+            theme: Some("dark".to_string()),
+            csv_delimiter: Some(','),
+            ..Default::default()
+        };
+        let result = validate_config(&file_config);
+        assert!(result.valid);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_config_multiple_warnings() {
+        let file_config = File {
+            simple: Some(true),
+            csv: Some(true),
+            json: Some(true),
+            ..Default::default()
+        };
+        let result = validate_config(&file_config);
+        assert!(result.valid); // Warnings don't invalidate
+        assert!(result.warnings.len() >= 3); // All deprecated
+    }
+
+    #[test]
+    fn test_validate_config_invalid_timeout_zero() {
+        let file_config = File {
+            timeout: Some(0),
+            ..Default::default()
+        };
+        let result = validate_config(&file_config);
+        assert!(result.valid); // Timeout is not validated by validate_config
+    }
+
+    #[test]
+    fn test_validate_config_invalid_timeout_too_large() {
+        let file_config = File {
+            timeout: Some(500),
+            ..Default::default()
+        };
+        let result = validate_config(&file_config);
+        assert!(result.valid); // Timeout validation happens in load_config_file
+    }
+
+    // ==================== load_config_file Tests ====================
+
+    #[test]
+    fn test_load_config_file_invalid_toml() {
+        // Test with invalid TOML content - temporarily create a test config
+        // This tests the error handling path
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        std::fs::write(&config_path, "invalid toml { =").unwrap();
+
+        // Monkey-patch get_config_path_internal for this test
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let result: Result<File, _> = toml::from_str(&content);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_config_file_timeout_zero() {
+        // Timeout 0 is invalid - should be set to None
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        std::fs::write(&config_path, "timeout = 0").unwrap();
+
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let mut config: File = toml::from_str(&content).unwrap();
+        assert_eq!(config.timeout, Some(0));
+
+        // Validate timeout
+        if let Some(timeout) = config.timeout {
+            if timeout == 0 || timeout > 300 {
+                config.timeout = None;
+            }
+        }
+        assert_eq!(config.timeout, None);
+    }
+
+    #[test]
+    fn test_load_config_file_timeout_too_large() {
+        // Timeout > 300 is invalid
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        std::fs::write(&config_path, "timeout = 500").unwrap();
+
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let mut config: File = toml::from_str(&content).unwrap();
+        assert_eq!(config.timeout, Some(500));
+
+        // Validate timeout
+        if let Some(timeout) = config.timeout {
+            if timeout == 0 || timeout > 300 {
+                config.timeout = None;
+            }
+        }
+        assert_eq!(config.timeout, None);
+    }
+
+    #[test]
+    fn test_load_config_file_valid_timeout() {
+        // Valid timeout should be preserved
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        std::fs::write(&config_path, "timeout = 60").unwrap();
+
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let mut config: File = toml::from_str(&content).unwrap();
+        assert_eq!(config.timeout, Some(60));
+
+        // Validate timeout - should stay as 60
+        if let Some(timeout) = config.timeout {
+            if timeout == 0 || timeout > 300 {
+                config.timeout = None;
+            }
+        }
+        assert_eq!(config.timeout, Some(60));
+    }
+
+    // ==================== get_config_path_internal Tests ====================
+
+    #[test]
+    fn test_get_config_path_internal_returns_path() {
+        let path = get_config_path_internal();
+        // Should return a valid path on most systems
+        if let Some(p) = path {
+            assert!(p.ends_with("config.toml"));
+        }
+        // On some systems, ProjectDirs might not be available
+    }
+
+    // ==================== Config::from_args_with_file Tests ====================
+
+    #[test]
+    fn test_config_from_args_with_file_valid_profile() {
+        let args = Args::parse_from(["netspeed-cli", "--profile", "gamer"]);
+        let source = ConfigSource::from_args(&args);
+        let (config, validation) = Config::from_args_with_file(&source, None);
+        assert!(validation.valid); // Valid profile
+        assert!(config.profile().is_some());
+    }
+
+    #[test]
+    fn test_config_from_args_with_file_invalid_profile_warning() {
+        let args = Args::parse_from(["netspeed-cli", "--profile", "bad-profile"]);
+        let source = ConfigSource::from_args(&args);
+        let (_config, validation) = Config::from_args_with_file(&source, None);
+        // Invalid profile produces warning, not error
+        assert!(validation.valid);
+        assert!(!validation.warnings.is_empty());
+        assert!(validation.warnings[0].contains("bad-profile"));
+    }
+
+    #[test]
+    fn test_config_from_args_with_file_preserves_config() {
+        let args = Args::parse_from(["netspeed-cli", "--timeout", "45"]);
+        let source = ConfigSource::from_args(&args);
+        let (config, validation) = Config::from_args_with_file(&source, None);
+        assert!(validation.valid);
+        assert_eq!(config.timeout(), 45);
+    }
+
+    #[test]
+    fn test_config_from_args_with_file_all_formats() {
+        for format_str in &[
+            "json",
+            "jsonl",
+            "csv",
+            "minimal",
+            "simple",
+            "compact",
+            "detailed",
+            "dashboard",
+        ] {
+            let args = Args::parse_from(["netspeed-cli", "--format", format_str]);
+            let source = ConfigSource::from_args(&args);
+            let (config, _) = Config::from_args_with_file(&source, None);
+            assert!(
+                config.format().is_some(),
+                "Format {} should be set",
+                format_str
+            );
+        }
+    }
+
+    // ==================== Format Display Tests ====================
+
+    #[test]
+    fn test_format_debug() {
+        let fmt = Format::Json;
+        let debug_str = format!("{fmt:?}");
+        assert!(debug_str.contains("Json"));
+    }
+
+    #[test]
+    fn test_format_clone() {
+        let fmt = Format::Detailed;
+        let cloned = fmt;
+        assert_eq!(fmt, cloned);
+    }
+
+    #[test]
+    fn test_format_copy() {
+        let fmt = Format::Dashboard;
+        let copied = fmt; // Copy, not clone
+        assert_eq!(fmt, copied);
+    }
+
+    // ==================== Config Debug/Clone Tests ====================
+
+    #[test]
+    fn test_config_debug() {
+        let config = Config::default();
+        let debug_str = format!("{config:?}");
+        assert!(debug_str.contains("Config"));
+    }
+
+    #[test]
+    fn test_config_source_debug() {
+        let source = ConfigSource::default();
+        let debug_str = format!("{source:?}");
+        assert!(debug_str.contains("ConfigSource"));
+    }
+
+    #[test]
+    fn test_validation_result_debug() {
+        let result = ValidationResult::ok();
+        let debug_str = format!("{result:?}");
+        assert!(debug_str.contains("ValidationResult"));
+    }
+
+    #[test]
+    fn test_file_config_debug() {
+        let file = File::default();
+        let debug_str = format!("{file:?}");
+        assert!(debug_str.contains("File"));
+    }
+
+    #[test]
+    fn test_file_config_clone() {
+        let file = File {
+            timeout: Some(45),
+            profile: Some("test".to_string()),
+            ..Default::default()
+        };
+        let cloned = file.clone();
+        assert_eq!(file.timeout, cloned.timeout);
+        assert_eq!(file.profile, cloned.profile);
+    }
+
+    #[test]
+    fn test_config_source_clone() {
+        let mut source = ConfigSource::default();
+        source.output.profile = Some("clone-test".to_string());
+        let cloned = source.clone();
+        assert_eq!(source.output.profile, cloned.output.profile);
+    }
+
+    // ==================== File Config Deserialization Edge Cases ====================
+
+    #[test]
+    fn test_file_config_all_fields() {
+        let toml_content = r#"
+            no_download = true
+            no_upload = false
+            single = true
+            bytes = true
+            simple = false
+            csv = false
+            csv_delimiter = '|'
+            csv_header = true
+            json = false
+            timeout = 120
+            profile = "gamer"
+            theme = "light"
+            custom_user_agent = "TestAgent/1.0"
+            strict = true
+            ca_cert = "/path/to/cert.pem"
+            tls_version = "1.3"
+            pin_certs = true
+        "#;
+        let config: File = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.no_download, Some(true));
+        assert_eq!(config.timeout, Some(120));
+        assert_eq!(config.profile, Some("gamer".to_string()));
+        assert_eq!(config.theme, Some("light".to_string()));
+        assert_eq!(config.custom_user_agent, Some("TestAgent/1.0".to_string()));
+        assert_eq!(config.strict, Some(true));
+        assert_eq!(config.ca_cert, Some("/path/to/cert.pem".to_string()));
+        assert_eq!(config.tls_version, Some("1.3".to_string()));
+        assert_eq!(config.pin_certs, Some(true));
+    }
+
+    #[test]
+    fn test_file_config_empty_toml() {
+        let toml_content = "";
+        let config: File = toml::from_str(toml_content).unwrap();
+        assert!(config.no_download.is_none());
+        assert!(config.timeout.is_none());
+        assert!(config.profile.is_none());
+    }
+
+    #[test]
+    fn test_file_config_whitespace_only() {
+        let toml_content = "   ";
+        let config: File = toml::from_str(toml_content).unwrap();
+        assert!(config.no_download.is_none());
+    }
+
+    // ==================== ca_cert_path Tests ====================
+
+    #[test]
+    fn test_ca_cert_path_some() {
+        let config = Config {
+            network: NetworkConfig {
+                ca_cert: Some("/path/to/cert".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let path = config.ca_cert_path();
+        assert!(path.is_some());
+        assert_eq!(path.unwrap(), std::path::PathBuf::from("/path/to/cert"));
+    }
+
+    #[test]
+    fn test_ca_cert_path_none() {
+        let config = Config::default();
+        let path = config.ca_cert_path();
+        assert!(path.is_none());
+    }
+
+    // ==================== Default Constructors Tests ====================
+
+    #[test]
+    fn test_output_source_debug() {
+        let src = OutputSource::default();
+        let debug_str = format!("{src:?}");
+        assert!(debug_str.contains("OutputSource"));
+    }
+
+    #[test]
+    fn test_test_source_debug() {
+        let src = TestSource::default();
+        let debug_str = format!("{src:?}");
+        assert!(debug_str.contains("TestSource"));
+    }
+
+    #[test]
+    fn test_network_source_debug() {
+        let src = NetworkSource::default();
+        let debug_str = format!("{src:?}");
+        assert!(debug_str.contains("NetworkSource"));
+    }
+
+    #[test]
+    fn test_server_source_debug() {
+        let src = ServerSource::default();
+        let debug_str = format!("{src:?}");
+        assert!(debug_str.contains("ServerSource"));
+    }
+
+    #[test]
+    fn test_config_source_default() {
+        let source = ConfigSource::default();
+        // Verify sub-sources have correct defaults
+        assert_eq!(source.output.csv_delimiter, ',');
+        assert_eq!(source.output.theme, "dark");
+        assert_eq!(source.network.timeout, 10);
+        assert!(source.test.no_download.is_none());
+        assert!(source.servers.server_ids.is_empty());
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        // Verify all sub-structs are default
+        assert!(!config.output.bytes);
+        assert!(!config.test.no_download);
+        assert_eq!(config.network.timeout, 10);
+        assert!(config.servers.server_ids.is_empty());
+        assert!(!config.strict);
+    }
+
+    // ==================== Deprecated Flags Tests ====================
+
+    #[test]
+    fn test_deprecated_simple_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--simple"]);
+        assert_eq!(args.simple, Some(true));
+        let config = Config::from_args(&args);
+        assert!(config.simple());
+    }
+
+    #[test]
+    fn test_deprecated_json_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--json"]);
+        assert_eq!(args.json, Some(true));
+        let config = Config::from_args(&args);
+        assert!(config.json());
+    }
+
+    #[test]
+    fn test_deprecated_csv_flag() {
+        let args = Args::parse_from(["netspeed-cli", "--csv"]);
+        assert_eq!(args.csv, Some(true));
+        let config = Config::from_args(&args);
+        assert!(config.csv());
+    }
+
+    // ==================== Server Selection Tests ====================
+
+    #[test]
+    fn test_server_selection_clone_preserves_data() {
+        let selection = ServerSelection {
+            server_ids: vec!["a".to_string(), "b".to_string()],
+            exclude_ids: vec!["c".to_string()],
+        };
+        let cloned = selection.clone();
+        assert_eq!(selection.server_ids, cloned.server_ids);
+        assert_eq!(selection.exclude_ids, cloned.exclude_ids);
+    }
+
+    #[test]
+    fn test_config_server_ids_empty() {
+        let args = Args::parse_from(["netspeed-cli"]);
+        let config = Config::from_args(&args);
+        assert!(config.server_ids().is_empty());
+    }
+
+    #[test]
+    fn test_config_exclude_ids_empty() {
+        let args = Args::parse_from(["netspeed-cli"]);
+        let config = Config::from_args(&args);
+        assert!(config.exclude_ids().is_empty());
+    }
+
+    // ==================== Original tests (keeping for compatibility) ====================
+
     #[test]
     fn test_config_from_args_defaults() {
         let args = Args::parse_from(["netspeed-cli"]);

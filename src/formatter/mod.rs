@@ -35,6 +35,7 @@ fn section_header(title: &str, nc: bool, theme: Theme) -> String {
 
 /// Output format selection — Strategy pattern.
 /// Add new variants here to extend output formats (OCP).
+#[derive(Debug)]
 pub enum OutputFormat {
     Json,
     Csv {
@@ -667,40 +668,39 @@ pub fn format_verbose_sections(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
 
-    #[test]
-    fn test_format_simple_with_data() {
-        use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
-        let result = TestResult {
+    fn make_test_result() -> TestResult {
+        TestResult {
             status: "ok".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             test_id: None,
             server: ServerInfo {
                 id: "1".to_string(),
                 name: "Test".to_string(),
-                sponsor: "Test".to_string(),
+                sponsor: "Test ISP".to_string(),
                 country: "US".to_string(),
-                distance: 0.0,
+                distance: 10.0,
             },
-            ping: Some(10.0),
-            jitter: None,
-            packet_loss: None,
+            ping: Some(15.0),
+            jitter: Some(1.5),
+            packet_loss: Some(0.0),
             download: Some(100_000_000.0),
-            download_peak: None,
+            download_peak: Some(120_000_000.0),
             upload: Some(50_000_000.0),
-            upload_peak: None,
-            latency_download: None,
-            latency_upload: None,
-            download_samples: None,
-            upload_samples: None,
-            ping_samples: None,
+            upload_peak: Some(60_000_000.0),
+            latency_download: Some(20.0),
+            latency_upload: Some(18.0),
+            download_samples: Some(vec![95_000_000.0, 100_000_000.0, 105_000_000.0]),
+            upload_samples: Some(vec![48_000_000.0, 50_000_000.0, 52_000_000.0]),
+            ping_samples: Some(vec![12.0, 15.0, 18.0]),
             timestamp: "2026-01-01T00:00:00Z".to_string(),
-            client_ip: None,
+            client_ip: Some("192.168.1.100".to_string()),
             client_location: None,
-            download_cv: None,
-            upload_cv: None,
-            download_ci_95: None,
-            upload_ci_95: None,
+            download_cv: Some(0.05),
+            upload_cv: Some(0.04),
+            download_ci_95: Some((140.0, 160.0)),
+            upload_ci_95: Some((45.0, 55.0)),
             overall_grade: None,
             download_grade: None,
             upload_grade: None,
@@ -710,10 +710,456 @@ mod tests {
                 download: PhaseResult::completed(),
                 upload: PhaseResult::completed(),
             },
-        };
+        }
+    }
 
+    #[test]
+    fn test_format_simple_with_data() {
+        let result = make_test_result();
         // Just verify it doesn't panic
         let _ = format_simple(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_simple_no_ping() {
+        let mut result = make_test_result();
+        result.ping = None;
+        let _ = format_simple(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_simple_no_download() {
+        let mut result = make_test_result();
+        result.download = None;
+        let _ = format_simple(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_simple_no_upload() {
+        let mut result = make_test_result();
+        result.upload = None;
+        let _ = format_simple(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_simple_bytes_mode() {
+        let result = make_test_result();
+        let _ = format_simple(&result, true, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_simple_light_theme() {
+        let result = make_test_result();
+        let _ = format_simple(&result, false, Theme::Light);
+    }
+
+    #[test]
+    fn test_format_minimal_basic() {
+        let result = make_test_result();
+        let _ = format_minimal(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_minimal_no_download() {
+        let mut result = make_test_result();
+        result.download = None;
+        let _ = format_minimal(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_minimal_no_upload() {
+        let mut result = make_test_result();
+        result.upload = None;
+        let _ = format_minimal(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_minimal_no_ping() {
+        let mut result = make_test_result();
+        result.ping = None;
+        let _ = format_minimal(&result, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_jsonl_basic() {
+        let result = make_test_result();
+        let _ = format_jsonl(&result);
+    }
+
+    #[test]
+    fn test_format_compact_basic() {
+        let result = make_test_result();
+        format_compact(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_compact_with_client_ip() {
+        let result = make_test_result();
+        format_compact(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_compact_bytes_mode() {
+        let result = make_test_result();
+        format_compact(
+            &result,
+            true,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_compact_nc_mode() {
+        let result = make_test_result();
+        // NC mode should not use colors
+        format_compact(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            Theme::Monochrome,
+        );
+    }
+
+    #[test]
+    fn test_format_compact_gamer_profile() {
+        let result = make_test_result();
+        format_compact(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            std::time::Duration::from_secs(5),
+            UserProfile::Gamer,
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_detailed_basic() {
+        let result = make_test_result();
+        let _ = format_detailed(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            SkipState {
+                download: false,
+                upload: false,
+            },
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            false,
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_detailed_with_skipped() {
+        let result = make_test_result();
+        let _ = format_detailed(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            SkipState {
+                download: true,
+                upload: true,
+            },
+            std::time::Duration::from_secs(3),
+            UserProfile::default(),
+            false,
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_detailed_minimal_mode() {
+        let result = make_test_result();
+        let _ = format_detailed(
+            &result,
+            false,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            SkipState {
+                download: false,
+                upload: false,
+            },
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            true,
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_detailed_bytes_mode() {
+        let result = make_test_result();
+        let _ = format_detailed(
+            &result,
+            true,
+            10_000_000,
+            5_000_000,
+            2.0,
+            1.0,
+            SkipState {
+                download: false,
+                upload: false,
+            },
+            std::time::Duration::from_secs(5),
+            UserProfile::default(),
+            false,
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_json_basic() {
+        let result = make_test_result();
+        let _ = format_json(&result);
+    }
+
+    #[test]
+    fn test_format_csv_basic() {
+        let result = make_test_result();
+        let _ = format_csv(&result, ',', true);
+    }
+
+    #[test]
+    fn test_format_csv_no_header() {
+        let result = make_test_result();
+        let _ = format_csv(&result, ';', false);
+    }
+
+    #[test]
+    fn test_format_csv_tab_delimiter() {
+        let result = make_test_result();
+        let _ = format_csv(&result, '\t', true);
+    }
+
+    #[test]
+    fn test_format_csv_with_missing_values() {
+        let mut result = make_test_result();
+        result.ping = None;
+        result.jitter = None;
+        result.packet_loss = None;
+        let _ = format_csv(&result, ',', true);
+    }
+
+    #[test]
+    fn test_skip_state_default() {
+        let skip = SkipState::default();
+        assert!(!skip.download);
+        assert!(!skip.upload);
+    }
+
+    #[test]
+    fn test_skip_state_custom() {
+        let skip = SkipState {
+            download: true,
+            upload: false,
+        };
+        assert!(skip.download);
+        assert!(!skip.upload);
+    }
+
+    #[test]
+    fn test_output_format_json() {
+        let fmt = OutputFormat::Json;
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_jsonl() {
+        let fmt = OutputFormat::Jsonl;
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_csv() {
+        let fmt = OutputFormat::Csv {
+            delimiter: ',',
+            header: true,
+        };
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_simple() {
+        let fmt = OutputFormat::Simple { theme: Theme::Dark };
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_minimal() {
+        let fmt = OutputFormat::Minimal { theme: Theme::Dark };
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_detailed() {
+        let fmt = OutputFormat::Detailed {
+            dl_bytes: 10_000_000,
+            ul_bytes: 5_000_000,
+            dl_duration: 2.0,
+            ul_duration: 1.0,
+            skipped: SkipState::default(),
+            elapsed: std::time::Duration::from_secs(5),
+            profile: UserProfile::default(),
+            minimal: false,
+            theme: Theme::Dark,
+        };
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_compact() {
+        let fmt = OutputFormat::Compact {
+            dl_bytes: 10_000_000,
+            ul_bytes: 5_000_000,
+            dl_duration: 2.0,
+            ul_duration: 1.0,
+            elapsed: std::time::Duration::from_secs(5),
+            profile: UserProfile::default(),
+            theme: Theme::Dark,
+        };
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_output_format_dashboard() {
+        let fmt = OutputFormat::Dashboard {
+            dl_mbps: 100.0,
+            dl_peak_mbps: 120.0,
+            dl_bytes: 10_000_000,
+            dl_duration: 2.0,
+            ul_mbps: 50.0,
+            ul_peak_mbps: 60.0,
+            ul_bytes: 5_000_000,
+            ul_duration: 1.0,
+            elapsed: std::time::Duration::from_secs(5),
+            profile: UserProfile::default(),
+            theme: Theme::Dark,
+        };
+        let result = make_test_result();
+        assert!(fmt.format(&result, false).is_ok());
+    }
+
+    #[test]
+    fn test_section_header_nc_mode() {
+        let header = section_header("Test Header", true, Theme::Dark);
+        assert!(header.contains("Test Header"));
+        assert!(!header.contains("\x1b")); // No ANSI codes
+    }
+
+    #[test]
+    fn test_section_header_colored() {
+        let header = section_header("Test Header", false, Theme::Dark);
+        assert!(header.contains("Test Header"));
+    }
+
+    #[test]
+    fn test_format_verbose_sections_power_user() {
+        let result = make_test_result();
+        // PowerUser sees estimates, stability, percentiles, history
+        format_verbose_sections(&result, UserProfile::PowerUser, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_verbose_sections_casual() {
+        let result = make_test_result();
+        // Casual only sees estimates
+        format_verbose_sections(&result, UserProfile::Casual, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_verbose_sections_gamer() {
+        let result = make_test_result();
+        // Gamer sees bufferbloat but not stability
+        format_verbose_sections(&result, UserProfile::Gamer, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_verbose_sections_remote_worker() {
+        let result = make_test_result();
+        // RemoteWorker sees stability and history
+        format_verbose_sections(&result, UserProfile::RemoteWorker, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_verbose_sections_minimal() {
+        let result = make_test_result();
+        format_verbose_sections(&result, UserProfile::default(), true, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_verbose_sections_integration() {
+        // Exercise the full integration path
+        format_verbose_sections(
+            &make_test_result(),
+            UserProfile::default(),
+            false,
+            Theme::Dark,
+        );
+    }
+
+    #[test]
+    fn test_format_verbose_sections_empty() {
+        // Should not panic with all None values
+        let mut result = make_test_result();
+        result.ping = None;
+        result.jitter = None;
+        result.download = None;
+        result.upload = None;
+        result.download_samples = None;
+        result.upload_samples = None;
+        result.ping_samples = None;
+        format_verbose_sections(&result, UserProfile::default(), false, Theme::Dark);
     }
 
     #[test]
@@ -732,99 +1178,16 @@ mod tests {
     }
 
     #[test]
-    fn test_format_verbose_sections_integration() {
-        use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
-        let result = TestResult {
-            status: "ok".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            test_id: None,
-            server: ServerInfo {
-                id: "1".to_string(),
-                name: "Test".to_string(),
-                sponsor: "Test ISP".to_string(),
-                country: "US".to_string(),
-                distance: 10.0,
-            },
-            ping: Some(10.0),
-            jitter: Some(1.5),
-            packet_loss: Some(0.0),
-            download: Some(100_000_000.0),
-            download_peak: Some(120_000_000.0),
-            upload: Some(50_000_000.0),
-            upload_peak: Some(60_000_000.0),
-            latency_download: Some(15.0),
-            latency_upload: Some(12.0),
-            download_samples: Some(vec![95_000_000.0, 100_000_000.0, 105_000_000.0]),
-            upload_samples: Some(vec![48_000_000.0, 50_000_000.0, 52_000_000.0]),
-            ping_samples: Some(vec![9.5, 10.0, 10.5]),
-            timestamp: "2026-01-01T00:00:00Z".to_string(),
-            client_ip: Some("192.168.1.1".to_string()),
-            client_location: None,
-            download_cv: Some(0.05),
-            upload_cv: Some(0.04),
-            download_ci_95: Some((140.0, 160.0)),
-            upload_ci_95: Some((45.0, 55.0)),
-            overall_grade: None,
-            download_grade: None,
-            upload_grade: None,
-            connection_rating: None,
-            phases: TestPhases {
-                ping: PhaseResult::completed(),
-                download: PhaseResult::completed(),
-                upload: PhaseResult::completed(),
-            },
-        };
-
-        // Exercise the full integration path: targets, estimates, stability,
-        // latency percentiles, and history comparison
-        format_verbose_sections(&result, UserProfile::default(), false, Theme::Dark);
+    fn test_output_format_debug_trait() {
+        let fmt = OutputFormat::Json;
+        let debug_str = format!("{fmt:?}");
+        assert!(debug_str.contains("Json"));
     }
 
     #[test]
-    fn test_format_verbose_sections_empty() {
-        use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
-        let result = TestResult {
-            status: "ok".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            test_id: None,
-            server: ServerInfo {
-                id: "1".to_string(),
-                name: "Test".to_string(),
-                sponsor: "Test".to_string(),
-                country: "US".to_string(),
-                distance: 0.0,
-            },
-            ping: None,
-            jitter: None,
-            packet_loss: None,
-            download: None,
-            download_peak: None,
-            upload: None,
-            upload_peak: None,
-            latency_download: None,
-            latency_upload: None,
-            download_samples: None,
-            upload_samples: None,
-            ping_samples: None,
-            timestamp: "2026-01-01T00:00:00Z".to_string(),
-            client_ip: None,
-            client_location: None,
-            download_cv: None,
-            upload_cv: None,
-            download_ci_95: None,
-            upload_ci_95: None,
-            overall_grade: None,
-            download_grade: None,
-            upload_grade: None,
-            connection_rating: None,
-            phases: TestPhases {
-                ping: PhaseResult::completed(),
-                download: PhaseResult::completed(),
-                upload: PhaseResult::completed(),
-            },
-        };
-
-        // Should not panic with all None values
-        format_verbose_sections(&result, UserProfile::default(), false, Theme::Dark);
+    fn test_skip_state_debug_trait() {
+        let skip = SkipState::default();
+        let debug_str = format!("{skip:?}");
+        assert!(debug_str.contains("SkipState"));
     }
 }

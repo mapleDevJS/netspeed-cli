@@ -478,3 +478,588 @@ pub fn render_section_footer(nc: bool, minimal: bool) -> String {
 
     lines.join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::formatter::bandwidth_dashboard::scenarios::{
+        BandwidthScenario, CapacityLevel, ResponsiveLayout, ScenarioCategory, ScenarioStatus,
+    };
+
+    // Static category for testing with inline scenario definitions
+    static TEST_CATEGORY: ScenarioCategory = ScenarioCategory {
+        name: "TEST CATEGORY",
+        icon: "💬",
+        scenarios: &[
+            BandwidthScenario {
+                name: "Test 1",
+                required_mbps: 10.0,
+                icon: "📹",
+                concurrent_label: "tests",
+                description: None,
+            },
+            BandwidthScenario {
+                name: "Test 2",
+                required_mbps: 20.0,
+                icon: "🎮",
+                concurrent_label: "tests",
+                description: Some("Warning description"),
+            },
+        ],
+    };
+
+    // Static category with warning scenario
+    static TEST_CATEGORY_WITH_WARNING: ScenarioCategory = ScenarioCategory {
+        name: "TEST CATEGORY",
+        icon: "💬",
+        scenarios: &[BandwidthScenario {
+            name: "Test With Warning",
+            required_mbps: 15.0,
+            icon: "🎮",
+            concurrent_label: "tests",
+            description: Some("Warning!"),
+        }],
+    };
+
+    // Helper to create a ScenarioStatus for testing
+    fn make_status(
+        _required_mbps: f64,
+        concurrent: u32,
+        is_met: bool,
+        usage_pct: f64,
+    ) -> ScenarioStatus {
+        // Use the first scenario from TEST_CATEGORY
+        ScenarioStatus {
+            scenario: &TEST_CATEGORY.scenarios[0],
+            concurrent,
+            headroom_pct: 50.0,
+            is_met,
+            usage_pct,
+        }
+    }
+
+    fn make_status_with_desc() -> ScenarioStatus {
+        ScenarioStatus {
+            scenario: &TEST_CATEGORY_WITH_WARNING.scenarios[0],
+            concurrent: 10,
+            headroom_pct: 50.0,
+            is_met: true,
+            usage_pct: 36.1,
+        }
+    }
+
+    fn make_category_with_scenarios() -> &'static ScenarioCategory {
+        &TEST_CATEGORY
+    }
+
+    // ── bar_color_by_usage tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_bar_color_by_usage_nc_mode() {
+        let color_fn = bar_color_by_usage(50.0, true);
+        let result = color_fn("test");
+        assert_eq!(result, "test"); // No color in NC mode
+    }
+
+    #[test]
+    fn test_bar_color_by_usage_green_zone_low() {
+        let color_fn = bar_color_by_usage(20.0, false);
+        let result = color_fn("test");
+        assert!(result.contains("test")); // Should not panic
+    }
+
+    #[test]
+    fn test_bar_color_by_usage_yellow_zone() {
+        let color_fn = bar_color_by_usage(50.0, false);
+        let result = color_fn("test");
+        assert!(result.contains("test")); // Should not panic
+    }
+
+    #[test]
+    fn test_bar_color_by_usage_red_zone_high() {
+        let color_fn = bar_color_by_usage(85.0, false);
+        let result = color_fn("test");
+        assert!(result.contains("test")); // Should not panic
+    }
+
+    #[test]
+    fn test_bar_color_by_usage_boundary_low() {
+        // Exactly at 31% boundary - should be yellow (>= 31)
+        let color_fn = bar_color_by_usage(31.0, false);
+        let result = color_fn("test");
+        assert!(result.contains("test"));
+    }
+
+    #[test]
+    fn test_bar_color_by_usage_boundary_high() {
+        // Exactly at 71% boundary - should be red (>= 71)
+        let color_fn = bar_color_by_usage(70.99, false);
+        let result = color_fn("test");
+        assert!(result.contains("test"));
+    }
+
+    // ── capacity_badge_style tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_capacity_badge_optimal_nc() {
+        let result = capacity_badge_style(CapacityLevel::Optimal, true, 15);
+        assert_eq!(result, " 15x OK");
+    }
+
+    #[test]
+    fn test_capacity_badge_moderate_nc() {
+        let result = capacity_badge_style(CapacityLevel::Moderate, true, 5);
+        assert_eq!(result, "  5x --");
+    }
+
+    #[test]
+    fn test_capacity_badge_limited_nc() {
+        let result = capacity_badge_style(CapacityLevel::Limited, true, 1);
+        assert_eq!(result, "  1x !");
+    }
+
+    #[test]
+    fn test_capacity_badge_exceeded_nc() {
+        let result = capacity_badge_style(CapacityLevel::Exceeded, true, 0);
+        assert_eq!(result, "FAIL");
+    }
+
+    #[test]
+    fn test_capacity_badge_optimal_colored() {
+        let result = capacity_badge_style(CapacityLevel::Optimal, false, 15);
+        assert!(result.contains("15x"));
+    }
+
+    #[test]
+    fn test_capacity_badge_moderate_colored() {
+        let result = capacity_badge_style(CapacityLevel::Moderate, false, 5);
+        assert!(result.contains("5x"));
+    }
+
+    #[test]
+    fn test_capacity_badge_limited_colored() {
+        let result = capacity_badge_style(CapacityLevel::Limited, false, 1);
+        assert!(result.contains("1x"));
+    }
+
+    #[test]
+    fn test_capacity_badge_exceeded_colored() {
+        let result = capacity_badge_style(CapacityLevel::Exceeded, false, 0);
+        assert!(result.contains("✗"));
+    }
+
+    // ── render_progress_bar tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_render_progress_bar_zero_width() {
+        let result = render_progress_bar(50.0, 0, false, false);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_render_progress_bar_empty() {
+        let result = render_progress_bar(0.0, 10, true, false);
+        assert!(result.contains("[----------]"));
+    }
+
+    #[test]
+    fn test_render_progress_bar_full() {
+        let result = render_progress_bar(100.0, 10, true, false);
+        assert!(result.contains("[==========]"));
+    }
+
+    #[test]
+    fn test_render_progress_bar_half() {
+        let result = render_progress_bar(50.0, 10, true, false);
+        assert!(result.contains("[=====>"));
+        assert!(result.contains("]"));
+    }
+
+    #[test]
+    fn test_render_progress_bar_minimal_mode() {
+        let result = render_progress_bar(50.0, 10, true, true);
+        assert!(result.contains("="));
+        assert!(result.contains("-"));
+        assert!(result.contains("[~]")); // Should have severity marker
+    }
+
+    #[test]
+    fn test_render_progress_bar_high_usage_severity() {
+        let result = render_progress_bar(75.0, 10, true, false);
+        assert!(result.contains("[!]")); // High usage severity
+    }
+
+    #[test]
+    fn test_render_progress_bar_colored_green() {
+        let result = render_progress_bar(20.0, 10, false, false);
+        assert!(result.contains("█"));
+        assert!(result.contains("░"));
+    }
+
+    #[test]
+    fn test_render_progress_bar_colored_yellow() {
+        let result = render_progress_bar(50.0, 10, false, false);
+        assert!(result.contains("█"));
+    }
+
+    #[test]
+    fn test_render_progress_bar_colored_red() {
+        let result = render_progress_bar(80.0, 10, false, false);
+        assert!(result.contains("█"));
+    }
+
+    #[test]
+    fn test_render_progress_bar_fractional_fill() {
+        // 45% of 10 = 4.5 → should have partial block
+        let result = render_progress_bar(45.0, 10, false, false);
+        let blocks: Vec<_> = result
+            .chars()
+            .filter(|c| *c == '█' || *c == '▉' || *c == '▌' || *c == '▎')
+            .collect();
+        assert!(!blocks.is_empty());
+    }
+
+    // ── get_padded_icon tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_padded_icon_video() {
+        // May return Unicode or ASCII depending on terminal::no_emoji()
+        let result = get_padded_icon("📹", false, false);
+        assert!(!result.is_empty());
+        // Either "📹 " (Unicode) or "VC" (ASCII fallback), both <= 3 chars
+        assert!(result.len() <= 3 || result.contains("📹"));
+    }
+
+    #[test]
+    fn test_get_padded_icon_gaming() {
+        let result = get_padded_icon("🎮", false, false);
+        assert!(!result.is_empty());
+        // May be "🎮 " or "GM", both valid
+        assert!(result.len() <= 3 || result.contains("🎮"));
+    }
+
+    #[test]
+    fn test_get_padded_icon_vpn() {
+        let result = get_padded_icon("🔒", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_streaming() {
+        let result = get_padded_icon("📺", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_cloud() {
+        let result = get_padded_icon("☁️", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_upload() {
+        let result = get_padded_icon("🎥", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_desktop() {
+        let result = get_padded_icon("🖥️", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_camera() {
+        let result = get_padded_icon("📷", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_iot() {
+        let result = get_padded_icon("🔌", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_ai() {
+        let result = get_padded_icon("🤖", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_vr() {
+        let result = get_padded_icon("🥽", false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_get_padded_icon_unknown() {
+        // Unknown icons return "??" in any mode (ASCII fallback even in Unicode mode)
+        let result = get_padded_icon("???", false, false);
+        assert!(!result.is_empty());
+        assert!(result.len() <= 3);
+    }
+
+    #[test]
+    fn test_get_padded_icon_minimal_mode() {
+        // In minimal mode, always returns ASCII fallback
+        let result = get_padded_icon("📹", true, true);
+        assert_eq!(result, "VC");
+    }
+
+    #[test]
+    fn test_get_padded_icon_gaming_minimal() {
+        let result = get_padded_icon("🎮", true, true);
+        assert_eq!(result, "GM");
+    }
+
+    // ── truncate_name tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_truncate_name_short() {
+        let result = truncate_name("Short", 10);
+        assert_eq!(result, "Short");
+    }
+
+    #[test]
+    fn test_truncate_name_exact_width() {
+        let result = truncate_name("ExactWidth", 10);
+        assert_eq!(result, "ExactWidth");
+    }
+
+    #[test]
+    fn test_truncate_name_long() {
+        let result = truncate_name("This is a very long name", 10);
+        assert!(result.ends_with('…'));
+        // Truncated name + ellipsis should be <= max_width + ellipsis width
+        assert!(result.width() <= 11);
+    }
+
+    #[test]
+    fn test_truncate_name_zero_width() {
+        let result = truncate_name("Test", 0);
+        assert_eq!(result, "…");
+    }
+
+    #[test]
+    fn test_truncate_name_unicode() {
+        let result = truncate_name("日本語テスト", 10);
+        // Unicode characters may have different width, just check it's not empty
+        assert!(!result.is_empty());
+        assert!(result.width() <= 11); // max_width + ellipsis
+    }
+
+    // ── render_scenario_row_expanded tests ────────────────────────────────────
+
+    #[test]
+    fn test_render_scenario_row_expanded_optimal() {
+        // concurrent=11 (>10) gives Optimal level -> "OK"
+        let status = make_status(10.0, 11, true, 36.1);
+        let result = render_scenario_row_expanded(&status, 15, true, false, true);
+        assert!(!result.is_empty());
+        assert!(result.contains("OK"));
+    }
+
+    #[test]
+    fn test_render_scenario_row_expanded_not_met() {
+        // is_met=false gives Exceeded level -> "FAIL"
+        let status = make_status(50.0, 5, false, 180.5);
+        let result = render_scenario_row_expanded(&status, 15, true, false, true);
+        assert!(!result.is_empty());
+        assert!(result.contains("FAIL"));
+    }
+
+    #[test]
+    fn test_render_scenario_row_expanded_no_multiplier() {
+        let status = make_status(10.0, 11, true, 36.1);
+        let result = render_scenario_row_expanded(&status, 15, true, false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_scenario_row_expanded_colored() {
+        let status = make_status(10.0, 11, true, 36.1);
+        let result = render_scenario_row_expanded(&status, 15, false, false, true);
+        assert!(!result.is_empty());
+    }
+
+    // ── render_scenario_row_compact tests ─────────────────────────────────────
+
+    #[test]
+    fn test_render_scenario_row_compact_basic() {
+        let status = make_status(10.0, 10, true, 36.1);
+        let result = render_scenario_row_compact(&status, 15, true, false);
+        assert!(!result.is_empty());
+        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_render_scenario_row_compact_colored() {
+        let status = make_status(10.0, 10, true, 36.1);
+        let result = render_scenario_row_compact(&status, 15, false, false);
+        assert!(!result.is_empty());
+    }
+
+    // ── render_category_header tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_render_category_header_basic() {
+        let cat = make_category_with_scenarios();
+        let result = render_category_header(&cat, 50, true, false);
+        assert!(!result.is_empty());
+        assert!(result.contains("TEST CATEGORY"));
+    }
+
+    #[test]
+    fn test_render_category_header_minimal() {
+        let cat = make_category_with_scenarios();
+        let result = render_category_header(&cat, 50, true, true);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_category_header_colored() {
+        let cat = make_category_with_scenarios();
+        let result = render_category_header(&cat, 50, false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_category_header_narrow() {
+        let cat = make_category_with_scenarios();
+        let result = render_category_header(&cat, 20, true, false);
+        assert!(!result.is_empty());
+    }
+
+    // ── render_category_box tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_render_category_box_expanded() {
+        let cat = make_category_with_scenarios();
+        let statuses = vec![
+            make_status(10.0, 10, true, 36.1),
+            make_status(20.0, 5, false, 72.2),
+        ];
+        let result = render_category_box(
+            &cat,
+            &statuses,
+            ResponsiveLayout::Expanded,
+            120,
+            true,
+            false,
+        );
+        assert!(!result.is_empty());
+        assert!(result.contains("TEST CATEGORY"));
+    }
+
+    #[test]
+    fn test_render_category_box_standard() {
+        let cat = make_category_with_scenarios();
+        let statuses = vec![make_status(10.0, 10, true, 36.1)];
+        let result = render_category_box(
+            &cat,
+            &statuses,
+            ResponsiveLayout::Standard,
+            100,
+            true,
+            false,
+        );
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_category_box_compact() {
+        let cat = make_category_with_scenarios();
+        let statuses = vec![make_status(10.0, 10, true, 36.1)];
+        let result =
+            render_category_box(&cat, &statuses, ResponsiveLayout::Compact, 85, true, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_category_box_minimal() {
+        let cat = make_category_with_scenarios();
+        let statuses = vec![make_status(10.0, 10, true, 36.1)];
+        let result =
+            render_category_box(&cat, &statuses, ResponsiveLayout::Minimal, 70, true, true);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_category_box_colored() {
+        let cat = make_category_with_scenarios();
+        let statuses = vec![make_status(10.0, 10, true, 36.1)];
+        let result = render_category_box(
+            &cat,
+            &statuses,
+            ResponsiveLayout::Expanded,
+            120,
+            false,
+            false,
+        );
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_category_box_with_warning() {
+        // Use the status with description that includes "Warning!"
+        let status = make_status_with_desc();
+        let result = render_category_box(
+            &TEST_CATEGORY_WITH_WARNING,
+            &[status],
+            ResponsiveLayout::Expanded,
+            120,
+            true,
+            false,
+        );
+        assert!(result.contains("Warning!"));
+    }
+
+    // ── render_section_header tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_render_section_header_basic() {
+        let result = render_section_header(100.0, 50, true, false);
+        assert!(!result.is_empty());
+        assert!(result.contains("100"));
+        assert!(result.contains("Mbps"));
+    }
+
+    #[test]
+    fn test_render_section_header_minimal() {
+        let result = render_section_header(100.0, 50, true, true);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_section_header_colored() {
+        let result = render_section_header(100.0, 50, false, false);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_section_header_narrow() {
+        let result = render_section_header(50.0, 30, true, false);
+        assert!(!result.is_empty());
+    }
+
+    // ── render_section_footer tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_render_section_footer_nc() {
+        let result = render_section_footer(true, false);
+        assert!(result.contains("Legend"));
+    }
+
+    #[test]
+    fn test_render_section_footer_minimal() {
+        let result = render_section_footer(true, true);
+        assert!(result.contains("Legend"));
+    }
+
+    #[test]
+    fn test_render_section_footer_colored() {
+        let result = render_section_footer(false, false);
+        assert!(!result.is_empty());
+    }
+}

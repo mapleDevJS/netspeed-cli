@@ -223,11 +223,305 @@ pub fn show(download_bps: Option<f64>, nc: bool, theme: Theme) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profiles::UsageTarget;
+    use crate::theme::Theme;
 
     #[test]
     fn test_format_time_estimate() {
         assert!(format_time_estimate(0.5, false).contains("0.5s"));
         assert!(format_time_estimate(30.0, false).contains("30s"));
         assert!(format_time_estimate(120.0, false).contains("2m"));
+    }
+
+    #[test]
+    fn test_format_time_estimate_sub_second() {
+        // Sub-second times should show 1 decimal
+        assert_eq!(format_time_estimate(0.1, false), "0.1s");
+        assert_eq!(format_time_estimate(0.9, false), "0.9s");
+    }
+
+    #[test]
+    fn test_format_time_estimate_seconds() {
+        // 1 to 59 seconds should show whole number
+        assert_eq!(format_time_estimate(1.0, false), "1s");
+        assert_eq!(format_time_estimate(45.5, false), "46s");
+        assert_eq!(format_time_estimate(59.9, false), "60s");
+    }
+
+    #[test]
+    fn test_format_time_estimate_minutes() {
+        // 60+ seconds should show minutes and seconds
+        let result = format_time_estimate(90.0, false);
+        assert!(result.contains('m'));
+
+        let result = format_time_estimate(125.5, false);
+        assert!(result.contains('m'));
+        assert!(result.contains('s'));
+    }
+
+    #[test]
+    fn test_format_time_estimate_hours() {
+        // 3600+ seconds should show hours and minutes
+        let result = format_time_estimate(3661.0, false);
+        assert!(result.contains('h'));
+        assert!(result.contains('m'));
+    }
+
+    #[test]
+    fn test_build_targets_none_download() {
+        // Should return empty string when download is None
+        let result = build_targets(None, false, Theme::Dark);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_build_targets_with_download() {
+        // 100 Mbps download
+        let result = build_targets(Some(100_000_000.0), false, Theme::Dark);
+        assert!(!result.is_empty());
+        assert!(result.contains("USAGE CHECK"));
+    }
+
+    #[test]
+    fn test_build_targets_all_targets_present() {
+        let result = build_targets(Some(100_000_000.0), false, Theme::Dark);
+        // All target names should be present
+        assert!(result.contains("Video calls"));
+        assert!(result.contains("HD streaming"));
+        assert!(result.contains("4K streaming"));
+        assert!(result.contains("Cloud gaming"));
+        assert!(result.contains("Large file transfers"));
+    }
+
+    #[test]
+    fn test_build_targets_excellent_speed() {
+        // 500 Mbps should meet all targets
+        let result = build_targets(Some(500_000_000.0), false, Theme::Dark);
+        // Should show passing indicators for all targets (or error count)
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_build_targets_poor_speed() {
+        // 1 Mbps should fail most targets
+        let result = build_targets(Some(1_000_000.0), false, Theme::Dark);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_build_profile_targets_custom_targets() {
+        let targets = vec![
+            UsageTarget {
+                name: "Custom Target",
+                required_mbps: 25.0,
+                icon: "🎯",
+            },
+            UsageTarget {
+                name: "Another Target",
+                required_mbps: 50.0,
+                icon: "⭐",
+            },
+        ];
+
+        let result = build_profile_targets(
+            Some(100_000_000.0),
+            false,
+            Theme::Dark,
+            &targets,
+            Some(100.0),
+        );
+
+        assert!(result.contains("Custom Target"));
+        assert!(result.contains("Another Target"));
+    }
+
+    #[test]
+    fn test_build_profile_targets_calculates_ratio() {
+        // Test that ratio is calculated and displayed
+        let targets = vec![UsageTarget {
+            name: "Test",
+            required_mbps: 50.0,
+            icon: "",
+        }];
+
+        let result = build_profile_targets(
+            Some(200_000_000.0),
+            false,
+            Theme::Dark,
+            &targets,
+            Some(200.0),
+        );
+
+        // Should show 4.0x ratio for 200/50 = 4 (format is {:.1}x for <10x)
+        assert!(result.contains("4.0x"));
+    }
+
+    #[test]
+    fn test_build_profile_targets_shortfall() {
+        // When speed is below requirement, show shortfall
+        let targets = vec![UsageTarget {
+            name: "Test",
+            required_mbps: 100.0,
+            icon: "",
+        }];
+
+        let result =
+            build_profile_targets(Some(30_000_000.0), false, Theme::Dark, &targets, Some(30.0));
+
+        // Should show 70 Mb/s short (100 - 30)
+        assert!(result.contains("short"));
+    }
+
+    #[test]
+    fn test_build_profile_targets_no_download() {
+        let targets = vec![UsageTarget {
+            name: "Test",
+            required_mbps: 50.0,
+            icon: "",
+        }];
+
+        let result = build_profile_targets(None, false, Theme::Dark, &targets, None);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_build_targets_nc_mode() {
+        // No color mode should still produce output
+        let result = build_targets(Some(100_000_000.0), true, Theme::Dark);
+        assert!(!result.is_empty());
+        // Should have the header
+        assert!(result.contains("USAGE CHECK"));
+    }
+
+    #[test]
+    fn test_build_profile_targets_nc_mode() {
+        let targets = vec![UsageTarget {
+            name: "Test Target",
+            required_mbps: 50.0,
+            icon: "",
+        }];
+
+        let result = build_profile_targets(
+            Some(100_000_000.0),
+            true,
+            Theme::Dark,
+            &targets,
+            Some(100.0),
+        );
+
+        assert!(result.contains("Test Target"));
+    }
+
+    #[test]
+    fn test_build_none_download() {
+        let result = build(None, false, Theme::Dark);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_build_with_download() {
+        let result = build(Some(100_000_000.0), false, Theme::Dark);
+        assert!(!result.is_empty());
+        assert!(result.contains("ESTIMATES"));
+    }
+
+    #[test]
+    fn test_build_all_file_types() {
+        let result = build(Some(100_000_000.0), false, Theme::Dark);
+        // All file estimate names should be present
+        assert!(result.contains("Song / Podcast"));
+        assert!(result.contains("Photo"));
+        assert!(result.contains("App install"));
+        assert!(result.contains("HD movie"));
+        assert!(result.contains("4K movie"));
+        assert!(result.contains("Game install"));
+    }
+
+    #[test]
+    fn test_build_gigabit_speed() {
+        // 1 Gbps should show fast download times
+        let result = build(Some(1_000_000_000.0), false, Theme::Dark);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_build_slow_speed() {
+        // 1 Mbps should show slow download times
+        let result = build(Some(1_000_000.0), false, Theme::Dark);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_build_nc_mode() {
+        // No color mode should still produce output
+        let result = build(Some(100_000_000.0), true, Theme::Dark);
+        assert!(!result.is_empty());
+        assert!(result.contains("ESTIMATES"));
+    }
+
+    #[test]
+    fn test_format_targets_function() {
+        // Should not panic and produces output
+        format_targets(Some(100_000_000.0), false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_format_targets_none() {
+        // Should not panic with None
+        format_targets(None, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_show_function() {
+        // Should not panic
+        show(Some(100_000_000.0), false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_show_none() {
+        // Should not panic with None
+        show(None, false, Theme::Dark);
+    }
+
+    #[test]
+    fn test_build_profile_targets_no_dl_mbps() {
+        // When download is set but dl_mbps is None, should calculate from download
+        let targets = vec![UsageTarget {
+            name: "Test",
+            required_mbps: 50.0,
+            icon: "",
+        }];
+
+        // Pass None for dl_mbps but Some for download_bps - should still work
+        let result = build_profile_targets(
+            Some(100_000_000.0),
+            false,
+            Theme::Dark,
+            &targets,
+            None, // dl_mbps is None
+        );
+
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_high_ratio_rounds_correctly() {
+        // Test that 10x+ shows integer only
+        let targets = vec![UsageTarget {
+            name: "Test",
+            required_mbps: 10.0,
+            icon: "",
+        }];
+
+        let result = build_profile_targets(
+            Some(500_000_000.0),
+            false,
+            Theme::Dark,
+            &targets,
+            Some(500.0),
+        );
+
+        // 50x should show "50x" not "50.0x"
+        assert!(result.contains("50x"));
     }
 }
