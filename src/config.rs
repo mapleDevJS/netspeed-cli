@@ -1738,8 +1738,9 @@ mod tests {
     fn test_tls_config_cli_ca_cert() {
         // Test that --ca-cert CLI flag is parsed correctly
         // Create a temp file since the validator checks file existence
+        // Use unique filename with process ID to avoid race conditions in parallel testing
         let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join("netspeed_test_ca_cert.pem");
+        let temp_path = temp_dir.join(format!("netspeed_test_ca_cert_{}.pem", std::process::id()));
         std::fs::write(&temp_path, "fake cert content").unwrap();
         let args = Args::parse_from(["netspeed-cli", "--ca-cert", temp_path.to_str().unwrap()]);
         assert_eq!(args.ca_cert, Some(temp_path.to_string_lossy().to_string()));
@@ -1771,8 +1772,9 @@ mod tests {
     fn test_tls_config_all_cli_options() {
         // Test all TLS options via CLI
         // Create a temp file since the validator checks file existence
+        // Use unique filename with process ID to avoid race conditions in parallel testing
         let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join("netspeed_test_ca_cert.pem");
+        let temp_path = temp_dir.join(format!("netspeed_test_ca_cert_{}.pem", std::process::id()));
         std::fs::write(&temp_path, "fake cert content").unwrap();
         let args = Args::parse_from([
             "netspeed-cli",
