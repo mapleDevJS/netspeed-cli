@@ -878,19 +878,9 @@ mod tests {
 
     #[test]
     fn test_letter_grade_is_copy() {
-        // Verify LetterGrade implements Copy by being able to copy assign
-        let grade: LetterGrade = LetterGrade::A;
-        let _copied = grade; // This only works if Copy is implemented
-        assert_eq!(grade, _copied);
-    }
-
-    // ── Clone trait verification ────────────────────────────────────────────
-
-    #[test]
-    fn test_letter_grade_is_clone() {
         let grade = LetterGrade::BPlus;
-        let _cloned = grade; // Copy is implicit for Copy types
-        assert_eq!(grade, _cloned);
+        let _copied = grade; // Copy is implicit for Copy types
+        assert_eq!(grade, _copied);
     }
 
     // ── Debug trait verification ────────────────────────────────────────────
