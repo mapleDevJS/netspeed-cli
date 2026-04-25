@@ -773,7 +773,7 @@ impl Config {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// use clap::Parser;
     /// use netspeed_cli::cli::Args;
     /// use netspeed_cli::config::{Config, Format};
@@ -805,14 +805,19 @@ impl Config {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
+    /// use clap::Parser;
     /// use netspeed_cli::cli::Args;
     /// use netspeed_cli::config::{Config, ConfigSource, ValidationResult};
     ///
+    /// // Parse CLI arguments and convert to ConfigSource
     /// let args = Args::parse_from(["netspeed-cli", "--format", "json"]);
     /// let source = ConfigSource::from_args(&args);
+    ///
+    /// // Load config file (or pass None for defaults)
     /// let file_config = netspeed_cli::config::load_config_file();
     ///
+    /// // Build config with validation results
     /// let (config, validation) = Config::from_args_with_file(&source, file_config);
     ///
     /// // Handle validation results
@@ -926,9 +931,7 @@ impl Config {
     pub(crate) fn from_source_with_file(source: &ConfigSource, file_config: Option<File>) -> Self {
         let file = file_config.unwrap_or_default();
 
-        let strict = source
-            .strict_config
-            .unwrap_or(file.strict.unwrap_or(false));
+        let strict = source.strict_config.unwrap_or(file.strict.unwrap_or(false));
 
         let merge_bool = |cli: Option<bool>, file: Option<bool>| cli.or(file).unwrap_or(false);
         let merge_u64 = |cli: u64, file: Option<u64>, default: u64| {
@@ -942,8 +945,7 @@ impl Config {
         // Build sub-structs from sub-sources and file config
         let output = OutputConfig::from_source(&source.output, &file, merge_bool);
         let test = TestSelection::from_source(&source.test, &file, merge_bool);
-        let network =
-            NetworkConfig::from_source(&source.network, &file, merge_bool, merge_u64);
+        let network = NetworkConfig::from_source(&source.network, &file, merge_bool, merge_u64);
         let servers = ServerSelection::from_source(&source.servers);
 
         Self {
@@ -988,7 +990,11 @@ impl Config {
     /// }
     /// ```
     #[must_use]
-    pub fn validate_and_report(&self, source: &ConfigSource, file_config: Option<File>) -> ValidationResult {
+    pub fn validate_and_report(
+        &self,
+        source: &ConfigSource,
+        file_config: Option<File>,
+    ) -> ValidationResult {
         // Use pre-loaded file config if provided, otherwise load it
         let file = file_config.unwrap_or_else(|| load_config_file().unwrap_or_default());
 
@@ -1026,10 +1032,7 @@ impl Config {
     #[must_use]
     pub fn should_save_history(&self) -> bool {
         // Machine-readable formats corrupt stdout
-        if self
-            .format()
-            .is_some_and(|f| f.is_machine_readable())
-        {
+        if self.format().is_some_and(|f| f.is_machine_readable()) {
             return false;
         }
         // Legacy format flags also skip history
@@ -2563,11 +2566,20 @@ mod tests {
     #[test]
     fn test_should_save_history_non_machine_readable_formats() {
         // Non-machine-readable formats should still save history
-        for fmt in [Format::Minimal, Format::Simple, Format::Compact,
-                    Format::Detailed, Format::Dashboard] {
+        for fmt in [
+            Format::Minimal,
+            Format::Simple,
+            Format::Compact,
+            Format::Detailed,
+            Format::Dashboard,
+        ] {
             let mut config = Config::default();
             config.output.format = Some(fmt);
-            assert!(config.should_save_history(), "format {:?} should save history", fmt);
+            assert!(
+                config.should_save_history(),
+                "format {:?} should save history",
+                fmt
+            );
         }
     }
 

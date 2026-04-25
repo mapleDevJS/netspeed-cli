@@ -604,7 +604,7 @@ mod tests {
         // Numeric subdomains are valid
         assert!(PinningVerifier::is_valid_domain("123.speedtest.net")); // valid numeric subdomain
         assert!(PinningVerifier::is_valid_domain("1.2.3.speedtest.net")); // valid numeric subdomain
-        // Numeric prefix on base domain is invalid
+                                                                          // Numeric prefix on base domain is invalid
         assert!(!PinningVerifier::is_valid_domain("speedtest123.net")); // not valid
         assert!(!PinningVerifier::is_valid_domain("123speedtest.net")); // not valid
     }
@@ -628,7 +628,7 @@ mod tests {
     fn test_pinning_verifier_supported_verify_schemes() {
         let verifier = PinningVerifier::new();
         let schemes = verifier.supported_verify_schemes();
-        
+
         // Should support these signature schemes
         assert!(schemes.contains(&SignatureScheme::RSA_PKCS1_SHA256));
         assert!(schemes.contains(&SignatureScheme::RSA_PKCS1_SHA384));
@@ -638,7 +638,7 @@ mod tests {
         assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA256));
         assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA384));
         assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA512));
-        
+
         // Should have exactly 8 schemes
         assert_eq!(schemes.len(), 8);
     }
@@ -651,24 +651,19 @@ mod tests {
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_invalid_domain() {
         let verifier = PinningVerifier::new();
-        
+
         // Create a DnsName for an invalid domain
         let dns_name = rustls::pki_types::DnsName::try_from("evil.com".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Create a minimal valid certificate structure
         // Using a real but minimal test certificate
         let cert_der = CertificateDer::from(vec![]);
-        
+
         // This should fail because the domain is not valid
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
@@ -678,21 +673,16 @@ mod tests {
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_unsupported_name_type() {
         let verifier = PinningVerifier::new();
-        
+
         // Test with an IpAddress server name (unsupported)
         let ip_addr = std::net::IpAddr::from([127, 0, 0, 1]);
         let server_name = ServerName::IpAddress(ip_addr.into());
-        
+
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
@@ -702,22 +692,18 @@ mod tests {
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_invalid_certificate() {
         let verifier = PinningVerifier::new();
-        
+
         // Valid domain but invalid certificate structure
-        let dns_name = rustls::pki_types::DnsName::try_from("www.speedtest.net".to_string()).unwrap();
+        let dns_name =
+            rustls::pki_types::DnsName::try_from("www.speedtest.net".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Empty certificate should fail webpki parsing
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         // Should fail on cert parsing, not domain validation
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -729,72 +715,59 @@ mod tests {
     #[test]
     fn test_pinning_verifier_domain_checked_before_cert_parse_speedtest() {
         let verifier = PinningVerifier::new();
-        
+
         // Valid speedtest.net domain
         let dns_name = rustls::pki_types::DnsName::try_from("speedtest.net".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Empty certificate - the test verifies domain validation happens first
         // Certificate structure validation is tested in a separate test
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         // Should fail on certificate structure validation, not domain validation
         // This proves domain was checked before cert parsing
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
         // The error should be about certificate structure, not domain
-        assert!(err_msg.contains("Invalid certificate structure") || err_msg.contains("EndEntityCert"));
+        assert!(
+            err_msg.contains("Invalid certificate structure") || err_msg.contains("EndEntityCert")
+        );
     }
 
     #[test]
     fn test_pinning_verifier_ipv6_address_rejected() {
         let verifier = PinningVerifier::new();
-        
+
         // Test with an IPv6 address server name
         let ip_addr = std::net::IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]); // ::1
         let server_name = ServerName::IpAddress(ip_addr.into());
-        
+
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         assert!(result.is_err());
     }
 
     #[test]
     fn test_pinning_verifier_domain_checked_before_cert_parse_ookla() {
         let verifier = PinningVerifier::new();
-        
+
         // Valid ookla.com domain
         let dns_name = rustls::pki_types::DnsName::try_from("ookla.com".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Empty certificate - domain validation is the key being tested here
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         // Should fail on certificate structure (proves domain was checked first)
         assert!(result.is_err());
     }
@@ -803,47 +776,42 @@ mod tests {
     fn test_pinning_verifier_domain_validation_order() {
         // This test verifies that domain validation happens BEFORE certificate parsing
         let verifier = PinningVerifier::new();
-        
+
         // Invalid domain should fail immediately, without attempting cert parsing
         let dns_name = rustls::pki_types::DnsName::try_from("attacker.com".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Even with a potentially "valid" looking empty cert structure,
         // domain validation should fail first
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
-        assert!(err_msg.contains("not a speedtest.net domain"), "Expected domain validation error, got: {}", err_msg);
+        assert!(
+            err_msg.contains("not a speedtest.net domain"),
+            "Expected domain validation error, got: {}",
+            err_msg
+        );
     }
 
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_different_tld() {
         let verifier = PinningVerifier::new();
-        
+
         // Test with speedtest.net.org (should be rejected)
-        let dns_name = rustls::pki_types::DnsName::try_from("speedtest.net.org".to_string()).unwrap();
+        let dns_name =
+            rustls::pki_types::DnsName::try_from("speedtest.net.org".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         let cert_der = CertificateDer::from(vec![]);
-        
-        let result = verifier.verify_server_cert(
-            &cert_der,
-            &[],
-            &server_name,
-            &[],
-            UnixTime::now(),
-        );
-        
+
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
@@ -855,17 +823,18 @@ mod tests {
         // Test that intermediate certificates are ignored in validation
         // The implementation only validates the end-entity certificate
         let verifier = PinningVerifier::new();
-        
+
         // Valid domain
-        let dns_name = rustls::pki_types::DnsName::try_from("www.speedtest.net".to_string()).unwrap();
+        let dns_name =
+            rustls::pki_types::DnsName::try_from("www.speedtest.net".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Empty certificate - will fail on structure but that's expected
         let cert_der = CertificateDer::from(vec![]);
-        
+
         // Add intermediate certificates (should be ignored)
         let intermediate_cert = CertificateDer::from(vec![0u8; 10]);
-        
+
         let result = verifier.verify_server_cert(
             &cert_der,
             &[intermediate_cert],
@@ -873,7 +842,7 @@ mod tests {
             &[],
             UnixTime::now(),
         );
-        
+
         // Should fail on cert structure, not because of intermediate certs
         assert!(result.is_err());
     }
@@ -882,17 +851,17 @@ mod tests {
     fn test_pinning_verifier_ocsp_response_ignored() {
         // Test that OCSP response data is ignored
         let verifier = PinningVerifier::new();
-        
+
         // Valid domain
         let dns_name = rustls::pki_types::DnsName::try_from("api.ookla.com".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
-        
+
         // Empty certificate
         let cert_der = CertificateDer::from(vec![]);
-        
+
         // Add OCSP response data (should be ignored)
         let ocsp_response = vec![0x30, 0x03, 0x01, 0x00];
-        
+
         let result = verifier.verify_server_cert(
             &cert_der,
             &[],
@@ -900,7 +869,7 @@ mod tests {
             &ocsp_response,
             UnixTime::now(),
         );
-        
+
         // Should fail on cert structure, not because of OCSP
         assert!(result.is_err());
     }
@@ -923,7 +892,7 @@ mod tests {
             "api.ookla.com",
             "test.ookla.com",
         ];
-        
+
         for domain in valid_subdomains {
             assert!(
                 PinningVerifier::is_valid_domain(domain),
@@ -949,7 +918,7 @@ mod tests {
             "attacker.speedtest.net.fake.com",
             "attacker.ookla.com.fake.com",
         ];
-        
+
         for domain in invalid_domains {
             assert!(
                 !PinningVerifier::is_valid_domain(domain),

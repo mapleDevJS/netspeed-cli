@@ -32,7 +32,10 @@ fn test_ca_cert_in_help() {
         .expect("Failed to execute command");
     let combined = String::from_utf8_lossy(&output.stdout).to_string()
         + &String::from_utf8_lossy(&output.stderr);
-    assert!(combined.contains("--ca-cert"), "--ca-cert should be documented in help");
+    assert!(
+        combined.contains("--ca-cert"),
+        "--ca-cert should be documented in help"
+    );
 }
 
 #[test]
@@ -43,7 +46,10 @@ fn test_pin_certs_in_help() {
         .expect("Failed to execute command");
     let combined = String::from_utf8_lossy(&output.stdout).to_string()
         + &String::from_utf8_lossy(&output.stderr);
-    assert!(combined.contains("--pin-certs"), "--pin-certs should be documented in help");
+    assert!(
+        combined.contains("--pin-certs"),
+        "--pin-certs should be documented in help"
+    );
 }
 
 #[test]
@@ -54,7 +60,10 @@ fn test_tls_version_in_help() {
         .expect("Failed to execute command");
     let combined = String::from_utf8_lossy(&output.stdout).to_string()
         + &String::from_utf8_lossy(&output.stderr);
-    assert!(combined.contains("--tls-version"), "--tls-version should be documented in help");
+    assert!(
+        combined.contains("--tls-version"),
+        "--tls-version should be documented in help"
+    );
 }
 
 // ── Path Validation Tests ────────────────────────────────────────────
@@ -64,25 +73,44 @@ fn test_ca_cert_accepts_valid_pem_file() {
     let cert_path = temp_cert_path();
     create_test_cert(&cert_path);
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", cert_path.to_str().unwrap()])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            cert_path.to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("does not exist") && !stderr.contains("is a directory"),
-        "Valid cert path should be accepted. stderr: {stderr}");
+    assert!(
+        !stderr.contains("does not exist") && !stderr.contains("is a directory"),
+        "Valid cert path should be accepted. stderr: {stderr}"
+    );
     fs::remove_file(&cert_path).ok();
 }
 
 #[test]
 fn test_ca_cert_rejects_nonexistent_path() {
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", "/nonexistent/path/to/cert.pem"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            "/nonexistent/path/to/cert.pem",
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "Non-existent CA cert path should be rejected");
-    assert!(stderr.contains("not found") || stderr.contains("does not exist"),
-        "Error should mention file not found. stderr: {stderr}");
+    assert!(
+        !output.status.success(),
+        "Non-existent CA cert path should be rejected"
+    );
+    assert!(
+        stderr.contains("not found") || stderr.contains("does not exist"),
+        "Error should mention file not found. stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -92,9 +120,14 @@ fn test_ca_cert_rejects_directory() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "Directory path for --ca-cert should be rejected");
-    assert!(stderr.contains("not a file") || stderr.contains("is a directory"),
-        "Error should mention it's a directory. stderr: {stderr}");
+    assert!(
+        !output.status.success(),
+        "Directory path for --ca-cert should be rejected"
+    );
+    assert!(
+        stderr.contains("not a file") || stderr.contains("is a directory"),
+        "Error should mention it's a directory. stderr: {stderr}"
+    );
 }
 
 // ── TLS Version Tests ────────────────────────────────────────────────
@@ -107,9 +140,15 @@ fn test_tls_version_rejects_invalid() {
             .output()
             .expect("Failed to execute command");
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(!output.status.success(), "Invalid TLS version '{}' should be rejected", version);
-        assert!(stderr.contains("1.2") && stderr.contains("1.3"),
-            "Error should mention valid TLS versions. stderr: {stderr}");
+        assert!(
+            !output.status.success(),
+            "Invalid TLS version '{}' should be rejected",
+            version
+        );
+        assert!(
+            stderr.contains("1.2") && stderr.contains("1.3"),
+            "Error should mention valid TLS versions. stderr: {stderr}"
+        );
     }
 }
 
@@ -120,8 +159,10 @@ fn test_tls_version_accepts_1_2() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: invalid value"),
-        "Valid TLS version 1.2 should be accepted. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: invalid value"),
+        "Valid TLS version 1.2 should be accepted. stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -131,8 +172,10 @@ fn test_tls_version_accepts_1_3() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: invalid value"),
-        "Valid TLS version 1.3 should be accepted. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: invalid value"),
+        "Valid TLS version 1.3 should be accepted. stderr: {stderr}"
+    );
 }
 
 // ── Pin Certs Tests ──────────────────────────────────────────────────
@@ -144,8 +187,10 @@ fn test_pin_certs_flag_accepted() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"),
-        "--pin-certs should be accepted. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "--pin-certs should be accepted. stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -155,19 +200,30 @@ fn test_pin_certs_combined_with_json() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"),
-        "--pin-certs with --json should parse successfully. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "--pin-certs with --json should parse successfully. stderr: {stderr}"
+    );
 }
 
 #[test]
 fn test_pin_certs_with_format_dashboard() {
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--pin-certs", "--format", "dashboard"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--pin-certs",
+            "--format",
+            "dashboard",
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"),
-        "--pin-certs with --format dashboard should parse successfully. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "--pin-certs with --format dashboard should parse successfully. stderr: {stderr}"
+    );
 }
 
 // ── Combination Tests ────────────────────────────────────────────────
@@ -177,27 +233,52 @@ fn test_ca_cert_combined_with_tls_version() {
     let cert_path = temp_cert_path();
     create_test_cert(&cert_path);
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", cert_path.to_str().unwrap(), "--tls-version", "1.3"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            cert_path.to_str().unwrap(),
+            "--tls-version",
+            "1.3",
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"),
-        "--ca-cert combined with --tls-version should parse successfully. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "--ca-cert combined with --tls-version should parse successfully. stderr: {stderr}"
+    );
     fs::remove_file(&cert_path).ok();
 }
 
 #[test]
-fn test_pin_certs_with_ca_cert_shows_warning() {
-    let cert_path = temp_cert_path();
-    create_test_cert(&cert_path);
+fn test_ca_cert_and_pin_certs_mutually_exclusive() {
+    // Using both --ca-cert and --pin-certs together should fail
+    // as they are mutually exclusive options
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", cert_path.to_str().unwrap(), "--pin-certs"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            "/some/path.pem",
+            "--pin-certs",
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Warning") && stderr.contains("--ca-cert") && stderr.contains("--pin-certs"),
-        "Warning should mention conflict between --ca-cert and --pin-certs. stderr: {stderr}");
-    fs::remove_file(&cert_path).ok();
+    // The CLI should reject this combination - either with error about conflict
+    // or with guidance about mutual exclusivity
+    assert!(
+        !output.status.success(),
+        "Using both --ca-cert and --pin-certs should fail"
+    );
+    // Check that the error mentions one of these options
+    assert!(
+        stderr.contains("--ca-cert") || stderr.contains("--pin-certs"),
+        "Error should mention the conflicting options. stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -205,12 +286,24 @@ fn test_all_tls_options_together() {
     let cert_path = temp_cert_path();
     create_test_cert(&cert_path);
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", cert_path.to_str().unwrap(), "--tls-version", "1.2", "--pin-certs", "--json"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            cert_path.to_str().unwrap(),
+            "--tls-version",
+            "1.2",
+            "--pin-certs",
+            "--json",
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"),
-        "All TLS options combined should parse successfully. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "All TLS options combined should parse successfully. stderr: {stderr}"
+    );
     fs::remove_file(&cert_path).ok();
 }
 
@@ -219,12 +312,22 @@ fn test_tls_options_with_other_flags() {
     let cert_path = temp_cert_path();
     create_test_cert(&cert_path);
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--ca-cert", cert_path.to_str().unwrap(), "--no-download", "--json"])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "--ca-cert",
+            cert_path.to_str().unwrap(),
+            "--no-download",
+            "--json",
+        ])
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"),
-        "TLS options with --no-download should parse successfully. stderr: {stderr}");
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "TLS options with --no-download should parse successfully. stderr: {stderr}"
+    );
     fs::remove_file(&cert_path).ok();
 }
 
@@ -237,8 +340,10 @@ fn test_ca_cert_error_message_format() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Error") || stderr.contains("error") || stderr.contains("invalid"),
-        "Expected user-friendly error message, got: {stderr}");
+    assert!(
+        stderr.contains("Error") || stderr.contains("error") || stderr.contains("invalid"),
+        "Expected user-friendly error message, got: {stderr}"
+    );
 }
 
 #[test]
@@ -248,6 +353,8 @@ fn test_tls_version_error_lists_valid_options() {
         .output()
         .expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("1.2") && stderr.contains("1.3"),
-        "Error should list valid TLS versions. stderr: {stderr}");
+    assert!(
+        stderr.contains("1.2") && stderr.contains("1.3"),
+        "Error should list valid TLS versions. stderr: {stderr}"
+    );
 }

@@ -68,7 +68,10 @@ enum PhaseKind {
     IpDiscovery,
     Ping,
     Bandwidth,
-    Result { is_verbose: bool, test_start: std::time::Instant },
+    Result {
+        is_verbose: bool,
+        test_start: std::time::Instant,
+    },
 }
 
 impl PhaseKind {
@@ -94,9 +97,10 @@ impl PhaseKind {
             PhaseKind::IpDiscovery => Self::execute_ip_discovery(orch, ctx).await,
             PhaseKind::Ping => Self::execute_ping(orch, ctx).await,
             PhaseKind::Bandwidth => Self::execute_bandwidth(orch, ctx).await,
-            PhaseKind::Result { is_verbose, test_start } => {
-                Self::execute_result(orch, ctx, *is_verbose, *test_start).await
-            }
+            PhaseKind::Result {
+                is_verbose,
+                test_start,
+            } => Self::execute_result(orch, ctx, *is_verbose, *test_start).await,
         }
     }
 
@@ -107,9 +111,9 @@ impl PhaseKind {
         if orch.early_exit.show_config_path {
             match crate::config::get_config_path_internal() {
                 Some(path) => eprintln!("Configuration file: {}", path.display()),
-                None => eprintln!(
-                    "No configuration path available (directories crate returned None)."
-                ),
+                None => {
+                    eprintln!("No configuration path available (directories crate returned None).")
+                }
             }
             return PhaseOutcome::EarlyExit;
         }
@@ -123,9 +127,7 @@ impl PhaseKind {
                 ShellType::PowerShell => "_netspeed-cli.ps1",
                 ShellType::Elvish => "netspeed-cli.elv",
             };
-            eprintln!(
-                "Shell completion for {shell:?} is available in the completions/ directory."
-            );
+            eprintln!("Shell completion for {shell:?} is available in the completions/ directory.");
             eprintln!("  File: {shell_name}");
             eprintln!("  Install: copy it to your shell's completion directory and reload.");
             return PhaseOutcome::EarlyExit;
@@ -462,7 +464,8 @@ impl Orchestrator {
         let source = ConfigSource::from_args(&args);
 
         // Use from_args_with_file to avoid double-loading config file
-        let (config, profile_validation) = Config::from_args_with_file(&source, file_config.clone());
+        let (config, profile_validation) =
+            Config::from_args_with_file(&source, file_config.clone());
 
         // Emit profile validation warnings (from source/CLI)
         for warning in &profile_validation.warnings {
