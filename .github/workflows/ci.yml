@@ -129,26 +129,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Need full history for baseline comparison
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+      - name: Install cargo-benchcmp
+        uses: taiki-e/install-action@cargo-benchcmp
       - name: Run benchmarks
         run: |
           cargo bench 2>&1 | tee benchmark_results.txt
+      - name: Fetch baseline from main
+        run: |
+          # Try to find baseline from main branch
+          if git show main:benches/baseline.txt &>/dev/null; then
+            echo "Found baseline on main branch"
+            git show main:benches/baseline.txt > benches/baseline.txt
+          else
+            echo "No baseline found on main - this may be the first run"
+          fi
       - name: Check for regressions
         run: |
-          echo "Benchmark results saved. Review benchmark_results.txt for details."
-          # In a real setup, you would compare against a baseline:
-          # if [ -f baseline.json ]; then
-          #   cargo benchcmp baseline.json benchmark_results.json || exit 1
-          # fi
+          # Skip comparison if baseline is placeholder
+          if grep -q "PLACEHOLDER" benches/baseline.txt 2>/dev/null; then
+            echo "Baseline is placeholder. Skipping regression check on first run."
+          elif [ -f benches/baseline.txt ]; then
+            echo "Comparing against baseline..."
+            cargo benchcmp benches/baseline.txt benchmark_results.txt 2>&1 || {
+              echo "Benchmark regression detected!"
+              exit 1
+            }
+          else
+            echo "No baseline to compare against. Skipping regression check."
+          fi
       - name: Store baseline
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           echo "Updating benchmark baseline on main branch..."
-          # Would update baseline.json here in production
+          mkdir -p benches
+          cp benchmark_results.txt benches/baseline.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benches/baseline.txt
+          git commit -m "perf: update benchmark baseline" || echo "No changes to commit"
 
 
   coverage:

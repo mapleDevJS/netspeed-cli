@@ -1,0 +1,5 @@
+# PLACEHOLDER: This is a placeholder baseline. CI will detect this marker and skip comparison.
+# Real baseline will be stored on first push to main after benchmark changes.
+# To run benchmarks: just bench-report
+# To compare: cargo benchcmp benches/baseline.txt <new_benchmark_output.txt>
+
