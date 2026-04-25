@@ -180,7 +180,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Distribution
 
 - Published to [crates.io](https://crates.io/crates/netspeed-cli) as `netspeed-cli 0.3.0`
-- Homebrew tap updated: `brew install mapledevjs/netspeed-cli/netspeed-cli`
+- Homebrew tap updated: `brew install mapleDevJS/homebrew-netspeed-cli/netspeed-cli`
 - GitHub Release: [v0.3.0](https://github.com/mapleDevJS/netspeed-cli/releases/tag/v0.3.0)
 
 ## [0.2.2] - 2026-04-04

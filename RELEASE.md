@@ -71,7 +71,7 @@ After CI completes:
 gh release view v<version> --repo mapleDevJS/netspeed-cli
 
 # Test Homebrew install
-brew upgrade mapledevjs/netspeed-cli/netspeed-cli
+brew upgrade mapleDevJS/homebrew-netspeed-cli/netspeed-cli
 
 # Test crates.io install
 cargo install netspeed-cli
@@ -108,4 +108,4 @@ gh pr create --base main --head hotfix/critical-fix
 | SBOM (SPDX JSON) | GitHub Release |
 | SHA256 checksums | GitHub Release |
 | Crate | crates.io |
-| Homebrew formula | mapledevjs/homebrew-netspeed-cli tap |
+| Homebrew formula | mapleDevJS/homebrew-netspeed-cli tap |
