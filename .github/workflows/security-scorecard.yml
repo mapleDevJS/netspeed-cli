@@ -6,11 +6,11 @@ on:
     - cron: '0 6 * * 0'
   # Manual trigger
   workflow_dispatch:
-  # Run on PRs that might affect security score
+  # Run only on main branch (Scorecard measures overall repo security)
   push:
-    branches: [main, master, develop]
+    branches: [main, master]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master]
 
 permissions:
   contents: read

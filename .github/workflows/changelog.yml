@@ -52,7 +52,7 @@ jobs:
       - name: Create changelog PR from develop
         if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
         run: |
-          git-cliff --config .cliff.toml --changelog CHANGELOG.md
+          git-cliff --config .cliff.toml --output CHANGELOG.md
 
           if ! git diff --quiet CHANGELOG.md; then
             echo Changelog updated, creating PR...
