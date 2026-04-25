@@ -1,0 +1,68 @@
+name: Stale Issues and PRs
+
+on:
+  schedule:
+    - cron: \"0 0 * * *\" # Run daily at midnight
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    name: Mark Stale
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          # Issue configuration
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: stale
+          close-issue-label: auto-closed
+          stale-issue-message: |
+            This issue has been automatically marked as stale because it has not had
+            recent activity. It will be closed after 14 days of no activity.
+
+            If this is still a bug or feature request, please add a comment to keep it open.
+
+            *Note: This is an automated message. You can remove the `stale` label to prevent auto-closing.*
+
+          close-issue-message: |
+            This issue was automatically closed due to inactivity. If you're still experiencing
+            this problem, please open a new issue with updated information.
+
+          # PR configuration
+          days-before-pr-stale: 90
+          days-before-pr-close: 21
+          stale-pr-label: stale
+          close-pr-label: auto-closed
+          stale-pr-message: |
+            This PR has been automatically marked as stale because it has not had
+            recent activity. It will be closed after 21 days of no activity.
+
+            If this PR is still relevant or needs attention, please add a comment
+            or keep it open.
+
+          close-pr-message: |
+            This PR was automatically closed due to inactivity. If you want to continue
+            working on this, please reopen the PR or create a new one.
+
+          remove-stale-when-updated: true
+
+  # Triage report on manual trigger
+  triage-stale:
+    name: Triage Report
+    runs-on: ubuntu-latest
+    needs: stale
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Generate triage report
+        run: |
+          echo \"## Stale Issue Triage Report\"
+          echo \"\"
+          echo \"Generated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')\"
+          echo \"\"
+          echo \"This report helps identify issues that need attention.\"
+          echo \"View stale issues: https://github.com/${{ github.repository }}/labels/stale\"

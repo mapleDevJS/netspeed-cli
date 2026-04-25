@@ -1,40 +1,59 @@
+# Dependabot configuration for netspeed-cli
+# Automatically keeps dependencies up-to-date
 version: 2
+
 updates:
-  # Rust dependencies
-  - package-ecosystem: "cargo"
-    directory: "/"
+  # Cargo dependencies (crates)
+  - package-ecosystem: cargo
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 10
+      interval: weekly
+      day: monday
+      time: \"09:00\"
+    open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore(deps)"
-    labels:
-      - "dependencies"
-      - "rust"
+      prefix: chore
+      include: scope
     groups:
-      tokio-ecosystem:
-        patterns:
-          - "tokio*"
-      serde-ecosystem:
-        patterns:
-          - "serde*"
-      clap-ecosystem:
-        patterns:
-          - "clap*"
+      # Group all minor/patch updates together
+      rust-dependencies:
+        update-types:
+          - minor
+          - patch
+    # Ignore major version bumps - require manual review
+    ignore:
+      - dependency-name: \"*\"
+        update-types: [\"version-update:semver-major\"]
+    # Auto-merge non-breaking updates after CI passes
+    rebase-strategy: auto
 
   # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "Etc/UTC"
+      interval: weekly
+      day: monday
+      time: \"09:00\"
+    open-pull-requests-limit: 3
     commit-message:
-      prefix: "ci(deps)"
-    labels:
-      - "dependencies"
-      - "ci"
+      prefix: ci
+      include: scope
+    groups:
+      # Group all Actions updates together
+      github-actions:
+        patterns:
+          - \"*\"
+    # Auto-merge Action updates after CI passes
+    rebase-strategy: auto
+
+  # npm dependencies (for commitlint, pre-commit hooks)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope
+    # Auto-merge npm updates after CI passes
+    rebase-strategy: auto

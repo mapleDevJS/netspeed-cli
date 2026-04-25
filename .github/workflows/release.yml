@@ -118,6 +118,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: release-assets
@@ -134,14 +136,25 @@ jobs:
           artifact-name: sbom.spdx.json
           output-file: release-assets/sbom.spdx.json
           format: spdx-json
+      - name: Install git-cliff for changelog
+        run: cargo install git-cliff --locked
+      - name: Update CHANGELOG.md for release
+        run: |
+          echo "Generating release changelog..."
+          git-cliff --config .cliff.toml --changelog CHANGELOG.md
+          echo "Changelog generated"
+          cat CHANGELOG.md | head -50
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Read changelog for release notes
+          CHANGELOG_CONTENT=$(cat CHANGELOG.md)
+          
           gh release delete "${{ github.ref_name }}" --yes --repo "${{ github.repository }}" 2>/dev/null || true
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes \
+            --notes "$CHANGELOG_CONTENT" \
             --repo "${{ github.repository }}"
       - name: Upload assets to release
         env:

@@ -1,0 +1,41 @@
+name: Auto-merge Dependabot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Allow only one auto-merge run at a time
+concurrency:
+  group: auto-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge Dependabot PRs
+    runs-on: ubuntu-latest
+    # Only run for Dependabot PRs
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Auto-merge
+        # NOTE: "Allow auto-merge" must be enabled in repo Settings → General → Pull Requests
+        # for this automation to work. See: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-auto-merge-for-pull-requests-in-your-repository
+        uses: actions/auto-merge-action@v5
+        with:
+          # Use squash merge for cleaner history
+          merge-method: squash
+          # Only merge if all required checks pass
+          required-consecutive-passing-checks: 3
+          # Minimum wait time (in minutes) before auto-merge
+          min-interval-seconds: 300
+
+      - name: Report status
+        if: always()
+        run: |
+          echo \"=== Dependabot Auto-merge Status ===\"
+          echo \"PR: ${{ github.event.pull_request.html_url }}\"
+          echo \"Actor: ${{ github.actor }}\"
+          echo \"Workflow status: ${{ job.status }}\"
