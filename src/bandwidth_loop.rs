@@ -15,9 +15,9 @@ use crate::progress::Tracker;
 use crate::terminal;
 use crate::test_config::TestConfig;
 use owo_colors::OwoColorize;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Throttle interval for speed sampling (20 Hz max).

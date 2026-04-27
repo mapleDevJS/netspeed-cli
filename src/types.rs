@@ -198,18 +198,10 @@ impl TestResultBuilder {
     /// Build the `TestResult` using the given stats service for CV/CI computation.
     pub fn build(self, stats: &dyn StatsService) -> TestResult {
         fn opt_samples(v: &[f64]) -> Option<Vec<f64>> {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_vec())
-            }
+            if v.is_empty() { None } else { Some(v.to_vec()) }
         }
         fn opt_positive(v: f64) -> Option<f64> {
-            if v > 0.0 {
-                Some(v)
-            } else {
-                None
-            }
+            if v > 0.0 { Some(v) } else { None }
         }
 
         TestResult {

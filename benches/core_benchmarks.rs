@@ -9,7 +9,7 @@
 
 #![allow(clippy::wildcard_imports)]
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use netspeed_cli::common;
 
 mod bandwidth {

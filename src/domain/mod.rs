@@ -24,5 +24,5 @@ pub mod speedtest;
 pub use crate::task_runner::TestRunResult;
 pub use measurement::run_bandwidth_test;
 pub use reporting::TestResultBuilder;
-pub use server::{select_best_server, ServerDiscovery};
+pub use server::{ServerDiscovery, select_best_server};
 pub use speedtest::run_all_phases;

@@ -11,8 +11,8 @@ use crate::types::Server;
 use quick_xml::de::from_str;
 use reqwest::Client;
 use serde::Deserialize;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Root element for the Speedtest.net servers XML response
 /// XML structure: <settings><servers><server .../></servers></settings>

@@ -43,7 +43,7 @@ fn test_result_processor_defaults() {
     processor.process(&mut result, profile);
     // After processing, grade fields should be Some (even if values are None they become None)
     assert!(result.overall_grade.is_none()); // because ping etc are None, overall stays None
-                                             // Ensure no panic and method is callable
+    // Ensure no panic and method is callable
 }
 
 #[test]

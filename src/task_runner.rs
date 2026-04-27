@@ -12,9 +12,9 @@
 use crate::error::Error;
 use crate::progress::Tracker;
 use crate::types::Server;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
 /// Trait for bandwidth test results - enables dependency injection and mocking.
 pub trait TestMetrics: Send + Sync {

@@ -2615,10 +2615,12 @@ mod tests {
         let result = validate_config(&file_config);
         assert!(result.valid);
         assert!(!result.warnings.is_empty());
-        assert!(result
-            .warnings
-            .iter()
-            .any(|w| w.contains("simple") && w.contains("deprecated")));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("simple") && w.contains("deprecated"))
+        );
     }
 
     #[test]

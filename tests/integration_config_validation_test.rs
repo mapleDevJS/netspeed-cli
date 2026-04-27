@@ -4,7 +4,7 @@
 //! depending on whether strict mode is enabled. They use the library's internal
 //! functions directly for reliability.
 
-use netspeed_cli::config::{validate_config, File, ValidationResult};
+use netspeed_cli::config::{File, ValidationResult, validate_config};
 
 // ── Test Helper ───────────────────────────────────────────────────────
 

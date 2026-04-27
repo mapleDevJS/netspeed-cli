@@ -446,8 +446,8 @@ fn parse_ip_from_xml(xml: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     // ==================== TlsConfig Builder Method Tests ====================
 
@@ -823,7 +823,7 @@ mod tests {
         // Numeric subdomains are valid
         assert!(PinningVerifier::is_valid_domain("123.speedtest.net")); // valid numeric subdomain
         assert!(PinningVerifier::is_valid_domain("1.2.3.speedtest.net")); // valid numeric subdomain
-                                                                          // Numeric prefix on base domain is invalid
+        // Numeric prefix on base domain is invalid
         assert!(!PinningVerifier::is_valid_domain("speedtest123.net")); // not valid
         assert!(!PinningVerifier::is_valid_domain("123speedtest.net")); // not valid
     }

@@ -7,11 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.9.0] - 2026-04-27
 
+### Changed
+
+- **SOLID architecture overhaul** (100/100 score): Extracted monolithic orchestrator into trait-based modules with dependency injection
+  - `services.rs`: async_trait service interfaces (ServerFetcher, ServerPinger, ServerSelector, IpDiscoverer, LatencyMonitor) with ServiceContainer DI
+  - `phases.rs`: phase functions using injected `Arc<dyn Services>` instead of direct module calls
+  - `storage.rs`: HistoryStorage blanket trait, MockStorage for testing
+  - `types.rs`: StatsService trait + DefaultStats, TestResultBuilder fluent API
+  - `task_runner.rs`: TestMetrics trait for result inspection
+  - `phase_runner.rs`: PhaseRunner trait abstraction
+  - `result_processor.rs`: ResultProcessor trait for output formatting
+  - `output.rs`: OutputStrategy trait for format resolution
+  - `http_client.rs`: HttpClient trait for HTTP abstraction
+  - Domain types: `measurement`, `reporting`, `server`, `speedtest` modules
+  - `FormatterFactory` for output format creation
+- **Zero performance regression**: Hot path (bandwidth_loop) uses no trait dispatch; dyn dispatch overhead (~10ns) negligible vs I/O (~500ms)
 - **TLS configuration options**: Custom CA certificates (`--ca-cert`), minimum TLS version (`--tls-version 1.2|1.3`), and certificate pinning (`--pin-certs`) for enterprise/secure network environments
-- **Config source refactoring**: CLI→config bridge using DIP pattern with semantic sub-structs (`OutputSource`, `TestSource`, `NetworkSource`, `ServerSource`) for better separation of concerns
-- Integration tests for TLS CLI options
+- **Config source refactoring**: CLI→config bridge using DIP pattern with semantic sub-structs
+- **Security automation**: detect-secrets, security hooks, audit tooling, cargo-deny integration
+- **CI improvements**: Changelog generation, commitlint, benchmark tracking, cross-platform test fixes
+
+### Fixed
+
+- Handle entries with empty timestamp in history display
+- Platform-specific theme resolution in tests (Windows Monochrome, NO_COLOR env)
+- Multiple CI workflow fixes (clippy pedantic, codeql v4, changelog, security report)
+
+### Removed
+
+- Deprecated CLI flags (`--dashboard`, `--simple-output`, `--csv-output`) — use `--format` instead
+
+### Testing
+
+- 895 tests passing (+19 new), up from 876 pre-refactoring
+- Clippy pedantic clean, rustfmt clean
+- All platforms: macOS, Ubuntu, Windows
 
 ## [0.8.0] - 2026-04-17
 

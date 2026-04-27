@@ -23,6 +23,8 @@ pub struct Summary {
 
 pub fn show(_result: &TestResult, _summary: &Summary) -> Result<(), Error> {
     // Dashboard output disabled - use detailed or compact format instead
-    eprintln!("Note: Dashboard format is temporarily unavailable. Use --format detailed or --format compact.");
+    eprintln!(
+        "Note: Dashboard format is temporarily unavailable. Use --format detailed or --format compact."
+    );
     Ok(())
 }
