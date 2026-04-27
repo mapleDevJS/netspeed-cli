@@ -184,7 +184,14 @@ mod tests {
         let result = resolve_output_format(&config, &dl, &ul, std::time::Duration::from_secs(5));
         match result {
             OutputFormat::Minimal { theme } => {
-                assert_eq!(theme, crate::theme::Theme::Dark);
+                assert_eq!(
+                    theme,
+                    if cfg!(windows) {
+                        crate::theme::Theme::Monochrome
+                    } else {
+                        crate::theme::Theme::Dark
+                    }
+                );
             }
             _ => panic!("Expected Minimal format"),
         }
@@ -199,7 +206,14 @@ mod tests {
         let result = resolve_output_format(&config, &dl, &ul, std::time::Duration::from_secs(5));
         match result {
             OutputFormat::Simple { theme } => {
-                assert_eq!(theme, crate::theme::Theme::Dark);
+                assert_eq!(
+                    theme,
+                    if cfg!(windows) {
+                        crate::theme::Theme::Monochrome
+                    } else {
+                        crate::theme::Theme::Dark
+                    }
+                );
             }
             _ => panic!("Expected Simple format"),
         }

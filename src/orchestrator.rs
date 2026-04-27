@@ -393,6 +393,53 @@ impl Orchestrator {
     }
 }
 
+// =============================================================================
+// Orchestrator Traits - SOLID: Interface Segregation & Dependency Inversion
+// =============================================================================
+
+/// Trait for configuration access (ISP: clients only need config, not full Orchestrator).
+pub trait ConfigAccessor: Send {
+    fn config(&self) -> &Config;
+    fn is_verbose(&self) -> bool;
+}
+
+/// Trait for HTTP client access.
+pub trait HttpAccessor: Send {
+    fn client(&self) -> &reqwest::Client;
+}
+
+/// Trait for phase execution (allows swapping execution strategies).
+pub trait TestExecutor: Send + Sync {
+    fn execute(
+        &self,
+        orch: &Orchestrator,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
+}
+
+/// Implementation that runs all phases.
+pub struct PhaseTestExecutor;
+
+impl TestExecutor for PhaseTestExecutor {
+    async fn execute(&self, orch: &Orchestrator) -> Result<(), Error> {
+        crate::phases::run_all_phases(orch).await
+    }
+}
+
+impl ConfigAccessor for Orchestrator {
+    fn config(&self) -> &Config {
+        self.cfg()
+    }
+    fn is_verbose(&self) -> bool {
+        self.is_verbose()
+    }
+}
+
+impl HttpAccessor for Orchestrator {
+    fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,52 +560,5 @@ mod tests {
         let args = crate::cli::Args::default();
         let orch = Orchestrator::new(args, None).unwrap();
         let _services = orch.services();
-    }
-}
-
-// =============================================================================
-// Orchestrator Traits - SOLID: Interface Segregation & Dependency Inversion
-// =============================================================================
-
-/// Trait for configuration access (ISP: clients only need config, not full Orchestrator).
-pub trait ConfigAccessor: Send {
-    fn config(&self) -> &Config;
-    fn is_verbose(&self) -> bool;
-}
-
-/// Trait for HTTP client access.
-pub trait HttpAccessor: Send {
-    fn client(&self) -> &reqwest::Client;
-}
-
-/// Trait for phase execution (allows swapping execution strategies).
-pub trait TestExecutor: Send + Sync {
-    fn execute(
-        &self,
-        orch: &Orchestrator,
-    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
-}
-
-/// Implementation that runs all phases.
-pub struct PhaseTestExecutor;
-
-impl TestExecutor for PhaseTestExecutor {
-    async fn execute(&self, orch: &Orchestrator) -> Result<(), Error> {
-        crate::phases::run_all_phases(orch).await
-    }
-}
-
-impl ConfigAccessor for Orchestrator {
-    fn config(&self) -> &Config {
-        self.cfg()
-    }
-    fn is_verbose(&self) -> bool {
-        self.is_verbose()
-    }
-}
-
-impl HttpAccessor for Orchestrator {
-    fn client(&self) -> &reqwest::Client {
-        &self.client
     }
 }

@@ -446,7 +446,6 @@ fn parse_ip_from_xml(xml: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::NetworkSource;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -569,8 +568,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_build_tls_config_unknown_tls_version() {
-        let mut tls = TlsConfig::default();
-        tls.min_tls_version = Some("99.0".to_string());
+        let tls = TlsConfig {
+            min_tls_version: Some("99.0".to_string()),
+            ..Default::default()
+        };
         let result = build_tls_config(&tls);
         assert!(result.is_ok());
     }
@@ -578,8 +579,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_build_tls_config_tls12() {
-        let mut tls = TlsConfig::default();
-        tls.min_tls_version = Some("1.2".to_string());
+        let tls = TlsConfig {
+            min_tls_version: Some("1.2".to_string()),
+            ..Default::default()
+        };
         let result = build_tls_config(&tls);
         assert!(result.is_ok());
     }
@@ -587,8 +590,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_build_tls_config_tls13() {
-        let mut tls = TlsConfig::default();
-        tls.min_tls_version = Some("1.3".to_string());
+        let tls = TlsConfig {
+            min_tls_version: Some("1.3".to_string()),
+            ..Default::default()
+        };
         let result = build_tls_config(&tls);
         assert!(result.is_ok());
     }
@@ -596,9 +601,11 @@ mod tests {
     #[test]
     #[ignore]
     fn test_build_tls_config_pinning_takes_precedence() {
-        let mut tls = TlsConfig::default();
-        tls.ca_cert_path = Some(std::path::PathBuf::from("/path/to/ca.pem"));
-        tls.pin_speedtest_certs = true;
+        let tls = TlsConfig {
+            ca_cert_path: Some(std::path::PathBuf::from("/path/to/ca.pem")),
+            pin_speedtest_certs: true,
+            ..Default::default()
+        };
         let result = build_tls_config(&tls);
         assert!(result.is_ok());
     }
@@ -606,8 +613,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_build_tls_config_pinning_only() {
-        let mut tls = TlsConfig::default();
-        tls.pin_speedtest_certs = true;
+        let tls = TlsConfig {
+            pin_speedtest_certs: true,
+            ..Default::default()
+        };
         let result = build_tls_config(&tls);
         assert!(result.is_ok());
     }
@@ -645,8 +654,10 @@ mod tests {
 
     #[test]
     fn test_create_client_source_ip_v4() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("192.168.1.100".to_string());
+        let settings = Settings {
+            source_ip: Some("192.168.1.100".to_string()),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         // IPv4 source IP should work
         match result {
@@ -658,8 +669,10 @@ mod tests {
 
     #[test]
     fn test_create_client_source_ip_v6() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("::1".to_string());
+        let settings = Settings {
+            source_ip: Some("::1".to_string()),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         match result {
             Ok(_) => {}
@@ -671,8 +684,13 @@ mod tests {
     #[test]
     #[ignore]
     fn test_create_client_with_ca_cert() {
-        let mut settings = Settings::default();
-        settings.tls.ca_cert_path = Some(std::path::PathBuf::from("/nonexistent/ca.pem"));
+        let settings = Settings {
+            tls: TlsConfig {
+                ca_cert_path: Some(std::path::PathBuf::from("/nonexistent/ca.pem")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_err());
     }
@@ -680,8 +698,13 @@ mod tests {
     #[test]
     #[ignore]
     fn test_create_client_with_pinning() {
-        let mut settings = Settings::default();
-        settings.tls.pin_speedtest_certs = true;
+        let settings = Settings {
+            tls: TlsConfig {
+                pin_speedtest_certs: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
@@ -695,16 +718,20 @@ mod tests {
 
     #[test]
     fn test_create_client_timeout_30() {
-        let mut settings = Settings::default();
-        settings.timeout_secs = 30;
+        let settings = Settings {
+            timeout_secs: 30,
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_create_client_timeout_60() {
-        let mut settings = Settings::default();
-        settings.timeout_secs = 60;
+        let settings = Settings {
+            timeout_secs: 60,
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
@@ -1463,8 +1490,10 @@ mod tests {
 
     #[test]
     fn test_settings_with_source_ip() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("10.0.0.1".to_string());
+        let settings = Settings {
+            source_ip: Some("10.0.0.1".to_string()),
+            ..Default::default()
+        };
         let cloned = settings.clone();
         assert_eq!(cloned.source_ip, Some("10.0.0.1".to_string()));
     }
@@ -1480,8 +1509,10 @@ mod tests {
 
     #[test]
     fn test_settings_clone_is_independent() {
-        let mut settings = Settings::default();
-        settings.timeout_secs = 60;
+        let mut settings = Settings {
+            timeout_secs: 60,
+            ..Default::default()
+        };
         let cloned = settings.clone();
         assert_eq!(cloned.timeout_secs, 60);
         // Modify original should not affect clone (deep clone of primitives)
@@ -1507,16 +1538,20 @@ mod tests {
 
     #[test]
     fn test_create_client_timeout_zero() {
-        let mut settings = Settings::default();
-        settings.timeout_secs = 0;
+        let settings = Settings {
+            timeout_secs: 0,
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_create_client_timeout_large() {
-        let mut settings = Settings::default();
-        settings.timeout_secs = 300;
+        let settings = Settings {
+            timeout_secs: 300,
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
@@ -1611,8 +1646,10 @@ mod tests {
 
     #[test]
     fn test_settings_with_timeout() {
-        let mut settings = Settings::default();
-        settings.timeout_secs = 120;
+        let settings = Settings {
+            timeout_secs: 120,
+            ..Default::default()
+        };
         assert_eq!(settings.timeout_secs, 120);
     }
 
@@ -1673,8 +1710,10 @@ mod tests {
 
     #[test]
     fn test_create_client_minimal_tls_config() {
-        let mut settings = Settings::default();
-        settings.tls = TlsConfig::default();
+        let settings = Settings {
+            tls: TlsConfig::default(),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         assert!(result.is_ok());
     }
@@ -1771,8 +1810,10 @@ mod tests {
 
     #[test]
     fn test_create_client_source_ip_loopback_v4() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("127.0.0.1".to_string());
+        let settings = Settings {
+            source_ip: Some("127.0.0.1".to_string()),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         // Loopback should work
         match result {
@@ -1783,8 +1824,10 @@ mod tests {
 
     #[test]
     fn test_create_client_source_ip_loopback_v6() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("::1".to_string());
+        let settings = Settings {
+            source_ip: Some("::1".to_string()),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         // Loopback should work
         match result {
@@ -1795,8 +1838,10 @@ mod tests {
 
     #[test]
     fn test_create_client_source_ip_unspecified() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("0.0.0.0".to_string());
+        let settings = Settings {
+            source_ip: Some("0.0.0.0".to_string()),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         // Unspecified should work
         match result {
@@ -1807,9 +1852,11 @@ mod tests {
 
     #[test]
     fn test_create_client_source_ip_with_tls() {
-        let mut settings = Settings::default();
-        settings.source_ip = Some("127.0.0.1".to_string());
-        settings.tls = TlsConfig::default();
+        let settings = Settings {
+            source_ip: Some("127.0.0.1".to_string()),
+            tls: TlsConfig::default(),
+            ..Default::default()
+        };
         let result = create_client(&settings);
         // Should work with default TLS or gracefully handle errors
         match result {

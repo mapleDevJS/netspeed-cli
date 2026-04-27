@@ -664,6 +664,71 @@ pub fn format_verbose_sections(
     }
 }
 
+// =============================================================================
+// Formatter Factory - SOLID: Factory pattern for flexible creation
+// =============================================================================
+
+/// Factory for creating formatter instances.
+///
+/// Enables runtime formatter selection and dependency injection.
+pub struct FormatterFactory;
+
+impl FormatterFactory {
+    /// Create a formatter from config format option.
+    pub fn create(format: Option<crate::config::Format>) -> Box<dyn Formatter> {
+        match format {
+            Some(crate::config::Format::Json) => Box::new(OutputFormat::Json),
+            Some(crate::config::Format::Jsonl) => Box::new(OutputFormat::Jsonl),
+            Some(crate::config::Format::Csv) => Box::new(OutputFormat::Csv {
+                delimiter: ',',
+                header: true,
+            }),
+            Some(crate::config::Format::Simple) => Box::new(OutputFormat::Simple {
+                theme: crate::theme::Theme::Dark,
+            }),
+            Some(crate::config::Format::Minimal) => Box::new(OutputFormat::Minimal {
+                theme: crate::theme::Theme::Dark,
+            }),
+            Some(crate::config::Format::Compact) => Box::new(OutputFormat::Compact {
+                dl_bytes: 0,
+                ul_bytes: 0,
+                dl_duration: 0.0,
+                ul_duration: 0.0,
+                elapsed: std::time::Duration::ZERO,
+                profile: crate::profiles::UserProfile::default(),
+                theme: crate::theme::Theme::Dark,
+            }),
+            Some(crate::config::Format::Detailed) => Box::new(OutputFormat::Detailed {
+                dl_bytes: 0,
+                ul_bytes: 0,
+                dl_duration: 0.0,
+                ul_duration: 0.0,
+                skipped: SkipState::default(),
+                elapsed: std::time::Duration::ZERO,
+                profile: crate::profiles::UserProfile::default(),
+                minimal: false,
+                theme: crate::theme::Theme::Dark,
+            }),
+            Some(crate::config::Format::Dashboard) => Box::new(OutputFormat::Dashboard {
+                dl_mbps: 0.0,
+                dl_peak_mbps: 0.0,
+                dl_bytes: 0,
+                dl_duration: 0.0,
+                ul_mbps: 0.0,
+                ul_peak_mbps: 0.0,
+                ul_bytes: 0,
+                ul_duration: 0.0,
+                elapsed: std::time::Duration::ZERO,
+                profile: crate::profiles::UserProfile::default(),
+                theme: crate::theme::Theme::Dark,
+            }),
+            None => Box::new(OutputFormat::Simple {
+                theme: crate::theme::Theme::Dark,
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1174,70 +1239,5 @@ mod tests {
     #[test]
     fn test_format_data_gb() {
         assert_eq!(crate::common::format_data_size(1_073_741_824), "1.00 GB");
-    }
-}
-
-// =============================================================================
-// Formatter Factory - SOLID: Factory pattern for flexible creation
-// =============================================================================
-
-/// Factory for creating formatter instances.
-///
-/// Enables runtime formatter selection and dependency injection.
-pub struct FormatterFactory;
-
-impl FormatterFactory {
-    /// Create a formatter from config format option.
-    pub fn create(format: Option<crate::config::Format>) -> Box<dyn Formatter> {
-        match format {
-            Some(crate::config::Format::Json) => Box::new(OutputFormat::Json),
-            Some(crate::config::Format::Jsonl) => Box::new(OutputFormat::Jsonl),
-            Some(crate::config::Format::Csv) => Box::new(OutputFormat::Csv {
-                delimiter: ',',
-                header: true,
-            }),
-            Some(crate::config::Format::Simple) => Box::new(OutputFormat::Simple {
-                theme: crate::theme::Theme::Dark,
-            }),
-            Some(crate::config::Format::Minimal) => Box::new(OutputFormat::Minimal {
-                theme: crate::theme::Theme::Dark,
-            }),
-            Some(crate::config::Format::Compact) => Box::new(OutputFormat::Compact {
-                dl_bytes: 0,
-                ul_bytes: 0,
-                dl_duration: 0.0,
-                ul_duration: 0.0,
-                elapsed: std::time::Duration::ZERO,
-                profile: crate::profiles::UserProfile::default(),
-                theme: crate::theme::Theme::Dark,
-            }),
-            Some(crate::config::Format::Detailed) => Box::new(OutputFormat::Detailed {
-                dl_bytes: 0,
-                ul_bytes: 0,
-                dl_duration: 0.0,
-                ul_duration: 0.0,
-                skipped: SkipState::default(),
-                elapsed: std::time::Duration::ZERO,
-                profile: crate::profiles::UserProfile::default(),
-                minimal: false,
-                theme: crate::theme::Theme::Dark,
-            }),
-            Some(crate::config::Format::Dashboard) => Box::new(OutputFormat::Dashboard {
-                dl_mbps: 0.0,
-                dl_peak_mbps: 0.0,
-                dl_bytes: 0,
-                dl_duration: 0.0,
-                ul_mbps: 0.0,
-                ul_peak_mbps: 0.0,
-                ul_bytes: 0,
-                ul_duration: 0.0,
-                elapsed: std::time::Duration::ZERO,
-                profile: crate::profiles::UserProfile::default(),
-                theme: crate::theme::Theme::Dark,
-            }),
-            None => Box::new(OutputFormat::Simple {
-                theme: crate::theme::Theme::Dark,
-            }),
-        }
     }
 }

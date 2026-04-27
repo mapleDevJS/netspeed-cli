@@ -4,9 +4,8 @@ use netspeed_cli::config::Config;
 use netspeed_cli::orchestrator::Orchestrator;
 use netspeed_cli::{
     http_client::ReqwestClient, output_strategy, phase_runner::DefaultPhaseRunner,
-    result_processor::DefaultResultProcessor, storage::FileStorage,
+    result_processor::DefaultResultProcessor,
 };
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_http_client_impl() {
@@ -67,7 +66,7 @@ fn test_output_strategy_resolver() {
         std::time::Duration::from_secs(0),
     );
     // Ensure we obtained a formatter and can call format on a dummy result.
-    let mut result = netspeed_cli::types::TestResult::default();
-    let res = format.format(&mut result, false);
+    let result = netspeed_cli::types::TestResult::default();
+    let res = format.format(&result, false);
     assert!(res.is_ok() || res.is_err());
 }
