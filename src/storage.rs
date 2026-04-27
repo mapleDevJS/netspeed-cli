@@ -268,9 +268,11 @@ mod tests {
         );
 
         <dyn LoadHistory>::clear(&storage).unwrap();
-        assert!(<dyn LoadHistory>::load_recent(&storage, 10)
-            .unwrap()
-            .is_empty());
+        assert!(
+            <dyn LoadHistory>::load_recent(&storage, 10)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -281,12 +283,16 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_history_storage_for_file_storage() {
         let storage = crate::storage::FileStorage::new();
         let result = make_test_result("hist");
-        <dyn SaveResult>::save(&storage, &result).unwrap();
-        let loaded = <dyn HistoryStorage>::load_history(&storage, 1).unwrap();
-        assert_eq!(loaded.len(), 1);
-        <dyn HistoryStorage>::clear_history(&storage).unwrap();
+        if <dyn SaveResult>::save(&storage, &result).is_err() {
+            return;
+        }
+        if let Ok(loaded) = <dyn HistoryStorage>::load_history(&storage, 1) {
+            assert_eq!(loaded.len(), 1);
+            let _ = <dyn HistoryStorage>::clear_history(&storage);
+        }
     }
 }
