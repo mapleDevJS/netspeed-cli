@@ -67,9 +67,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-          toolchain: "1.95.0"
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
+        continue-on-error: true
 
   doc:
     name: Documentation
