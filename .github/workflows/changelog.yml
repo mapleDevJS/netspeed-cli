@@ -51,6 +51,8 @@ jobs:
 
       - name: Create changelog PR from develop
         if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git-cliff --config .cliff.toml --output CHANGELOG.md || true
 
