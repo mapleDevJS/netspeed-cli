@@ -2,7 +2,7 @@ name: Stale Issues and PRs
 
 on:
   schedule:
-    - cron: \"0 0 * * *\" # Run daily at midnight
+    - cron: "0 0 * * *" # Run daily at midnight
   workflow_dispatch: # Allow manual trigger
 
 permissions:
@@ -60,9 +60,9 @@ jobs:
     steps:
       - name: Generate triage report
         run: |
-          echo \"## Stale Issue Triage Report\"
-          echo \"\"
-          echo \"Generated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')\"
-          echo \"\"
-          echo \"This report helps identify issues that need attention.\"
-          echo \"View stale issues: https://github.com/${{ github.repository }}/labels/stale\"
+          echo "## Stale Issue Triage Report"
+          echo ""
+          echo "Generated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "This report helps identify issues that need attention."
+          echo "View stale issues: https://github.com/${{ github.repository }}/labels/stale"
