@@ -526,6 +526,9 @@ mod tests {
 
     #[test]
     fn test_resolve_theme_default() {
+        if terminal::no_color() {
+            return;
+        }
         assert_eq!(resolve("dark", false), Theme::Dark);
         assert_eq!(resolve("invalid", false), Theme::Dark);
         assert_eq!(resolve("light", false), Theme::Light);

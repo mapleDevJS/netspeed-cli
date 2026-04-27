@@ -25,8 +25,9 @@ When working on this project, apply these global skills:
 ```bash
 cargo build          # Build
 cargo test           # Run tests
-cargo clippy         # Lint
+cargo clippy --all-targets --all-features -- -D warnings  # Lint (mirrors CI)
 cargo fmt --check    # Format check
+just qa              # Full CI gate: fmt + clippy + tests
 netspeed-cli         # Run speed test
 ```
 

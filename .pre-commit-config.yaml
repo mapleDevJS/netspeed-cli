@@ -43,12 +43,13 @@ repos:
   # CI-quality gate (fmt + clippy + doc + tests) - matches GitHub CI
   - repo: local
     hooks:
-      - id: just-qa
-        name: just qa (CI gate)
-        entry: just qa
-        language: system
-        pass_filenames: false
-        pass_env: [CARGO_TERM_COLOR]
+       - id: just-qa
+         name: just qa (CI gate)
+         entry: just qa
+         language: system
+         pass_filenames: false
+         pass_env: [CARGO_TERM_COLOR]
+         stages: [pre-push]
       - id: generate-completions
         name: Generate completions & man page
         entry: bash -c 'git diff --quiet src/cli.rs Cargo.toml build.rs 2>/dev/null || (cargo build && git add completions/ netspeed-cli.1)'

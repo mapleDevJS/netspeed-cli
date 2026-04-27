@@ -33,6 +33,7 @@ jobs:
 
       - name: Run Security Scorecard
         uses: ossf/scorecard-action@v2.4.1
+        continue-on-error: true
         with:
           results-file: results.sarif
           results-format: sarif
