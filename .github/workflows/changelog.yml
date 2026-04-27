@@ -53,6 +53,7 @@ jobs:
         if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
         run: |
           git-cliff --config .cliff.toml --output CHANGELOG.md || true
 
