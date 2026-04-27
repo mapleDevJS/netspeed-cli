@@ -16,15 +16,15 @@ develop ──(PR)──► main ──(tag)──► CI publishes
 ```bash
 git checkout develop
 git pull origin develop
-cargo test && cargo clippy -- -D warnings
+just qa
 ```
 
 #### 2. Open PR from `develop` → `main`
 
 ```bash
 gh pr create --base main --head develop \
-  --title "Release v0.5.0" \
-  --body "Merge develop into main for v0.5.0 release"
+  --title "Release v<version>" \
+  --body "Merge develop into main for v<version> release"
 ```
 
 Review the PR, ensure all CI checks pass, then **merge to `main`**.
@@ -36,7 +36,7 @@ Check out `main` and run the release script:
 ```bash
 git checkout main
 git pull origin main
-./scripts/release.sh 0.5.0
+./scripts/release.sh <version>
 ```
 
 The script will:
@@ -53,6 +53,7 @@ The `release.yml` workflow triggers automatically on the tag push and handles:
 | Job | What it does |
 |---|---|
 | `build-binaries` | Cross-compiles for macOS, Linux, Windows (7 targets) |
+| `socket-integration` | Runs ignored socket-binding integration tests |
 | `publish-github-release` | Creates GitHub Release, uploads binaries + SBOM + checksums |
 | `publish-crates-io` | Publishes the crate to crates.io |
 
@@ -67,10 +68,10 @@ After CI completes:
 
 ```bash
 # Check GitHub Release
-gh release view v0.5.0 --repo mapleDevJS/netspeed-cli
+gh release view v<version> --repo mapleDevJS/netspeed-cli
 
 # Test Homebrew install
-brew upgrade mapledevjs/netspeed-cli/netspeed-cli
+brew upgrade mapleDevJS/homebrew-netspeed-cli/netspeed-cli
 
 # Test crates.io install
 cargo install netspeed-cli
@@ -96,7 +97,7 @@ git commit -m "fix: critical bug description"
 git push origin hotfix/critical-fix
 gh pr create --base main --head hotfix/critical-fix
 # Merge PR, then run release script with patch version
-./scripts/release.sh 0.4.1
+./scripts/release.sh <patch-version>
 ```
 
 ## What CI Publishes
@@ -107,4 +108,4 @@ gh pr create --base main --head hotfix/critical-fix
 | SBOM (SPDX JSON) | GitHub Release |
 | SHA256 checksums | GitHub Release |
 | Crate | crates.io |
-| Homebrew formula | mapledevjs/homebrew-netspeed-cli tap |
+| Homebrew formula | mapleDevJS/homebrew-netspeed-cli tap |

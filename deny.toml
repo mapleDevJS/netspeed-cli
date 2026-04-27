@@ -10,10 +10,12 @@ all-features = false
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-# Transitive dependency via indicatif — no direct upgrade path available
-# indicatif 0.17 still uses number_prefix; upgrading indicatif to 0.18+ would resolve
+# Known RUSTSEC advisories - add entries here when published
+# Format: { id = "RUSTSEC-XXXX-XXXX", reason = "description" }
 ignore = [
-    "RUSTSEC-2025-0119",
+    { id = "RUSTSEC-2026-0097", reason = "transitive-only (reqwest→quinn→rand, proptest→rand); no custom logger configured; no patched version available" },
+    { id = "RUSTSEC-2026-0104", reason = "transitive (reqwest→quinn→rustls→rustls-webpki); no patch available in tree; only affects CRL-enabled server configs which speedtest.net does not use" },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained (archived); no replacement in tree; functionality covered by rustls-pki-types which is already used" },
 ]
 
 [licenses]
@@ -21,12 +23,9 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
-    "OpenSSL",
     "Zlib",
     "MPL-2.0",
     "CDLA-Permissive-2.0",

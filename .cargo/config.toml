@@ -1,0 +1,4 @@
+[env]
+# Avoid sandbox-induced `xcrun` cache warnings on macOS by providing the SDK path
+# directly instead of forcing toolchain probes during dependency/build-script compilation.
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"

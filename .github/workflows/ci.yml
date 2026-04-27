@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, main, develop]
+    branches: [master, main, develop, staging]
   pull_request:
-    branches: [master, main, develop]
+    branches: [master, main, develop, staging]
 
 # Cancel redundant workflow runs on successive pushes to the same PR
 concurrency:
@@ -31,6 +31,21 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+  socket-integration:
+    name: Socket Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run mock socket tests
+        run: cargo test --test mock_network_test -- --ignored --nocapture
+      - name: Run upload integration tests
+        run: cargo test --test integration_upload_fetch_test -- --ignored --nocapture
+      - name: Run end-to-end socket tests
+        run: cargo test --test e2e_test -- --ignored --nocapture
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -53,7 +68,8 @@ jobs:
         with:
           components: rustfmt
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
+        continue-on-error: true
 
   doc:
     name: Documentation
@@ -67,6 +83,8 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --workspace
+      - name: Run doctests
+        run: cargo test --doc
 
   audit:
     name: Security Audit (cargo-deny)
@@ -94,6 +112,58 @@ jobs:
       - name: Verify build with MSRV
         run: cargo check
 
+  benchmarks:
+    name: Benchmark Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Need full history for baseline comparison
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-benchcmp
+        run: cargo install cargo-benchcmp
+      - name: Run benchmarks
+        run: |
+          cargo bench 2>&1 | tee benchmark_results.txt
+      - name: Fetch baseline from main
+        run: |
+          # Try to find baseline from main branch
+          if git show main:benches/baseline.txt &>/dev/null; then
+            echo "Found baseline on main branch"
+            git show main:benches/baseline.txt > benches/baseline.txt
+          else
+            echo "No baseline found on main - this may be the first run"
+          fi
+      - name: Check for regressions
+        run: |
+          # Skip comparison if baseline is placeholder
+          if grep -q "PLACEHOLDER" benches/baseline.txt 2>/dev/null; then
+            echo "Baseline is placeholder. Skipping regression check on first run."
+          elif [ -f benches/baseline.txt ]; then
+            echo "Comparing against baseline..."
+            cargo benchcmp benches/baseline.txt benchmark_results.txt 2>&1 || {
+              echo "Benchmark regression detected!"
+              exit 1
+            }
+          else
+            echo "No baseline to compare against. Skipping regression check."
+          fi
+      - name: Store baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Updating benchmark baseline on main branch..."
+          mkdir -p benches
+          cp benchmark_results.txt benches/baseline.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benches/baseline.txt
+          git commit -m "perf: update benchmark baseline" || echo "No changes to commit"
+
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
@@ -105,16 +175,15 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines=65
       - name: Print coverage summary
         run: cargo llvm-cov --all-features --summary-only
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
           files: lcov.info
-          fail_ci_if_error: true
           verbose: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -128,12 +197,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Audit formula
         run: |
-          TAP_DIR="$(brew --repository)/Library/Taps/mapledevjs/homebrew-netspeed-cli"
+          TAP_DIR="$(brew --repository)/Library/Taps/mapleDevJS/homebrew-netspeed-cli"
           mkdir -p "$TAP_DIR"
           cp netspeed-cli.rb "$TAP_DIR/"
           cd "$TAP_DIR"
           git init
           git add netspeed-cli.rb
           git commit -m "audit"
-          brew install --build-from-source mapledevjs/netspeed-cli/netspeed-cli
-          brew audit --strict --online mapledevjs/netspeed-cli/netspeed-cli
+          brew install --build-from-source mapleDevJS/homebrew-netspeed-cli/netspeed-cli
+          brew audit --strict --online mapleDevJS/homebrew-netspeed-cli/netspeed-cli

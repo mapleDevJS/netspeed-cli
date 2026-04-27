@@ -7,7 +7,9 @@
 //! - IP validation (`common::is_valid_ipv4`)
 //! - URL construction (`download::build_test_url`, `upload::build_upload_url`)
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+#![allow(clippy::wildcard_imports)]
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use netspeed_cli::common;
 
 mod bandwidth {

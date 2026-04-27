@@ -7,7 +7,8 @@ This document describes the architectural decisions and design patterns used in 
 netspeed-cli follows a **modular layered architecture** with clear separation between:
 - **CLI Layer** (`cli.rs`, `config.rs`) — Argument parsing and configuration merging
 - **Core Layer** (`download.rs`, `upload.rs`, `servers.rs`) — Network operations
-- **Orchestration Layer** (`test_runner.rs`) — Test coordination and result aggregation
+- **Protocol Layer** (`endpoints.rs`) — Canonical speedtest endpoint derivation
+- **Orchestration Layer** (`task_runner.rs`) — Test coordination and result aggregation
 - **Presentation Layer** (`formatter/`) — Output formatting with Strategy pattern
 - **Infrastructure Layer** (`http.rs`, `history.rs`, `progress.rs`) — Cross-cutting concerns
 
@@ -24,6 +25,9 @@ netspeed-cli follows a **modular layered architecture** with clear separation be
 ├──────────────┬──────────────┬──────────────┬────────────────┤
 │ download.rs  │  upload.rs   │  servers.rs  │   progress.rs  │
 │ (Bandwidth)  │ (Bandwidth)  │ (Discovery)  │   (UI/UX)      │
+├──────────────┴──────────────┬──────────────┴────────────────┤
+│        endpoints.rs         │                                │
+│   (Speedtest URL model)     │                                │
 ├──────────────┴──────────────┴──────────────┴────────────────┤
 │                    common.rs                                 │
 │              (Shared Pure Functions)                         │
@@ -81,7 +85,21 @@ The `test_runner::run_bandwidth_test` function implements a template method:
 
 **Why:** Download and upload tests share identical orchestration logic. The closure parameter (`test_fn`) allows injection of the specific network operation while keeping the flow consistent.
 
-### 3. Pure Function Isolation — `common.rs`
+### 3. Protocol Normalization — `endpoints.rs`
+
+The `endpoints` module converts the raw speedtest server URL into a canonical
+set of runtime endpoints:
+
+- `base()` — directory containing test assets
+- `upload()` — upload endpoint
+- `latency()` — latency probe endpoint
+- `download_asset(name)` — download asset URL
+
+**Why:** Protocol assumptions used to be duplicated across download, upload,
+and latency measurement code. Centralizing them prevents drift and makes
+regressions easier to test.
+
+### 4. Pure Function Isolation — `common.rs`
 
 All shared utilities are pure functions with no side effects:
 - `calculate_bandwidth(bytes, elapsed)` → `bps`
@@ -116,6 +134,8 @@ pub enum SpeedtestError {
 - **Error chain preservation** via `#[from]` and `source` field in `Context` variant
 - **No `anyhow`** — we need a specific error type for the library API, not just a binary
 - **Contextual errors** — `SpeedtestError::context()` and `with_source()` for adding domain-specific messages
+- **Machine-readable failures** — `--format json` and `--format jsonl` emit a stable error envelope on runtime failure so automation does not need to scrape stderr prose
+- **Machine-readable success metadata** — successful JSON payloads include top-level `status` plus explicit per-phase completion/skipped state
 
 ## Configuration Merging
 
@@ -130,6 +150,18 @@ Hardcoded defaults (lowest priority)
 ```
 
 **Why:** Users can set persistent defaults in the config file while overriding per-invocation via CLI flags.
+
+Mergeable boolean CLI flags are parsed as tri-state values so the application
+can distinguish:
+- flag omitted
+- flag explicitly enabled
+- config/default fallback
+
+## History Persistence
+
+- **Atomic writes** — history is written through a temp file and renamed into place
+- **Backup rotation** — the previous valid file is copied to `history.json.bak`
+- **Repair path** — if `history.json` is corrupt but the backup is valid, load/save operations recover from the backup and preserve the corrupt file as `history.json.corrupt`
 
 ## Concurrency Model
 
@@ -195,6 +227,7 @@ strip = true        # Remove debug symbols to reduce binary size
 | `common.rs` | Pure utility functions (bandwidth, formatting, validation) |
 | `config.rs` | Three-tier config merge (CLI > file > defaults) |
 | `download.rs` | Multi-stream download bandwidth measurement |
+| `endpoints.rs` | Canonical endpoint derivation from raw server URLs |
 | `upload.rs` | Multi-stream upload bandwidth measurement |
 | `error.rs` | Unified error types with thiserror |
 | `formatter/` | Output formatting (Strategy pattern) |
@@ -202,7 +235,7 @@ strip = true        # Remove debug symbols to reduce binary size
 | `http.rs` | HTTP client creation, client IP discovery |
 | `progress.rs` | Terminal progress bars and spinners |
 | `servers.rs` | Server discovery, distance calculation, ping testing |
-| `test_runner.rs` | Test orchestration with template method |
+| `task_runner.rs` | Test orchestration with template method |
 | `types.rs` | Shared data structures (Server, TestResult) |
 
 ## Dependencies Rationale

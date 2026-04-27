@@ -5,6 +5,53 @@
 //! - Stream count determination
 //! - Distance formatting
 //! - Data size formatting
+//! - Terminal width detection
+
+use crate::test_config::TestConfig;
+use std::io::IsTerminal;
+
+/// Get the terminal width in columns, or a sensible default.
+///
+/// Returns `None` if stdout is not a terminal (piped output).
+/// Returns the width in character columns when available.
+/// Falls back to 100 columns if width cannot be determined.
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::common::get_terminal_width;
+/// let width = get_terminal_width();
+/// // When not a TTY (doctest), returns None; unwrap_or default ≥ 80
+/// assert!(width.unwrap_or(100) >= 80);
+/// ```
+#[must_use]
+pub fn get_terminal_width() -> Option<u16> {
+    if !std::io::stdout().is_terminal() {
+        return None;
+    }
+    terminal_size::terminal_size().map(|(w, _)| w.0)
+}
+
+/// Get the terminal width with a minimum and maximum bound.
+///
+/// Ensures the width is within reasonable bounds for formatting.
+/// Returns at least `min_width` and at most `max_width`.
+/// If terminal width cannot be determined, returns `default_width`.
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::common::get_terminal_width_bounded;
+/// let width = get_terminal_width_bounded(60, 120, 80);
+/// assert!(width >= 60 && width <= 120);
+/// ```
+#[must_use]
+pub fn get_terminal_width_bounded(min_width: u16, max_width: u16, default_width: u16) -> u16 {
+    match get_terminal_width() {
+        Some(w) => w.clamp(min_width, max_width),
+        None => default_width,
+    }
+}
 
 /// Calculate bandwidth in bits per second from bytes transferred and elapsed time.
 ///
@@ -18,6 +65,8 @@
 #[must_use]
 pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
     if elapsed_secs > 0.0 {
+        // Safe: total_bytes is bytes transferred during a test lasting seconds;
+        // cannot approach 2^53 (~9 PB) where f64 loses precision.
         (total_bytes as f64 * 8.0) / elapsed_secs
     } else {
         0.0
@@ -35,9 +84,13 @@ pub fn calculate_bandwidth(total_bytes: u64, elapsed_secs: f64) -> f64 {
 /// assert_eq!(determine_stream_count(true), 1);
 /// assert_eq!(determine_stream_count(false), 4);
 /// ```
+#[deprecated(
+    since = "0.9.0",
+    note = "Use TestConfig::stream_count_for(single) instead"
+)]
 #[must_use]
 pub fn determine_stream_count(single: bool) -> usize {
-    if single { 1 } else { 4 }
+    TestConfig::stream_count_for(single)
 }
 
 /// Format distance consistently: 1 decimal for < 100 km, 0 decimals for >= 100 km.
@@ -70,6 +123,8 @@ pub fn format_distance(km: f64) -> String {
 /// ```
 #[must_use]
 pub fn format_data_size(bytes: u64) -> String {
+    // Safe: bytes is u64, but human-readable formatting only needs ~3 significant
+    // digits. Even 1 TB = 1e12, well under 2^53 where f64 loses precision.
     if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else if bytes < 1024 * 1024 * 1024 {
@@ -116,9 +171,132 @@ pub fn bar_chart(value: f64, max: f64, width: usize) -> String {
         return "░".repeat(width);
     }
     let pct = (value / max).clamp(0.0, 1.0);
-    let filled = (pct * width as f64).round() as usize;
+    // Safe: pct is 0.0–1.0, width is typically ≤200, so result fits in usize.
+    let filled = (pct * width as f64).round().clamp(0.0, usize::MAX as f64) as usize;
     let empty = width.saturating_sub(filled);
     format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+}
+
+// ── Tabular Data Formatting ──────────────────────────────────────────────────
+
+/// Format a numeric value with fixed-width padding for vertical alignment.
+/// Pads with leading spaces so numbers right-align in columns.
+///
+/// # Arguments
+/// * `value` — The numeric value to format
+/// * `width` — Total column width (including decimal point)
+/// * `decimals` — Number of decimal places
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::common::tabular_number;
+/// assert_eq!(tabular_number(15.2, 8, 1), "    15.2");
+/// assert_eq!(tabular_number(150.0, 8, 1), "   150.0");
+/// ```
+#[must_use]
+pub fn tabular_number(value: f64, width: usize, decimals: usize) -> String {
+    if decimals == 0 {
+        // Safe: tabular numbers are speeds/counts — always non-negative.
+        // Clamp to 0..i64::MAX for explicitness and to catch negative inputs.
+        format!("{:>width$}", value.clamp(0.0, i64::MAX as f64) as i64)
+    } else {
+        format!("{value:>width$.decimals$}")
+    }
+}
+
+/// Format a speed value in Mbps with tabular alignment.
+/// Returns a fixed-width string like `"   150.00 Mb/s"` or `"     0.12 Gb/s"`.
+///
+/// # Arguments
+/// * `bps` — Bits per second
+/// * `total_width` — Total column width including unit
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::common::format_speed_tabular;
+/// let s = format_speed_tabular(150_000_000.0, 14);
+/// assert!(s.contains("Mb/s"));
+/// ```
+#[must_use]
+pub fn format_speed_tabular(bps: f64, total_width: usize) -> String {
+    let (value, unit) = if bps >= 1_000_000_000.0 {
+        (bps / 1_000_000_000.0, "Gb/s")
+    } else if bps >= 1_000_000.0 {
+        (bps / 1_000_000.0, "Mb/s")
+    } else if bps >= 1_000.0 {
+        (bps / 1_000.0, "Kb/s")
+    } else {
+        // Safe: bps < 1000 is a small non-negative integer, well within i64 range.
+        return format!(
+            "{:>total_width$} b/s",
+            bps.clamp(0.0, i64::MAX as f64) as i64
+        );
+    };
+    let unit_width = unit.len();
+    let val_width = total_width.saturating_sub(unit_width + 1); // +1 for space
+    format!("{value:>val_width$.2} {unit}")
+}
+
+/// Format latency in ms with tabular alignment.
+/// Returns a fixed-width string like `"    12.1 ms"`.
+///
+/// # Examples
+///
+/// ```
+/// # use netspeed_cli::common::format_latency_tabular;
+/// let s = format_latency_tabular(12.1, 10);
+/// assert!(s.contains("ms"));
+/// ```
+#[must_use]
+pub fn format_latency_tabular(ms: f64, width: usize) -> String {
+    format!("{ms:>width$.1} ms")
+}
+
+/// Format jitter in ms with tabular alignment.
+#[must_use]
+pub fn format_jitter_tabular(ms: f64, width: usize) -> String {
+    format!("{ms:>width$.1} ms")
+}
+
+/// Format packet loss percentage with tabular alignment.
+#[must_use]
+pub fn format_loss_tabular(pct: f64, width: usize) -> String {
+    format!("{pct:>width$.1}%")
+}
+
+/// Format data size (bytes) with tabular alignment for data transfer amounts.
+/// Returns a fixed-width string like `"  15.0 MB"`.
+#[must_use]
+pub fn format_data_size_tabular(bytes: u64, width: usize) -> String {
+    // Safe: same rationale as format_data_size — byte counts are bounded.
+    let (value, unit) = if bytes < 1024 * 1024 {
+        (bytes as f64 / 1024.0, "KB")
+    } else if bytes < 1024 * 1024 * 1024 {
+        (bytes as f64 / (1024.0 * 1024.0), "MB")
+    } else {
+        let val = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        let unit_width = 2; // "GB"
+        let val_width = width.saturating_sub(unit_width + 1);
+        return format!("{val:>val_width$.2} GB");
+    };
+    let unit_width = unit.len();
+    let val_width = width.saturating_sub(unit_width + 1);
+    format!("{value:>val_width$.1} {unit}")
+}
+
+/// Format duration with tabular alignment.
+#[must_use]
+pub fn format_duration_tabular(secs: f64, width: usize) -> String {
+    if secs < 60.0 {
+        format!("{secs:>width$.1}s")
+    } else {
+        // Safe: duration in seconds from a speed test; always non-negative and small.
+        let mins = (secs / 60.0).clamp(0.0, u64::MAX as f64) as u64;
+        let rem = secs % 60.0;
+        format!("{mins:>width$}m {rem:04.1}s")
+    }
 }
 
 #[cfg(test)]
@@ -127,22 +305,30 @@ mod tests {
 
     #[test]
     fn test_calculate_bandwidth_normal() {
-        assert_eq!(calculate_bandwidth(10_000_000, 2.0), 40_000_000.0);
+        assert!((calculate_bandwidth(10_000_000, 2.0) - 40_000_000.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_calculate_bandwidth_zero_elapsed() {
-        assert_eq!(calculate_bandwidth(10_000_000, 0.0), 0.0);
+        assert!(calculate_bandwidth(10_000_000, 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_determine_stream_count_single() {
-        assert_eq!(determine_stream_count(true), 1);
+        // Deprecated function test - still verify it works
+        #[allow(deprecated)]
+        {
+            assert_eq!(determine_stream_count(true), 1);
+        }
     }
 
     #[test]
     fn test_determine_stream_count_multi() {
-        assert_eq!(determine_stream_count(false), 4);
+        // Deprecated function test - still verify it works
+        #[allow(deprecated)]
+        {
+            assert_eq!(determine_stream_count(false), 4);
+        }
     }
 
     #[test]
@@ -229,5 +415,151 @@ mod tests {
     fn test_bar_chart_over_max() {
         let bar = bar_chart(150.0, 100.0, 10);
         assert_eq!(bar, "██████████"); // clamped to 100%
+    }
+
+    #[test]
+    fn test_get_terminal_width_bounded_default() {
+        // Should return default width when not in terminal
+        let width = get_terminal_width_bounded(60, 120, 80);
+        assert!((60..=120).contains(&width));
+    }
+
+    #[test]
+    fn test_get_terminal_width_bounded_clamps() {
+        // When not in a terminal, returns the default value (100 in this case since
+        // we can't query terminal width, it uses default from terminal_size crate)
+        let def = get_terminal_width_bounded(80, 100, 90);
+        // Returns default width from terminal_size or the default parameter
+        assert!((80..=120).contains(&def));
+
+        let def2 = get_terminal_width_bounded(60, 80, 70);
+        assert!((60..=120).contains(&def2));
+    }
+
+    // ── Tabular formatting tests ──
+
+    #[test]
+    fn test_tabular_number_right_aligned() {
+        assert_eq!(tabular_number(15.2, 8, 1), "    15.2");
+        assert_eq!(tabular_number(150.0, 8, 1), "   150.0");
+        assert_eq!(tabular_number(1234.5, 8, 1), "  1234.5");
+    }
+
+    #[test]
+    fn test_tabular_number_zero_decimals() {
+        assert_eq!(tabular_number(42.0, 6, 0), "    42");
+        assert_eq!(tabular_number(1000.0, 6, 0), "  1000");
+    }
+
+    #[test]
+    fn test_format_speed_tabular_mbps() {
+        let s = format_speed_tabular(150_000_000.0, 14);
+        assert_eq!(s, "   150.00 Mb/s");
+        assert_eq!(s.len(), 14);
+    }
+
+    #[test]
+    fn test_format_speed_tabular_gbps() {
+        let s = format_speed_tabular(1_200_000_000.0, 14);
+        assert_eq!(s, "     1.20 Gb/s");
+        assert_eq!(s.len(), 14);
+    }
+
+    #[test]
+    fn test_format_speed_tabular_kbps() {
+        let s = format_speed_tabular(50_000.0, 14);
+        assert_eq!(s, "    50.00 Kb/s");
+        assert_eq!(s.len(), 14);
+    }
+
+    #[test]
+    fn test_format_latency_tabular() {
+        assert_eq!(format_latency_tabular(12.1, 10), "      12.1 ms");
+        assert_eq!(format_latency_tabular(150.5, 10), "     150.5 ms");
+    }
+
+    #[test]
+    fn test_format_jitter_tabular() {
+        assert_eq!(format_jitter_tabular(1.5, 10), "       1.5 ms");
+    }
+
+    #[test]
+    fn test_format_loss_tabular() {
+        assert_eq!(format_loss_tabular(0.0, 8), "     0.0%");
+        assert_eq!(format_loss_tabular(5.5, 8), "     5.5%");
+    }
+
+    #[test]
+    fn test_format_data_size_tabular_mb() {
+        let s = format_data_size_tabular(15 * 1024 * 1024, 10);
+        assert_eq!(s, "   15.0 MB");
+        assert_eq!(s.len(), 10);
+    }
+
+    #[test]
+    fn test_format_data_size_tabular_gb() {
+        let s = format_data_size_tabular(4 * 1024 * 1024 * 1024, 10);
+        assert_eq!(s, "   4.00 GB");
+        assert_eq!(s.len(), 10);
+    }
+
+    #[test]
+    fn test_format_duration_tabular_seconds() {
+        assert_eq!(format_duration_tabular(30.5, 8), "    30.5s");
+    }
+
+    #[test]
+    fn test_format_duration_tabular_minutes() {
+        let s = format_duration_tabular(90.5, 10);
+        assert!(s.contains('m'));
+    }
+
+    // Property-based tests via proptest
+    #[cfg(test)]
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_bandwidth_always_non_negative(bytes in 0u64..u64::MAX, elapsed in 0.0f64..1e6) {
+                let result = calculate_bandwidth(bytes, elapsed);
+                prop_assert!(result >= 0.0, "bandwidth must never be negative");
+            }
+
+            #[test]
+            fn prop_bandwidth_zero_elapsed_returns_zero(bytes in 0u64..1_000_000) {
+                let result = calculate_bandwidth(bytes, 0.0);
+                prop_assert!(result.abs() < f64::EPSILON);
+            }
+
+            #[test]
+            fn prop_bandwidth_linear_scaling(bytes in 1u64..1_000_000) {
+                let r1 = calculate_bandwidth(bytes, 1.0);
+                let r2 = calculate_bandwidth(bytes, 2.0);
+                prop_assert!((r1 - 2.0 * r2).abs() < f64::EPSILON, "doubling time should halve bandwidth");
+            }
+
+            #[test]
+            fn prop_bar_chart_length(width in 1usize..200, value in 0.0f64..1000.0, max in 1.0f64..1000.0) {
+                let bar = bar_chart(value, max, width);
+                prop_assert_eq!(bar.chars().count(), width, "bar must have exactly width characters");
+            }
+
+            #[test]
+            fn prop_distance_always_ends_with_km(km in 0.0f64..10000.0) {
+                let result = format_distance(km);
+                prop_assert!(result.ends_with(" km"));
+            }
+
+            #[test]
+            fn prop_data_size_always_has_unit(bytes in 0u64..u64::MAX) {
+                let result = format_data_size(bytes);
+                prop_assert!(
+                    result.contains("KB") || result.contains("MB") || result.contains("GB"),
+                    "formatted size must contain a unit"
+                );
+            }
+        }
     }
 }

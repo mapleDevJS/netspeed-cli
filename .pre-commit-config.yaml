@@ -21,24 +21,76 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
 
-  # Rust formatting and linting
+  # Secret detection
+  # First time setup: run `detect-secrets scan --baseline .secrets.baseline` to create baseline
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: ^\\.github/|deny\\.toml|fuzz/
+        fail_on_never: false
+
+  # Commit message linting (conventional commits)
+  - repo: https://github.com/conventional-commits/commitlint
+    rev: v20.0.0
+    hooks:
+      - id: commitlint
+        name: Commitlint
+        entry: commitlint --edit $@
+        stages: [commit-msg]
+
+  # CI-quality gate (fmt + clippy + doc + tests) - matches GitHub CI
   - repo: local
     hooks:
-      - id: cargo-fmt
-        name: cargo fmt
-        entry: cargo fmt --
+       - id: just-qa
+         name: just qa (CI gate)
+         entry: just qa
+         language: system
+         pass_filenames: false
+         pass_env: [CARGO_TERM_COLOR]
+         stages: [pre-push]
+      - id: generate-completions
+        name: Generate completions & man page
+        entry: bash -c 'git diff --quiet src/cli.rs Cargo.toml build.rs 2>/dev/null || (cargo build && git add completions/ netspeed-cli.1)'
         language: system
-        types: [rust]
         pass_filenames: false
-      - id: cargo-clippy
-        name: cargo clippy
-        entry: cargo clippy -- -D warnings
+        pass_env: [GIT_DIR]
+
+  # Security checks (lightweight pre-commit version, full audit in CI)
+  - repo: local
+    hooks:
+      - id: check-unsafe-code
+        name: Check for unsafe code
+        entry: |
+          if grep -r 'unsafe' src/ --include='*.rs' | grep -v 'allow(unsafe_code)' | grep -v 'allow.unsafe_code.' > /dev/null; then
+            echo 'Warning: unsafe code found - review recommended'
+            grep -rn 'unsafe' src/ --include='*.rs' | grep -v 'allow(unsafe_code)' | grep -v 'allow.unsafe_code.'
+          fi
         language: system
-        types: [rust]
         pass_filenames: false
-      - id: cargo-audit
-        name: cargo audit
-        entry: cargo audit
+        types: [rust]
+      - id: check-hardcoded-secrets
+        name: Check for hardcoded secrets
+        entry: |
+          if grep -rnE 'password|secret|token|api_key' src/ --include='*.rs' | grep -v '//' | grep -v 'example' | grep -v 'placeholder' | grep -v 'None' | grep -v 'Option' | grep -v 'default' | grep -v '.get(' > /dev/null; then
+            echo 'Warning: Potential hardcoded secrets found - review recommended'
+            grep -rnE 'password|secret|token|api_key' src/ --include='*.rs' | grep -v '//' | grep -v 'example' | grep -v 'placeholder' | head -10
+          fi
         language: system
-        types: [cargo]
+        pass_filenames: false
+        types: [rust]
+      - id: check-file-permissions
+        name: Check file permissions
+        entry: |
+          if ! grep -q 'set_permissions.*0o600' src/ && grep -q 'set_permissions' src/; then
+            echo 'Warning: set_permissions found but not with 0o600 mode'
+          fi
+        language: system
+        pass_filenames: false
+        types: [rust]
+      - id: check-deny-toml
+        name: Validate deny.toml
+        entry: "echo 'Note: Full cargo-deny audit runs in CI (weekly schedule)'"
+        language: system
         pass_filenames: false

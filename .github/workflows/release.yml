@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
       - name: Verify tag points to main branch
         run: |
-          if ! git branch -r --contains "${{ github.ref_name }}" | grep -q 'origin/master'; then
+          if ! git branch -r --contains "${{ github.ref_name }}" | grep -q 'origin/main'; then
             echo "::error::Tag ${{ github.ref_name }} is not on the 'main' branch."
             echo "::error::Releases must be created from main. Merge develop → main first."
             echo "::error::See RELEASE.md for the release process."
@@ -118,6 +118,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: release-assets
@@ -134,14 +136,25 @@ jobs:
           artifact-name: sbom.spdx.json
           output-file: release-assets/sbom.spdx.json
           format: spdx-json
+      - name: Install git-cliff for changelog
+        run: cargo install git-cliff --locked
+      - name: Update CHANGELOG.md for release
+        run: |
+          echo "Generating release changelog..."
+          git-cliff --config .cliff.toml --changelog CHANGELOG.md
+          echo "Changelog generated"
+          cat CHANGELOG.md | head -50
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Read changelog for release notes
+          CHANGELOG_CONTENT=$(cat CHANGELOG.md)
+          
           gh release delete "${{ github.ref_name }}" --yes --repo "${{ github.repository }}" 2>/dev/null || true
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes \
+            --notes "$CHANGELOG_CONTENT" \
             --repo "${{ github.repository }}"
       - name: Upload assets to release
         env:
@@ -155,21 +168,59 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
           VERSION="${{ github.ref_name }}"
           VERSION_NO_V="${VERSION#v}"
-          SHA256=$(curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz" | shasum -a 256 | awk '{print $1}')
-          
-          # Update formula file
+
+          # Download tarball and calculate SHA256 with error handling
+          echo "Downloading tarball to calculate SHA256..."
+          if ! SHA256=$(curl -sfL "https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz" | sha256sum | awk '{print $1}'); then
+            echo "::error::Failed to download tarball or calculate SHA256"
+            exit 1
+          fi
+
+          if [ -z "$SHA256" ]; then
+            echo "::error::SHA256 is empty - download may have failed"
+            exit 1
+          fi
+          echo "SHA256: $SHA256"
+
+          # Update formula file with robust sed patterns
           sed -i "s/version \".*\"/version \"${VERSION_NO_V}\"/" netspeed-cli.rb
-          sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/releases/download/${VERSION}/netspeed-cli-${VERSION_NO_V}.tar.gz\"|" netspeed-cli.rb
+          sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz\"|" netspeed-cli.rb
           sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" netspeed-cli.rb
-          
-          # Commit and push to master branch
+
+          # Verify all updates were applied correctly
+          echo "Verifying formula updates..."
+          if ! grep -q "version \"${VERSION_NO_V}\"" netspeed-cli.rb; then
+            echo "::error::Version not updated correctly"
+            cat netspeed-cli.rb
+            exit 1
+          fi
+
+          if ! grep -q "archive/refs/tags/${VERSION}.tar.gz\"$" netspeed-cli.rb; then
+            echo "::error::URL not updated correctly"
+            cat netspeed-cli.rb
+            exit 1
+          fi
+
+          if ! grep -q "sha256 \"$SHA256\"" netspeed-cli.rb; then
+            echo "::error::SHA256 not updated correctly"
+            cat netspeed-cli.rb
+            exit 1
+          fi
+
+          echo "Formula update verified successfully"
+          echo "Updated formula:"
+          cat netspeed-cli.rb
+
+          # Commit and push to main branch
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add netspeed-cli.rb
           git commit -m "chore: update formula to ${VERSION}"
-          git push origin HEAD:master
+          git push origin HEAD:main
 
   publish-crates-io:
     name: Publish to crates.io
@@ -181,8 +232,11 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Verify tests pass
-        run: cargo test --verbose
+        run: |
+          cargo test --verbose
+          cargo test --doc
+          cargo package --locked
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --allow-dirty
+        run: cargo publish --locked

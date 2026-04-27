@@ -5,9 +5,9 @@
 Only the latest release version is supported with security updates. If you are using an older version, please upgrade to the latest release.
 
 | Version | Supported          |
-| ------- | ------------------ |
-| 0.3.x   | :white_check_mark: |
-| < 0.3   | :x:                |
+| ------- | ----------------- |
+| 0.8.x   | :white_check_mark: |
+| < 0.8   | :x:                |
 
 ## Reporting a Vulnerability
 

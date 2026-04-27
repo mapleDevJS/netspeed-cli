@@ -2,39 +2,135 @@
 .el .ds Aq '
 .TH netspeed-cli 1  "netspeed-cli 0.7.0" 
 .SH NAME
-netspeed\-cli \- Command line interface for testing internet bandwidth using speedtest.net
+netspeed\-cli \- Test internet bandwidth via speedtest.net servers
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-\-strict\-config\fR] [\fB\-\-ca\-cert\fR] [\fB\-\-tls\-version\fR] [\fB\-\-pin\-certs\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
-Command line interface for testing internet bandwidth using speedtest.net
+Test internet bandwidth via speedtest.net servers.
+.PP
+The default workflow runs a full bandwidth test:
+  1. Discover nearest speedtest.net servers
+  2. Measure latency (8 ping samples → latency, jitter, packet loss)
+  3. Measure download speed (multi\-stream, concurrent downloads)
+  4. Measure upload speed (multi\-stream, concurrent uploads)
+  5. Grade results (A+ to F) and show real\-world usage estimates
+.PP
+Configuration precedence: CLI flags override config file values, which override built\-in defaults.
+Results are saved to a local history file for trend tracking.
 .SH OPTIONS
 .TP
-\fB\-\-no\-download\fR
+\fB\-\-no\-download\fR [\fI<NO_DOWNLOAD>\fR]
 Do not perform download test
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-no\-upload\fR
+\fB\-\-no\-upload\fR [\fI<NO_UPLOAD>\fR]
 Do not perform upload test
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-single\fR
-Only use a single connection instead of multiple
+\fB\-\-single\fR [\fI<SINGLE>\fR]
+Use a single TCP connection for testing (measures sustained throughput).
+The default uses multiple connections (measures burst/bandwidth capacity).
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-bytes\fR
-Display values in bytes instead of bits
+\fB\-\-bytes\fR [\fI<BYTES>\fR]
+Display values in bytes instead of bits per second.
+The default uses bits (standard for ISP advertising).
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-simple\fR
-Suppress verbose output, only show basic information
+\fB\-\-simple\fR [\fI<SIMPLE>\fR]
+Suppress verbose output, only show basic information.
+Basic information = one\-line summary: latency, download, upload.
+Deprecated: use \-\-format simple instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-csv\fR
-Output in CSV format
+\fB\-\-csv\fR [\fI<CSV>\fR]
+Output in CSV format for spreadsheet analysis.
+Deprecated: use \-\-format csv instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-\-csv\-delimiter\fR \fI<CSV_DELIMITER>\fR [default: ,]
 Single character delimiter for CSV output (default: ",")
 .TP
-\fB\-\-csv\-header\fR
+\fB\-\-csv\-header\fR [\fI<CSV_HEADER>\fR]
 Print CSV headers
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
-\fB\-\-json\fR
-Output in JSON format
+\fB\-\-json\fR [\fI<JSON>\fR]
+Output in JSON format (machine\-readable).
+Deprecated: use \-\-format json instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-\-format\fR \fI<FORMAT>\fR
 Output format (supersedes \-\-json, \-\-csv, \-\-simple)
@@ -44,19 +140,26 @@ Output format (supersedes \-\-json, \-\-csv, \-\-simple)
 \fIPossible values:\fR
 .RS 14
 .IP \(bu 2
-json
+json: Machine\-readable JSON output
 .IP \(bu 2
-csv
+jsonl: JSON Lines for logging (one JSON object per line)
 .IP \(bu 2
-simple
+csv: CSV format for spreadsheet analysis
 .IP \(bu 2
-detailed
+minimal: Ultra\-minimal: just grade + speeds (e.g., "B+ 150.5↓ 25.3↑ 12ms")
 .IP \(bu 2
-dashboard
+simple: Minimal one\-line summary
+.IP \(bu 2
+compact: Key metrics with quality ratings
+.IP \(bu 2
+detailed: Full analysis with per\-metric grades (default)
+.IP \(bu 2
+dashboard: Rich terminal dashboard with capability matrix
 .RE
 .TP
 \fB\-\-list\fR
-Display a list of speedtest.net servers sorted by distance
+Display a list of nearby speedtest.net servers sorted by distance.
+Does not run a bandwidth test.
 .TP
 \fB\-\-server\fR \fI<SERVER>\fR
 Specify a server ID to test against (can be supplied multiple times)
@@ -65,7 +168,8 @@ Specify a server ID to test against (can be supplied multiple times)
 Exclude a server from selection (can be supplied multiple times)
 .TP
 \fB\-\-source\fR \fI<SOURCE>\fR
-Source IP address to bind to
+Source IP address to bind to (IPv4 or IPv6).
+Useful on multi\-homed systems to select a specific interface.
 .TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR [default: 10]
 HTTP timeout in seconds (default: 10)
@@ -84,36 +188,128 @@ zsh
 .IP \(bu 2
 fish
 .IP \(bu 2
-power\-shell
+powershell
 .IP \(bu 2
 elvish
 .RE
 .TP
 \fB\-\-history\fR
-Display test history
+Display test history from the local JSON file.
+Does not run a bandwidth test.
 .TP
-\fB\-\-quiet\fR
-Suppress all progress output (JSON/CSV still go to stdout)
+\fB\-\-quiet\fR [\fI<QUIET>\fR]
+Suppress all progress output during the test.
+JSON/CSV output still goes to stdout.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
+.TP
+\fB\-\-dry\-run\fR
+Validate configuration and exit without running tests.
+Prints the server that would be selected and confirms connectivity.
+.TP
+\fB\-\-no\-emoji\fR
+Disable emoji output (for environments where emojis don\*(Aqt render well)
+.TP
+\fB\-\-minimal\fR [\fI<MINIMAL>\fR]
+Minimal ASCII\-only output (no Unicode box\-drawing characters)
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
+.TP
+\fB\-\-profile\fR \fI<PROFILE>\fR
+User profile for customized output.
+Profiles control displayed sections and grading thresholds:
+  gamer:          Latency\-focused (ping/jitter weighted higher)
+  streamer:       Download\-focused (download weighted higher)
+  remote\-worker:  Upload\-focused (upload weighted higher)
+  power\-user:     All metrics with full detail
+  casual:         Simple pass/fail view
+.TP
+\fB\-\-theme\fR \fI<THEME>\fR [default: dark]
+Output color theme (dark, light, high\-contrast, monochrome)
+.TP
+\fB\-\-show\-config\-path\fR
+Show the configuration file path and exit
+.TP
+\fB\-\-strict\-config\fR [\fI<STRICT_CONFIG>\fR]
+Enable strict config mode \- show warnings for invalid config values
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
+.TP
+\fB\-\-ca\-cert\fR \fI<PATH>\fR
+Path to a custom CA certificate file (PEM/DER format).
+When specified, the client uses this certificate for TLS verification
+instead of the system default certificates.
+.TP
+\fB\-\-tls\-version\fR \fI<VERSION>\fR
+Minimum TLS version to use (1.2 or 1.3).
+The default allows both TLS 1.2 and 1.3.
+Use this to restrict connections to a specific TLS version.
+.TP
+\fB\-\-pin\-certs\fR [\fI<PIN_CERTS>\fR]
+Enable certificate pinning for speedtest.net servers.
+When enabled, the client only accepts connections to speedtest.net
+and ookla.com domains.
+
+⚠ SECURITY LIMITATION: This is DOMAIN\-ONLY pinning. It only validates
+that the server hostname ends with .speedtest.net or .ookla.com.
+It does NOT verify certificate hashes or the certificate chain.
+An attacker with a valid certificate from any CA for these domains
+could still perform a man\-in\-the\-middle (MITM) attack.
+
+For production security, use a custom CA certificate (\-\-ca\-cert) instead.
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Print version
 .SH EXTRA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Examples:
   netspeed\-cli                          Run a full speed test
-  netspeed\-cli \-\-simple                 Run with minimal output
-  netspeed\-cli \-\-json                   Output results as JSON
-  netspeed\-cli \-\-format dashboard       Rich dashboard with bar charts and history
-  netspeed\-cli \-\-format detailed        Full output with ratings and stability
+  netspeed\-cli \-\-format compact         Key metrics with ratings
+  netspeed\-cli \-\-format dashboard       Rich dashboard with history
+  netspeed\-cli \-\-format json            Machine\-readable output
   netspeed\-cli \-\-list                   List available servers
-  netspeed\-cli \-\-server 1234            Test against a specific server
-  netspeed\-cli \-\-no\-upload              Skip upload test
-  netspeed\-cli \-\-quiet                  Suppress all progress output
-  netspeed\-cli \-\-bytes                  Show results in MB/s instead of Mbit/s
-  netspeed\-cli \-\-single                 Use a single connection (debugging)
-  netspeed\-cli \-\-generate\-completion zsh > ~/.zsh/functions/_netspeed\-cli
-                                        Generate Zsh shell completions
+  netspeed\-cli \-\-history                Show test history
+  netspeed\-cli \-\-profile gamer          Optimize output for gaming
+  netspeed\-cli \-\-theme light            Light terminal background
+  netspeed\-cli \-\-no\-emoji               Disable emoji output
+  netspeed\-cli \-\-quiet                  Suppress progress output
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 .SH VERSION
 v0.7.0

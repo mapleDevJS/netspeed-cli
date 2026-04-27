@@ -15,26 +15,43 @@ _netspeed-cli() {
 
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
+'--no-download=[Do not perform download test]::NO_DOWNLOAD:(true false)' \
+'--no-upload=[Do not perform upload test]::NO_UPLOAD:(true false)' \
+'--single=[Only use a single connection instead of multiple]::SINGLE:(true false)' \
+'--bytes=[Display values in bytes instead of bits]::BYTES:(true false)' \
+'--simple=[Suppress verbose output, only show basic information]::SIMPLE:(true false)' \
+'--csv=[Output in CSV format]::CSV:(true false)' \
 '--csv-delimiter=[Single character delimiter for CSV output (default\: ",")]:CSV_DELIMITER:_default' \
-'--format=[Output format (supersedes --json, --csv, --simple)]:FORMAT:(json csv simple detailed dashboard)' \
+'--csv-header=[Print CSV headers]::CSV_HEADER:(true false)' \
+'--json=[Output in JSON format]::JSON:(true false)' \
+'--format=[Output format (supersedes --json, --csv, --simple)]:FORMAT:((json\:"Machine-readable JSON output"
+jsonl\:"JSON Lines for logging (one JSON object per line)"
+csv\:"CSV format for spreadsheet analysis"
+minimal\:"Ultra-minimal\: just grade + speeds (e.g., "B+ 150.5↓ 25.3↑ 12ms")"
+simple\:"Minimal one-line summary"
+compact\:"Key metrics with quality ratings"
+detailed\:"Full analysis with per-metric grades (default)"
+dashboard\:"Rich terminal dashboard with capability matrix"))' \
 '*--server=[Specify a server ID to test against (can be supplied multiple times)]:SERVER:_default' \
 '*--exclude=[Exclude a server from selection (can be supplied multiple times)]:EXCLUDE:_default' \
-'--source=[Source IP address to bind to]:SOURCE:_default' \
+'--source=[Source IP address to bind to (IPv4 or IPv6)]:SOURCE:_default' \
 '--timeout=[HTTP timeout in seconds (default\: 10)]:TIMEOUT:_default' \
-'--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish power-shell elvish)' \
-'--no-download[Do not perform download test]' \
-'--no-upload[Do not perform upload test]' \
-'--single[Only use a single connection instead of multiple]' \
-'--bytes[Display values in bytes instead of bits]' \
-'--simple[Suppress verbose output, only show basic information]' \
-'--csv[Output in CSV format]' \
-'--csv-header[Print CSV headers]' \
-'--json[Output in JSON format]' \
+'--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish powershell elvish)' \
+'--quiet=[Suppress all progress output (JSON/CSV still go to stdout)]::QUIET:(true false)' \
+'--minimal=[Minimal ASCII-only output (no Unicode box-drawing characters)]::MINIMAL:(true false)' \
+'--profile=[User profile for customized output (gamer, streamer, remote-worker, power-user, casual)]:PROFILE:_default' \
+'--theme=[Output color theme (dark, light, high-contrast, monochrome)]:THEME:_default' \
+'--strict-config=[Enable strict config mode - show warnings for invalid config values]::STRICT_CONFIG:(true false)' \
+'--ca-cert=[Path to a custom CA certificate file (PEM/DER format)]:PATH:_default' \
+'--tls-version=[Minimum TLS version to use (1.2 or 1.3)]:VERSION:_default' \
+'--pin-certs=[Enable certificate pinning for speedtest.net servers]::PIN_CERTS:(true false)' \
 '--list[Display a list of speedtest.net servers sorted by distance]' \
 '--history[Display test history]' \
-'--quiet[Suppress all progress output (JSON/CSV still go to stdout)]' \
-'-h[Print help]' \
-'--help[Print help]' \
+'--dry-run[Validate configuration and exit without running tests]' \
+'--no-emoji[Disable emoji output (for environments where emojis don'\''t render well)]' \
+'--show-config-path[Show the configuration file path and exit]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
 '--version[Print version]' \
 && ret=0

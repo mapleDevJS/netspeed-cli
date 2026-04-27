@@ -1,422 +1,564 @@
 //! Orchestrates the full speed test lifecycle.
 //!
-//! Extracted from `main.rs` to follow single-responsibility and enable
-//! unit testing of the test flow independent of the binary entry point.
+//! Delegates phase execution to the [`phases`](crate::phases) module,
+//! which provides OCP via function-based phase definitions.
 
-use crate::cli::{CliArgs, ShellType};
-use crate::common;
-use crate::config::Config;
-use crate::error::SpeedtestError;
-use crate::formatter::{OutputFormat, format_list};
-use crate::history;
+use crate::config::{Config, ConfigProvider, ConfigSource};
+
+use crate::phase_runner::{DefaultPhaseRunner, PhaseRunner};
+use crate::result_processor::{DefaultResultProcessor, ResultProcessor};
+
+use crate::error::Error;
 use crate::http;
-use crate::progress::{create_spinner, finish_ok, no_color};
-use crate::servers::{fetch_servers, ping_test, select_best_server};
-use crate::test_runner::{self, TestRunResult};
-use crate::types::Server;
-use crate::types::{self, TestResult};
-use crate::{download, upload};
+// HttpClient and ReqwestClient are injected via DI; no direct import needed
+use crate::profiles::UserProfile;
+use crate::storage::{LoadHistory, SaveResult};
+use crate::task_runner::TestRunResult;
+use crate::terminal;
+use crate::types::TestResult;
 
-use owo_colors::OwoColorize;
-
-/// Orchestrates the full speed test lifecycle.
-pub struct SpeedTestOrchestrator {
-    args: CliArgs,
-    config: Config,
-    client: reqwest::Client,
+/// Early-exit flags extracted from Args — these control flow, not configuration.
+#[derive(Clone)]
+pub(crate) struct EarlyExitFlags {
+    pub(crate) show_config_path: bool,
+    pub(crate) generate_completion: Option<crate::cli::ShellType>,
+    pub(crate) history: bool,
+    pub(crate) dry_run: bool,
 }
 
-impl SpeedTestOrchestrator {
+impl EarlyExitFlags {
+    pub(crate) fn from_args(args: &crate::cli::Args) -> Self {
+        Self {
+            show_config_path: args.show_config_path,
+            generate_completion: args.generate_completion,
+            history: args.history,
+            dry_run: args.dry_run,
+        }
+    }
+}
+
+/// Builder for storage components - enables dependency injection.
+pub struct StorageBuilder {
+    saver: Option<std::sync::Arc<dyn SaveResult + Send + Sync>>,
+    history: Option<std::sync::Arc<dyn LoadHistory + Send + Sync>>,
+}
+
+impl StorageBuilder {
+    pub fn new() -> Self {
+        Self {
+            saver: None,
+            history: None,
+        }
+    }
+
+    pub fn with_saver(mut self, saver: impl SaveResult + 'static) -> Self {
+        self.saver = Some(std::sync::Arc::new(saver));
+        self
+    }
+
+    pub fn with_saver_arc(mut self, saver: std::sync::Arc<dyn SaveResult + Send + Sync>) -> Self {
+        self.saver = Some(saver);
+        self
+    }
+
+    pub fn with_history(mut self, history: impl LoadHistory + 'static) -> Self {
+        self.history = Some(std::sync::Arc::new(history));
+        self
+    }
+
+    pub fn with_history_arc(
+        mut self,
+        history: std::sync::Arc<dyn LoadHistory + Send + Sync>,
+    ) -> Self {
+        self.history = Some(history);
+        self
+    }
+
+    /// Build storage components, defaulting to FileStorage if not provided.
+    fn build(
+        self,
+    ) -> (
+        std::sync::Arc<dyn SaveResult + Send + Sync>,
+        std::sync::Arc<dyn LoadHistory + Send + Sync>,
+    ) {
+        let saver = self.saver.unwrap_or_else(|| {
+            std::sync::Arc::new(crate::storage::FileStorage::new())
+                as std::sync::Arc<dyn SaveResult + Send + Sync>
+        });
+        let history = self.history.unwrap_or_else(|| {
+            std::sync::Arc::new(crate::storage::FileStorage::new())
+                as std::sync::Arc<dyn LoadHistory + Send + Sync>
+        });
+        (saver, history)
+    }
+}
+
+impl Default for StorageBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Orchestrates the full speed test lifecycle.
+///
+/// A thin wrapper that holds configuration/resources and delegates
+/// phase execution to the phases module.
+pub struct Orchestrator {
+    pub(crate) config: std::sync::Arc<dyn ConfigProvider>,
+    pub(crate) client: reqwest::Client,
+
+    early_exit: EarlyExitFlags,
+    saver: std::sync::Arc<dyn SaveResult + Send + Sync>,
+    history: std::sync::Arc<dyn LoadHistory + Send + Sync>,
+    processor: std::sync::Arc<dyn ResultProcessor + Send + Sync>,
+
+    phase_runner: std::sync::Arc<dyn PhaseRunner + Send + Sync>,
+    services: std::sync::Arc<dyn crate::services::Services>,
+}
+
+impl Orchestrator {
+    // Internal shortcut to the underlying Config
+    fn cfg(&self) -> &Config {
+        self.config.config()
+    }
+
     /// Create a new orchestrator from CLI arguments.
-    pub fn new(args: CliArgs) -> Result<Self, SpeedtestError> {
-        let config = Config::from_args(&args);
-        let client = http::create_client(&config)?;
+    pub fn new(
+        args: crate::cli::Args,
+        file_config: Option<crate::config::File>,
+    ) -> Result<Self, Error> {
+        let source = ConfigSource::from_args(&args);
+
+        let (config, profile_validation) =
+            Config::from_args_with_file(&source, file_config.clone());
+
+        for warning in &profile_validation.warnings {
+            eprintln!("Warning: {warning}");
+        }
+
+        let file_validation = config.validate_and_report(&source, file_config);
+        for error in &file_validation.errors {
+            eprintln!("Error: {error}");
+        }
+
+        let combined_valid = profile_validation.valid && file_validation.valid;
+        if config.strict() && !combined_valid {
+            return Err(Error::Context {
+                msg: "Configuration validation failed".to_string(),
+                source: None,
+            });
+        }
+
+        let early_exit = EarlyExitFlags::from_args(&args);
+        Self::from_config(config, early_exit)
+    }
+
+    /// Create an orchestrator from pre-built config.
+    pub(crate) fn from_config(config: Config, early_exit: EarlyExitFlags) -> Result<Self, Error> {
+        Self::from_config_with_storage(config, early_exit, StorageBuilder::new())
+    }
+
+    /// Create an orchestrator from pre-built config with custom storage.
+    pub(crate) fn from_config_with_storage(
+        config: Config,
+        early_exit: EarlyExitFlags,
+        storage: StorageBuilder,
+    ) -> Result<Self, Error> {
+        let http_settings = http::Settings::from(&config);
+        let client = http::create_client(&http_settings)?;
+
+        let (saver, history) = storage.build();
+        let services = std::sync::Arc::new(crate::services::ServiceContainer::new(client.clone()));
+
         Ok(Self {
-            args,
-            config,
+            config: std::sync::Arc::new(config),
             client,
+
+            early_exit,
+            saver,
+            history,
+            processor: std::sync::Arc::new(DefaultResultProcessor),
+            phase_runner: std::sync::Arc::new(DefaultPhaseRunner::new()),
+            services,
         })
     }
 
+    /// Access the service container.
+    #[must_use]
+    pub fn services(&self) -> &dyn crate::services::Services {
+        self.services.as_ref()
+    }
+
+    /// Clone the services Arc for creating PhaseContext.
+    pub fn services_arc(&self) -> std::sync::Arc<dyn crate::services::Services> {
+        self.services.clone()
+    }
+
     /// Run the full speed test workflow.
-    pub async fn run(&self) -> Result<(), SpeedtestError> {
-        // Shell completion early-exit
-        if let Some(shell) = self.args.generate_completion {
-            Self::generate_shell_completion(shell);
-            return Ok(());
-        }
-
-        // History display early-exit
-        if self.args.history {
-            history::print_history()?;
-            return Ok(());
-        }
-
-        let is_verbose = self.is_verbose();
-
-        // Print header
-        if is_verbose {
-            Self::print_header();
-        }
-
-        // Fetch and filter servers
-        let servers = self.fetch_and_filter_servers(is_verbose).await?;
-
-        // Handle --list: format_list already printed, signal completion
-        if self.config.list {
-            return Ok(());
-        }
-
-        // Select best server
-        let server = select_best_server(&servers)?;
-
-        // Server info
-        if is_verbose {
-            Self::print_server_info(&server);
-        }
-
-        // Discover client IP
-        let client_ip = http::discover_client_ip(&self.client).await.ok();
-
-        // Run ping test
-        let (ping, jitter, packet_loss, ping_samples) =
-            self.run_ping_test(&server, is_verbose).await?;
-
-        // Run download test
-        let dl_result = self.run_download_test(&server, is_verbose).await?;
-
-        // Run upload test
-        let ul_result = self.run_upload_test(&server, is_verbose).await?;
-
-        // Build result
-        let result = TestResult::from_test_runs(
-            types::ServerInfo {
-                id: server.id.clone(),
-                name: server.name.clone(),
-                sponsor: server.sponsor.clone(),
-                country: server.country.clone(),
-                distance: server.distance,
-            },
-            ping,
-            jitter,
-            packet_loss,
-            ping_samples,
-            &dl_result,
-            &ul_result,
-            client_ip,
-        );
-
-        // Save to history (unless --json or --csv)
-        if !self.config.json && !self.config.csv {
-            history::save_result(&result).ok();
-        }
-
-        // Output — Strategy pattern dispatch
-        self.output_results(&result, &dl_result, &ul_result)?;
-
-        Ok(())
+    pub async fn run(&self) -> Result<(), Error> {
+        self.phase_runner.run_all(self).await
     }
 
     /// Whether verbose output should be shown.
+    #[must_use]
     pub fn is_verbose(&self) -> bool {
-        use crate::cli::OutputFormatType;
-        // Quiet mode suppresses all stderr output
-        if self.config.quiet {
+        if self.cfg().quiet() {
             return false;
         }
-        let format_non_verbose = matches!(
-            self.args.format,
-            Some(
-                OutputFormatType::Simple
-                    | OutputFormatType::Json
-                    | OutputFormatType::Csv
-                    | OutputFormatType::Dashboard
-            )
-        );
-        !self.config.simple
-            && !self.config.json
-            && !self.config.csv
-            && !self.config.list
+        let format_non_verbose = self.cfg().format().is_some_and(|f| f.is_non_verbose());
+        !self.cfg().simple()
+            && !self.cfg().json()
+            && !self.cfg().csv()
+            && !self.cfg().list()
             && !format_non_verbose
     }
 
-    fn print_header() {
-        eprintln!(
-            "{}",
-            format!("  ═══  NetSpeed CLI v{}  ═══", env!("CARGO_PKG_VERSION"))
-                .dimmed()
-                .bold()
-        );
-        eprintln!("{}", "  Bandwidth test · speedtest.net".dimmed());
-        eprintln!();
+    /// Check if this is a simple/quiet mode.
+    #[must_use]
+    pub fn is_simple_mode(&self) -> bool {
+        self.cfg().simple()
+            || self.cfg().quiet()
+            || self.cfg().format() == Some(crate::config::Format::Simple)
     }
 
-    fn print_server_info(server: &Server) {
-        let dist = common::format_distance(server.distance);
-        eprintln!();
-        if no_color() {
-            eprintln!("  Server:   {} ({})", server.sponsor, server.name);
-            eprintln!("  Location: {} ({dist})", server.country);
-        } else {
-            eprintln!(
-                "  {}   {} ({})",
-                "Server:".dimmed(),
-                server.sponsor.white().bold(),
-                server.name
-            );
-            eprintln!("  {} {} ({dist})", "Location:".dimmed(), server.country);
-        }
-        eprintln!();
+    /// Access the configuration (read-only).
+    #[must_use]
+    pub fn config(&self) -> &Config {
+        self.cfg()
     }
 
-    async fn fetch_and_filter_servers(
+    /// Access early-exit flags.
+    #[must_use]
+    pub(crate) fn early_exit(&self) -> &EarlyExitFlags {
+        &self.early_exit
+    }
+
+    /// Access result saver (for persisting a result).
+    #[must_use]
+    pub fn saver(&self) -> &dyn SaveResult {
+        self.saver.as_ref()
+    }
+
+    /// Access history provider (optional).
+    #[must_use]
+    pub fn history(&self) -> &dyn LoadHistory {
+        self.history.as_ref()
+    }
+
+    /// Access the HTTP client for async operations.
+    pub fn http_client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
+    /// Output results after test completion.
+    pub(crate) fn output_results(
         &self,
-        is_verbose: bool,
-    ) -> Result<Vec<Server>, SpeedtestError> {
-        let fetch_spinner = if is_verbose {
-            Some(create_spinner("Finding servers..."))
-        } else {
-            None
-        };
-        let mut servers = fetch_servers(&self.client).await?;
-        if let Some(ref pb) = fetch_spinner {
-            finish_ok(pb, &format!("Found {} servers", servers.len()));
-            eprintln!();
-        }
-
-        // Handle --list option
-        if self.config.list {
-            format_list(&servers)?;
-            return Ok(Vec::new()); // caller checks config.list
-        }
-
-        // Filter servers
-        if !self.config.server_ids.is_empty() {
-            servers.retain(|s| self.config.server_ids.contains(&s.id));
-        }
-        if !self.config.exclude_ids.is_empty() {
-            servers.retain(|s| !self.config.exclude_ids.contains(&s.id));
-        }
-
-        if servers.is_empty() {
-            return Err(SpeedtestError::ServerNotFound(
-                "No servers match your criteria. Try running without --server/--exclude filters, or use --list to see available servers.".to_string(),
-            ));
-        }
-
-        Ok(servers)
-    }
-
-    async fn run_ping_test(
-        &self,
-        server: &Server,
-        is_verbose: bool,
-    ) -> Result<(Option<f64>, Option<f64>, Option<f64>, Vec<f64>), SpeedtestError> {
-        if self.config.no_download && self.config.no_upload {
-            return Ok((None, None, None, Vec::new()));
-        }
-
-        let ping_spinner = if is_verbose {
-            Some(create_spinner("Testing latency..."))
-        } else {
-            None
-        };
-        let ping_result = ping_test(&self.client, server).await?;
-        if let Some(ref pb) = ping_spinner {
-            let msg = if no_color() {
-                format!("Latency: {:.2} ms", ping_result.0)
-            } else {
-                format!(
-                    "Latency: {}",
-                    format!("{:.2} ms", ping_result.0).cyan().bold()
-                )
-            };
-            finish_ok(pb, &msg);
-        }
-        Ok((
-            Some(ping_result.0),
-            Some(ping_result.1),
-            Some(ping_result.2),
-            ping_result.3,
-        ))
-    }
-
-    async fn run_download_test(
-        &self,
-        server: &Server,
-        is_verbose: bool,
-    ) -> Result<TestRunResult, SpeedtestError> {
-        if self.config.no_download {
-            return Ok(TestRunResult::default());
-        }
-
-        test_runner::run_bandwidth_test(
-            &self.config,
-            server,
-            "Download",
-            is_verbose,
-            |progress| async {
-                download::download_test(&self.client, server, self.config.single, progress).await
-            },
-        )
-        .await
-    }
-
-    async fn run_upload_test(
-        &self,
-        server: &Server,
-        is_verbose: bool,
-    ) -> Result<TestRunResult, SpeedtestError> {
-        if self.config.no_upload {
-            return Ok(TestRunResult::default());
-        }
-
-        test_runner::run_bandwidth_test(
-            &self.config,
-            server,
-            "Upload",
-            is_verbose,
-            |progress| async {
-                upload::upload_test(&self.client, server, self.config.single, progress).await
-            },
-        )
-        .await
-    }
-
-    fn output_results(
-        &self,
-        result: &TestResult,
+        result: &mut TestResult,
         dl_result: &TestRunResult,
         ul_result: &TestRunResult,
-    ) -> Result<(), SpeedtestError> {
-        use crate::cli::OutputFormatType;
+        elapsed: std::time::Duration,
+    ) -> Result<(), Error> {
+        let profile = UserProfile::from_name(self.cfg().profile().unwrap_or("power-user"))
+            .unwrap_or(UserProfile::PowerUser);
+        // Grade results via injected processor (OCP)
+        self.processor.process(result, profile);
 
-        // --format flag takes precedence over legacy --json/--csv/--simple booleans
-        let output_format = match self.args.format {
-            Some(OutputFormatType::Json) => OutputFormat::Json,
-            Some(OutputFormatType::Csv) => OutputFormat::Csv {
-                delimiter: self.config.csv_delimiter,
-                header: self.config.csv_header,
-            },
-            Some(OutputFormatType::Simple) => OutputFormat::Simple,
-            Some(OutputFormatType::Dashboard) => OutputFormat::Dashboard {
-                dl_mbps: dl_result.avg_bps / 1_000_000.0,
-                dl_peak_mbps: dl_result.peak_bps / 1_000_000.0,
-                dl_bytes: dl_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_mbps: ul_result.avg_bps / 1_000_000.0,
-                ul_peak_mbps: ul_result.peak_bps / 1_000_000.0,
-                ul_bytes: ul_result.total_bytes,
-                ul_duration: ul_result.duration_secs,
-            },
-            Some(OutputFormatType::Detailed) => OutputFormat::Detailed {
-                dl_bytes: dl_result.total_bytes,
-                ul_bytes: ul_result.total_bytes,
-                dl_duration: dl_result.duration_secs,
-                ul_duration: ul_result.duration_secs,
-                dl_skipped: self.config.no_download,
-                ul_skipped: self.config.no_upload,
-            },
-            None => {
-                // Legacy boolean flag fallback
-                if self.config.json {
-                    OutputFormat::Json
-                } else if self.config.csv {
-                    OutputFormat::Csv {
-                        delimiter: self.config.csv_delimiter,
-                        header: self.config.csv_header,
-                    }
-                } else if self.config.simple {
-                    OutputFormat::Simple
-                } else {
-                    OutputFormat::Detailed {
-                        dl_bytes: dl_result.total_bytes,
-                        ul_bytes: ul_result.total_bytes,
-                        dl_duration: dl_result.duration_secs,
-                        ul_duration: ul_result.duration_secs,
-                        dl_skipped: self.config.no_download,
-                        ul_skipped: self.config.no_upload,
-                    }
-                }
-            }
-        };
-        output_format.format(result, self.config.bytes)?;
+        let output_format = crate::output_strategy::resolve_output_format(
+            self.cfg(),
+            dl_result,
+            ul_result,
+            elapsed,
+        );
 
+        if self.is_verbose() {
+            self.reveal_results(result, self.cfg().theme(), profile);
+        }
+
+        output_format.format(result, self.cfg().bytes())?;
         Ok(())
     }
 
-    fn generate_shell_completion(shell: ShellType) {
-        use clap::CommandFactory;
-        use clap_complete::{Shell as CompleteShell, generate};
-        use std::io;
+    /// Show the scan completion reveal before outputting detailed results.
+    fn reveal_results(
+        &self,
+        result: &TestResult,
+        theme: crate::theme::Theme,
+        profile: UserProfile,
+    ) {
+        let nc = terminal::no_color();
 
-        let shell_type = match shell {
-            ShellType::Bash => CompleteShell::Bash,
-            ShellType::Zsh => CompleteShell::Zsh,
-            ShellType::Fish => CompleteShell::Fish,
-            ShellType::PowerShell => CompleteShell::PowerShell,
-            ShellType::Elvish => CompleteShell::Elvish,
-        };
+        let sample_count = result.download_samples.as_ref().map_or(0, Vec::len)
+            + result.upload_samples.as_ref().map_or(0, Vec::len)
+            + result.ping_samples.as_ref().map_or(0, Vec::len);
 
-        let mut cmd = CliArgs::command();
-        let bin_name = "netspeed-cli";
-        generate(shell_type, &mut cmd, bin_name, &mut io::stdout());
+        let overall_grade = crate::grades::grade_overall(
+            result.ping,
+            result.jitter,
+            result.download,
+            result.upload,
+            profile,
+        );
+
+        let grade_badge = overall_grade.color_str(nc, theme);
+        let grade_plain = overall_grade.as_str().to_string();
+        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc);
+        crate::progress::reveal_pause();
+    }
+
+    /// Validate configuration and print confirmation without running tests.
+    pub(crate) fn run_dry_run(&self) {
+        let nc = terminal::no_color();
+        let config = self.config();
+
+        if nc {
+            eprintln!("Configuration valid:");
+            eprintln!("  Timeout: {}s", config.timeout());
+            eprintln!("  Format: {}", self.format_description());
+            if config.quiet() {
+                eprintln!("  Quiet: enabled");
+            }
+            if let Some(source) = config.source() {
+                eprintln!("  Source IP: {source}");
+            }
+            if config.no_download() {
+                eprintln!("  Download test: disabled");
+            }
+            if config.no_upload() {
+                eprintln!("  Upload test: disabled");
+            }
+            if config.single() {
+                eprintln!("  Streams: single");
+            }
+            if let Some(ca_cert) = config.ca_cert() {
+                eprintln!("  CA cert: {ca_cert}");
+            }
+            if let Some(tls_version) = config.tls_version() {
+                eprintln!("  TLS version: {tls_version}");
+            }
+            if config.pin_certs() {
+                eprintln!("  Cert pinning: enabled");
+            }
+            eprintln!("\nDry run complete. Run without --dry-run to perform speed test.");
+        } else {
+            use owo_colors::OwoColorize;
+
+            eprintln!("{}", "Configuration valid:".green().bold());
+            eprintln!(
+                "  {}: {}s",
+                "Timeout".dimmed(),
+                config.timeout().to_string().cyan()
+            );
+            eprintln!(
+                "  {}: {}",
+                "Format".dimmed(),
+                self.format_description().white()
+            );
+            if config.quiet() {
+                eprintln!("  {}: {}", "Quiet".dimmed(), "enabled".green());
+            }
+            if let Some(source) = config.source() {
+                eprintln!("  {}: {source}", "Source IP".dimmed());
+            }
+            if config.no_download() {
+                eprintln!("  {}: {}", "Download test".dimmed(), "disabled".yellow());
+            }
+            if config.no_upload() {
+                eprintln!("  {}: {}", "Upload test".dimmed(), "disabled".yellow());
+            }
+            if config.single() {
+                eprintln!("  {}: {}", "Streams".dimmed(), "single".yellow());
+            }
+            if let Some(ca_cert) = config.ca_cert() {
+                eprintln!("  {}: {ca_cert}", "CA cert".dimmed());
+            }
+            if let Some(tls_version) = config.tls_version() {
+                eprintln!("  {}: {tls_version}", "TLS version".dimmed());
+            }
+            if config.pin_certs() {
+                eprintln!("  {}: {}", "Cert pinning".dimmed(), "enabled".yellow());
+            }
+            eprintln!(
+                "\n{}",
+                "Dry run complete. Run without --dry-run to perform speed test.".bright_black()
+            );
+        }
+    }
+
+    /// Return a human-readable description of the output format.
+    fn format_description(&self) -> &'static str {
+        match self.cfg().format() {
+            Some(f) => f.label(),
+            None => "Detailed (default)",
+        }
+    }
+}
+
+// =============================================================================
+// Orchestrator Traits - SOLID: Interface Segregation & Dependency Inversion
+// =============================================================================
+
+/// Trait for configuration access (ISP: clients only need config, not full Orchestrator).
+pub trait ConfigAccessor: Send {
+    fn config(&self) -> &Config;
+    fn is_verbose(&self) -> bool;
+}
+
+/// Trait for HTTP client access.
+pub trait HttpAccessor: Send {
+    fn client(&self) -> &reqwest::Client;
+}
+
+/// Trait for phase execution (allows swapping execution strategies).
+pub trait TestExecutor: Send + Sync {
+    fn execute(
+        &self,
+        orch: &Orchestrator,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
+}
+
+/// Implementation that runs all phases.
+pub struct PhaseTestExecutor;
+
+impl TestExecutor for PhaseTestExecutor {
+    async fn execute(&self, orch: &Orchestrator) -> Result<(), Error> {
+        crate::phases::run_all_phases(orch).await
+    }
+}
+
+impl ConfigAccessor for Orchestrator {
+    fn config(&self) -> &Config {
+        self.cfg()
+    }
+    fn is_verbose(&self) -> bool {
+        self.is_verbose()
+    }
+}
+
+impl HttpAccessor for Orchestrator {
+    fn client(&self) -> &reqwest::Client {
+        &self.client
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::CliArgs;
-    use clap::Parser;
+    use crate::config::{ConfigSource, OutputSource};
 
-    #[test]
-    fn test_is_verbose_default() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
-        assert!(orch.is_verbose());
+    fn orch_from_source(source: &ConfigSource, early_exit: EarlyExitFlags) -> Orchestrator {
+        let config = Config::from_source(source);
+        Orchestrator::from_config(config, early_exit).unwrap()
     }
 
-    #[test]
-    fn test_is_verbose_simple() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--simple"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
-        assert!(!orch.is_verbose());
-    }
-
-    #[test]
-    fn test_is_verbose_json() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--json"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
-        assert!(!orch.is_verbose());
-    }
-
-    #[test]
-    fn test_is_verbose_csv() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--csv"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
-        assert!(!orch.is_verbose());
-    }
-
-    #[test]
-    fn test_is_verbose_list() {
-        let args = CliArgs::parse_from(["netspeed-cli", "--list"]);
-        let orch = SpeedTestOrchestrator::new(args).unwrap();
-        assert!(!orch.is_verbose());
+    fn default_early_exit() -> EarlyExitFlags {
+        EarlyExitFlags {
+            show_config_path: false,
+            generate_completion: None,
+            history: false,
+            dry_run: false,
+        }
     }
 
     #[test]
     fn test_orchestrator_creation() {
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let orch = SpeedTestOrchestrator::new(args);
+        let source = ConfigSource::default();
+        let config = Config::from_source(&source);
+        let orch = Orchestrator::from_config(config, default_early_exit());
         assert!(orch.is_ok());
     }
 
     #[test]
-    fn test_orchestrator_creation_default() {
-        // Default args (no source IP) should always create successfully
-        let args = CliArgs::parse_from(["netspeed-cli"]);
-        let orch = SpeedTestOrchestrator::new(args);
-        assert!(orch.is_ok());
+    fn test_is_verbose_default() {
+        let source = ConfigSource::default();
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(orch.is_verbose());
+    }
+
+    #[test]
+    fn test_is_verbose_quiet() {
+        let source = ConfigSource {
+            output: OutputSource {
+                quiet: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(!orch.is_verbose());
+    }
+
+    #[test]
+    fn test_is_simple_mode_default() {
+        let source = ConfigSource::default();
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(!orch.is_simple_mode());
+    }
+
+    #[test]
+    fn test_is_simple_mode_simple() {
+        let source = ConfigSource {
+            output: OutputSource {
+                simple: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(orch.is_simple_mode());
+    }
+
+    #[test]
+    fn test_dry_run_succeeds() {
+        let source = ConfigSource::default();
+        let early_exit = EarlyExitFlags {
+            dry_run: true,
+            ..default_early_exit()
+        };
+        let orch = orch_from_source(&source, early_exit);
+        orch.run_dry_run();
+    }
+
+    #[test]
+    fn test_early_exit_flags_default() {
+        let flags = default_early_exit();
+        assert!(!flags.show_config_path);
+        assert!(flags.generate_completion.is_none());
+        assert!(!flags.history);
+        assert!(!flags.dry_run);
+    }
+
+    #[test]
+    fn test_storage_builder_defaults() {
+        let builder = StorageBuilder::new();
+        let (saver, history) = builder.build();
+        <dyn crate::storage::SaveResult>::save(&*saver, &crate::types::TestResult::default())
+            .unwrap();
+        let _ = <dyn crate::storage::LoadHistory>::load_recent(&*history, 1);
+    }
+
+    #[test]
+    fn test_storage_builder_custom() {
+        let shared = std::sync::Arc::new(crate::storage::MockStorage::new());
+        let saver = shared.clone() as std::sync::Arc<dyn crate::storage::SaveResult + Send + Sync>;
+        let history =
+            shared.clone() as std::sync::Arc<dyn crate::storage::LoadHistory + Send + Sync>;
+
+        let builder = StorageBuilder::new()
+            .with_saver_arc(saver)
+            .with_history_arc(history);
+
+        let (saver, history) = builder.build();
+
+        let result = crate::types::TestResult::default();
+        <dyn crate::storage::SaveResult>::save(&*saver, &result).unwrap();
+        let loaded = <dyn crate::storage::LoadHistory>::load_recent(&*history, 10).unwrap();
+        assert_eq!(loaded.len(), 1);
+    }
+
+    #[test]
+    fn test_orchestrator_exposes_services() {
+        let args = crate::cli::Args::default();
+        let orch = Orchestrator::new(args, None).unwrap();
+        let _services = orch.services();
     }
 }
