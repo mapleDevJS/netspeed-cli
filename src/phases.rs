@@ -44,6 +44,63 @@ impl PhaseContext {
             services,
         }
     }
+
+    // === New setter/taker methods for encapsulation ===
+
+    /// Take the server (removes from context).
+    pub fn take_server(&mut self) -> Option<Server> {
+        self.server.take()
+    }
+
+    /// Set the server.
+    pub fn set_server(&mut self, server: Server) {
+        self.server = Some(server);
+    }
+
+    /// Set client IP.
+    pub fn set_client_ip(&mut self, ip: String) {
+        self.client_ip = Some(ip);
+    }
+
+    /// Set client location.
+    pub fn set_client_location(&mut self, location: Option<crate::types::ClientLocation>) {
+        self.client_location = location;
+    }
+
+    /// Set ping result.
+    pub fn set_ping_result(&mut self, result: (f64, f64, f64, Vec<f64>)) {
+        self.ping_result = Some(result);
+    }
+
+    /// Take ping result.
+    pub fn take_ping_result(&mut self) -> Option<(f64, f64, f64, Vec<f64>)> {
+        self.ping_result.take()
+    }
+
+    /// Set download result.
+    pub fn set_download_result(&mut self, result: TestRunResult) {
+        self.download_result = Some(result);
+    }
+
+    /// Take download result.
+    pub fn take_download_result(&mut self) -> Option<TestRunResult> {
+        self.download_result.take()
+    }
+
+    /// Set upload result.
+    pub fn set_upload_result(&mut self, result: TestRunResult) {
+        self.upload_result = Some(result);
+    }
+
+    /// Take upload result.
+    pub fn take_upload_result(&mut self) -> Option<TestRunResult> {
+        self.upload_result.take()
+    }
+
+    /// Mark list as printed.
+    pub fn set_list_printed(&mut self) {
+        self.list_printed = true;
+    }
 }
 
 impl std::fmt::Debug for PhaseContext {
@@ -301,7 +358,7 @@ pub(crate) fn run_server_discovery<'a>(
             Ok((servers, location)) => (servers, location),
             Err(e) => return PhaseOutcome::PhaseError(e),
         };
-        ctx.client_location = client_location;
+        ctx.set_client_location(client_location);
 
         if let Some(ref pb) = spinner {
             crate::progress::finish_ok(pb, &format!("Found {} servers", servers.len()));
@@ -312,7 +369,7 @@ pub(crate) fn run_server_discovery<'a>(
             if let Err(e) = crate::formatter::format_list(&servers) {
                 return PhaseOutcome::PhaseError(e.into());
             }
-            ctx.mark_list_printed();
+            ctx.set_list_printed();
             return PhaseOutcome::PhaseEarlyExit;
         }
 
@@ -353,7 +410,7 @@ pub(crate) fn run_server_discovery<'a>(
             eprintln!();
         }
 
-        ctx.server = Some(server);
+        ctx.set_server(server);
         PhaseOutcome::PhaseCompleted
     })
 }
@@ -366,7 +423,7 @@ pub(crate) fn run_ip_discovery<'a>(
         let is_verbose = orch.is_verbose();
         let result = ctx.services().ip_service().discover_ip().await;
         match result {
-            Ok(ip) => ctx.client_ip = Some(ip),
+            Ok(ip) => ctx.set_client_ip(ip),
             Err(e) => {
                 if is_verbose {
                     eprintln!("Warning: Could not discover client IP: {e}");
@@ -387,7 +444,7 @@ pub(crate) fn run_ping<'a>(
         return Box::pin(async { PhaseOutcome::PhaseCompleted });
     }
 
-    let server = match ctx.server.take() {
+    let server = match ctx.take_server() {
         Some(s) => s,
         None => {
             return Box::pin(async {
@@ -425,9 +482,9 @@ pub(crate) fn run_ping<'a>(
             crate::progress::finish_ok(pb, &msg);
         }
 
-        ctx.ping_result = Some((ping_result.0, ping_result.1, ping_result.2, ping_result.3));
+        ctx.set_ping_result((ping_result.0, ping_result.1, ping_result.2, ping_result.3));
         // Put server back for download/upload phases
-        ctx.server = Some(server);
+        ctx.set_server(server);
         PhaseOutcome::PhaseCompleted
     })
 }
@@ -450,7 +507,7 @@ pub(crate) fn run_download<'a>(
             return PhaseOutcome::PhaseCompleted;
         }
 
-        let server = match ctx.server.take() {
+        let server = match ctx.take_server() {
             Some(s) => s,
             None => {
                 return PhaseOutcome::PhaseError(crate::error::Error::context(
@@ -483,7 +540,7 @@ pub(crate) fn run_download<'a>(
                     };
                     crate::progress::finish_ok(pb, &msg);
                 }
-                ctx.download_result = Some(crate::task_runner::TestRunResult {
+                ctx.set_download_result(crate::task_runner::TestRunResult {
                     avg_bps: avg,
                     peak_bps: peak,
                     total_bytes,
@@ -492,7 +549,7 @@ pub(crate) fn run_download<'a>(
                     latency_under_load: None,
                 });
                 // Put server back for upload phase
-                ctx.server = Some(server);
+                ctx.set_server(server);
                 PhaseOutcome::PhaseCompleted
             }
             Err(e) => PhaseOutcome::PhaseError(e),
@@ -518,7 +575,7 @@ pub(crate) fn run_upload<'a>(
             return PhaseOutcome::PhaseCompleted;
         }
 
-        let server = match ctx.server.take() {
+        let server = match ctx.take_server() {
             Some(s) => s,
             None => {
                 return PhaseOutcome::PhaseError(crate::error::Error::context(
@@ -551,7 +608,7 @@ pub(crate) fn run_upload<'a>(
                     };
                     crate::progress::finish_ok(pb, &msg);
                 }
-                ctx.upload_result = Some(crate::task_runner::TestRunResult {
+                ctx.set_upload_result(crate::task_runner::TestRunResult {
                     avg_bps: avg,
                     peak_bps: peak,
                     total_bytes,
@@ -560,7 +617,7 @@ pub(crate) fn run_upload<'a>(
                     latency_under_load: None,
                 });
                 // Put server back for result phase
-                ctx.server = Some(server);
+                ctx.set_server(server);
                 PhaseOutcome::PhaseCompleted
             }
             Err(e) => PhaseOutcome::PhaseError(e),
@@ -576,7 +633,7 @@ pub(crate) fn run_result<'a>(
 ) -> BoxFuture<'a, PhaseOutcome> {
     Box::pin(async move {
         // Take server info before taking results
-        let server_info = match ctx.server.take() {
+        let server_info = match ctx.take_server() {
             Some(s) => crate::types::ServerInfo {
                 id: s.id.clone(),
                 name: s.name.clone(),
