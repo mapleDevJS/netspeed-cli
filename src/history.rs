@@ -213,7 +213,11 @@ pub fn show() -> Result<(), Error> {
     );
 
     for entry in history.iter().rev() {
-        let date = &entry.timestamp[0..10];
+        let date = if entry.timestamp.len() >= 10 {
+            &entry.timestamp[0..10]
+        } else {
+            entry.timestamp.as_str()
+        };
         let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
         let dl = entry
             .download
@@ -1044,8 +1048,8 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_show_empty_history() {
-        // show uses load() - should print message when empty
+    fn test_show_history_no_panic() {
+        // show uses load() - should not panic even with malformed entries
         let result = show();
         assert!(result.is_ok());
     }
