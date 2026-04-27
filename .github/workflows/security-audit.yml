@@ -112,9 +112,9 @@ jobs:
           )
           for pattern in ${PATTERNS[@]}; do
             FOUND=$(grep -rE $pattern src/ --include='*.rs' 2>/dev/null || true)
-            if [ -n \"$FOUND\" ]; then
-              echo \"Pattern '$pattern' found:\"
-              echo \"$FOUND\" | head -5
+            if [ -n "$FOUND" ]; then
+              echo "Pattern '$pattern' found:"
+              echo "$FOUND" | head -5
             fi
           done
           echo 'Secret scan complete'
@@ -125,7 +125,7 @@ jobs:
           # Look for actual hardcoded values (excluded from above patterns)
           FOUND=$(grep -rE '(password|api_key|secret|token)\b' src/ --include='*.rs' | grep -vE '(//|option|Option|config)' | wc -l)
           if [ $FOUND -gt 0 ]; then
-            echo \"Found $FOUND potential credential references - manual review recommended\"
+            echo "Found $FOUND potential credential references - manual review recommended"
           else
             echo 'No obvious hardcoded credentials found'
           fi
@@ -141,7 +141,7 @@ jobs:
           for pattern in ${SHELL_PATTERNS[@]}; do
             COUNT=$(grep -rE $pattern src/ --include='*.rs' | wc -l)
             if [ $COUNT -gt 0 ]; then
-              echo \"$pattern: $COUNT occurrences\"
+              echo "$pattern: $COUNT occurrences"
             fi
           done
           echo 'Note: All shell executions should validate inputs carefully'
@@ -212,7 +212,7 @@ jobs:
         if: false  # Disabled by default, enable for full audit
         run: |
           for target in $(ls fuzz/ 2>/dev/null || true); do
-            echo \"Fuzzing $target for 60 seconds...\"
+            echo "Fuzzing $target for 60 seconds..."
             cargo fuzz run --time-limit=60s $target || true
           done
 
@@ -248,7 +248,7 @@ jobs:
           echo '=== Dependencies Report ==='
           cargo tree --no-dedupe | head -50
           echo '...'
-          echo \"Total unique packages: $(cargo tree --no-dedupe | wc -l)\"
+          echo "Total unique packages: $(cargo tree --no-dedupe | wc -l)"
 
   # ============================================
   # Report Generation
