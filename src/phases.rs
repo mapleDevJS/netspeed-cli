@@ -10,6 +10,7 @@
 use crate::error::Error;
 use crate::services::Services;
 use futures::future::BoxFuture;
+use std::sync::Arc;
 
 use crate::orchestrator::Orchestrator;
 use crate::task_runner::TestRunResult;
@@ -388,7 +389,11 @@ pub(crate) fn run_ping<'a>(
 
     let server = match ctx.server.take() {
         Some(s) => s,
-        None => return Box::pin(async { PhaseOutcome::PhaseCompleted }),
+        None => {
+            return Box::pin(async {
+                PhaseOutcome::PhaseError(crate::error::Error::context("No server selected"))
+            });
+        }
     };
 
     let is_verbose = orch.is_verbose();
@@ -421,7 +426,145 @@ pub(crate) fn run_ping<'a>(
         }
 
         ctx.ping_result = Some((ping_result.0, ping_result.1, ping_result.2, ping_result.3));
+        // Put server back for download/upload phases
+        ctx.server = Some(server);
         PhaseOutcome::PhaseCompleted
+    })
+}
+
+pub(crate) fn run_download<'a>(
+    orch: &'a Orchestrator,
+    ctx: &'a mut PhaseContext,
+) -> BoxFuture<'a, PhaseOutcome> {
+    let single = orch.config().single();
+    let is_verbose = orch.is_verbose();
+    // Only show spinner in non-verbose mode (verbose mode has progress bar which is better)
+    let spinner = if !is_verbose {
+        Some(crate::progress::create_spinner("Testing download..."))
+    } else {
+        None
+    };
+
+    Box::pin(async move {
+        if orch.config().no_download() {
+            return PhaseOutcome::PhaseCompleted;
+        }
+
+        let server = match ctx.server.take() {
+            Some(s) => s,
+            None => {
+                return PhaseOutcome::PhaseError(crate::error::Error::context(
+                    "No server selected",
+                ));
+            }
+        };
+
+        let client = orch.http_client();
+        let progress = if is_verbose {
+            Arc::new(crate::progress::Tracker::new_animated("Download"))
+        } else {
+            Arc::new(crate::progress::Tracker::with_target(
+                "Download",
+                indicatif::ProgressDrawTarget::hidden(),
+            ))
+        };
+
+        match crate::download::run(client, &server, single, progress).await {
+            Ok((avg, peak, total_bytes, samples)) => {
+                if let Some(ref pb) = spinner {
+                    let msg = if crate::terminal::no_color() {
+                        format!("Download: {:.2} Mbps", avg / 1_000_000.0)
+                    } else {
+                        use owo_colors::OwoColorize;
+                        format!(
+                            "Download: {}",
+                            format!("{:.2} Mbps", avg / 1_000_000.0).green().bold()
+                        )
+                    };
+                    crate::progress::finish_ok(pb, &msg);
+                }
+                ctx.download_result = Some(crate::task_runner::TestRunResult {
+                    avg_bps: avg,
+                    peak_bps: peak,
+                    total_bytes,
+                    duration_secs: 0.0,
+                    speed_samples: samples,
+                    latency_under_load: None,
+                });
+                // Put server back for upload phase
+                ctx.server = Some(server);
+                PhaseOutcome::PhaseCompleted
+            }
+            Err(e) => PhaseOutcome::PhaseError(e),
+        }
+    })
+}
+
+pub(crate) fn run_upload<'a>(
+    orch: &'a Orchestrator,
+    ctx: &'a mut PhaseContext,
+) -> BoxFuture<'a, PhaseOutcome> {
+    let single = orch.config().single();
+    let is_verbose = orch.is_verbose();
+    // Only show spinner in non-verbose mode (verbose mode has progress bar which is better)
+    let spinner = if !is_verbose {
+        Some(crate::progress::create_spinner("Testing upload..."))
+    } else {
+        None
+    };
+
+    Box::pin(async move {
+        if orch.config().no_upload() {
+            return PhaseOutcome::PhaseCompleted;
+        }
+
+        let server = match ctx.server.take() {
+            Some(s) => s,
+            None => {
+                return PhaseOutcome::PhaseError(crate::error::Error::context(
+                    "No server selected",
+                ));
+            }
+        };
+
+        let client = orch.http_client();
+        let progress = if is_verbose {
+            Arc::new(crate::progress::Tracker::new_animated("Upload"))
+        } else {
+            Arc::new(crate::progress::Tracker::with_target(
+                "Upload",
+                indicatif::ProgressDrawTarget::hidden(),
+            ))
+        };
+
+        match crate::upload::run(client, &server, single, progress).await {
+            Ok((avg, peak, total_bytes, samples)) => {
+                if let Some(ref pb) = spinner {
+                    let msg = if crate::terminal::no_color() {
+                        format!("Upload: {:.2} Mbps", avg / 1_000_000.0)
+                    } else {
+                        use owo_colors::OwoColorize;
+                        format!(
+                            "Upload: {}",
+                            format!("{:.2} Mbps", avg / 1_000_000.0).green().bold()
+                        )
+                    };
+                    crate::progress::finish_ok(pb, &msg);
+                }
+                ctx.upload_result = Some(crate::task_runner::TestRunResult {
+                    avg_bps: avg,
+                    peak_bps: peak,
+                    total_bytes,
+                    duration_secs: 0.0,
+                    speed_samples: samples,
+                    latency_under_load: None,
+                });
+                // Put server back for result phase
+                ctx.server = Some(server);
+                PhaseOutcome::PhaseCompleted
+            }
+            Err(e) => PhaseOutcome::PhaseError(e),
+        }
     })
 }
 
@@ -515,6 +658,8 @@ pub fn create_default_executor() -> PhaseExecutor {
         .register(run_server_discovery)
         .register(run_ip_discovery)
         .register(run_ping)
+        .register(run_download)
+        .register(run_upload)
         .register(run_result)
 }
 

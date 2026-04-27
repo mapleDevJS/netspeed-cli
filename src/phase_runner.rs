@@ -29,6 +29,8 @@ impl DefaultPhaseRunner {
         reg.register("server_discovery", crate::phases::run_server_discovery);
         reg.register("ip_discovery", crate::phases::run_ip_discovery);
         reg.register("ping", crate::phases::run_ping);
+        reg.register("download", crate::phases::run_download);
+        reg.register("upload", crate::phases::run_upload);
         reg.register("result", crate::phases::run_result);
         Self { registry: reg }
     }

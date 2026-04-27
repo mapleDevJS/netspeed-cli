@@ -34,6 +34,17 @@ impl Tracker {
         Self::with_target(label, ProgressDrawTarget::stderr_with_hz(10))
     }
 
+    /// Create an animated progress tracker with "marching ants" effect.
+    /// Uses moving bar pattern for visual engagement.
+    /// Falls back to static bar if terminal::no_animation() is set.
+    #[must_use]
+    pub fn new_animated(label: &str) -> Self {
+        if terminal::no_animation() {
+            return Self::new(label);
+        }
+        Self::with_target_animated(label, ProgressDrawTarget::stderr_with_hz(10))
+    }
+
     /// Create with a custom draw target (use `ProgressDrawTarget::hidden()` for silent mode).
     ///
     /// # Panics
@@ -58,6 +69,32 @@ impl Tracker {
         });
         bar.set_message("starting...");
         bar.set_position(0);
+
+        Self { bar, done }
+    }
+
+    /// Create animated tracker with custom draw target.
+    /// Uses "marching ants" moving bar pattern and spinner for continuous motion.
+    fn with_target_animated(label: &str, target: ProgressDrawTarget) -> Self {
+        let done = Arc::new(AtomicBool::new(false));
+        let bar = ProgressBar::with_draw_target(Some(100), target);
+
+        let style = ProgressStyle::with_template(
+            "  {prefix} {spinner} {bar:40.cyan/blue} {percent:>3}%  {elapsed_precise} | {msg}",
+        )
+        .unwrap()
+        .progress_chars("▓▒░▒▓▒░▒▓")
+        .tick_strings(&["▸", "▹", "►", "▻", "▼", "▽", "▾", "▿"]);
+
+        bar.set_style(style);
+        bar.set_prefix(if terminal::no_color() {
+            format!("{:<10}", format!("{}:", label))
+        } else {
+            format!("{::<10}", format!("{label}:").dimmed())
+        });
+        bar.set_message("starting...");
+        bar.set_position(0);
+        bar.enable_steady_tick(Duration::from_millis(100));
 
         Self { bar, done }
     }
