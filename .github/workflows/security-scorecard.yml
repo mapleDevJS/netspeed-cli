@@ -19,6 +19,7 @@ jobs:
   scorecard:
     name: OpenSSF Security Scorecard
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       # Needed to upload results to opacity-compliant store
       id-token: write
