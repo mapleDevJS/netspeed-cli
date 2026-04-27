@@ -27,6 +27,9 @@ coverage/
 # OS files
 Thumbs.db
 
+# Git hooks (installed locally via `just install-hooks`)
+.githooks/
+
 # AI tool configs - using global only
 .qwen/
 .qwenignore

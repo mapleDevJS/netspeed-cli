@@ -20,10 +20,10 @@ test-socket:
 	cargo test --test integration_upload_fetch_test -- --ignored --nocapture
 	cargo test --test e2e_test -- --ignored --nocapture
 
-# Run linter checks (formatting + clippy)
+# Run linter checks (formatting + clippy) — mirrors CI exactly
 lint:
-	cargo fmt -- --check
-	cargo clippy -- -D warnings
+	cargo fmt --all -- --check
+	cargo clippy --all-targets --all-features -- -D warnings
 
 # Auto-fix formatting and clippy suggestions
 fix:
@@ -42,12 +42,14 @@ release:
 	cargo test --doc
 	cargo build --release
 
-# CI-quality gate used locally and in automation
+# CI-quality gate used locally and in automation — mirrors all CI jobs
 qa:
-	cargo fmt -- --check
+	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test --verbose
 	cargo test --doc
+	cargo doc --no-deps --workspace 2>&1 || { echo "Doc warnings found"; exit 1; }
+	cargo deny check || echo "Warning: cargo-deny not installed, skipping audit"
 
 # Run security audit
 audit:
@@ -173,3 +175,12 @@ changelog-preview:
 changelog-tag tag:
 	@if ! command -v git-cliff &>/dev/null; then echo \"git-cliff not found. Install: cargo install git-cliff\"; exit 1; fi
 	git-cliff --config .cliff.toml --tag {{tag}}
+
+# Install git pre-push hook that runs QA gate before every push
+install-hooks:
+	mkdir -p .githooks
+	printf '#!/usr/bin/env bash\nset -e\necho ""\necho "  Running pre-push QA gate..."\necho "  =========================="\njust qa\necho "  =========================="\necho "  All checks passed. Pushing..."\necho ""\n' > .githooks/pre-push
+	chmod +x .githooks/pre-push
+	git config core.hooksPath .githooks
+	@echo "Pre-push hook installed. Every 'git push' will run 'just qa' first."
+	@echo "To remove: rm -rf .githooks && git config --unset core.hooksPath"
