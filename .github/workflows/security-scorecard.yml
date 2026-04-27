@@ -1,12 +1,9 @@
 name: Security Scorecard
 
 on:
-  # Run weekly for continuous security monitoring
   schedule:
     - cron: '0 6 * * 0'
-  # Manual trigger
   workflow_dispatch:
-  # Run only on main branch (Scorecard measures overall repo security)
   push:
     branches: [main, master]
   pull_request:
@@ -21,7 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
-      # Needed to upload results to opacity-compliant store
       id-token: write
       contents: read
       security-events: write
@@ -35,23 +31,23 @@ jobs:
       - name: Run Security Scorecard
         uses: ossf/scorecard-action@v2.4.1
         continue-on-error: true
+        id: scorecard
         with:
           results-file: results.sarif
           results-format: sarif
-          # Publish results to GitHub so they're visible in the Security tab
           publish-results: true
-          # Upload results to OpenSSF scorecard-api for public visibility
           upload-to-ossf-scores: true
-          # Run for a limited time to avoid timeouts
           shade-scorecard: 900s
 
       - name: Upload results to GitHub
-        uses: github/codeql-action/upload-sarif@v3
+        if: steps.scorecard.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
           category: security-scorecard
 
       - name: Upload results as artifact
+        if: steps.scorecard.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: security-scorecard-results
@@ -59,16 +55,16 @@ jobs:
           retention-days: 30
 
       - name: Display Scorecard results
+        if: steps.scorecard.outcome == 'success'
         run: |
-          cat results.sarif | jq -r '.runs[0].results[] | select(.ruleId | contains(\"Scorecard\")) | .message.text'
+          cat results.sarif | jq -r '.runs[0].results[] | select(.ruleId | contains("Scorecard")) | .message.text'
 
       - name: Fail if score is below threshold
-        # Extract the score from the SARIF file
+        if: steps.scorecard.outcome == 'success'
         run: |
           SCORE=$(cat results.sarif | jq -r '.runs[0].properties.score')
-          echo \"Current Security Score: $SCORE\"
-          if [ \"$SCORE\" != \"null\" ] && [ \"$SCORE\" -lt 5 ]; then
-            echo \"⚠️ Security Score is below threshold (7)\"
-            echo \"Please review and improve security controls: https://github.com/ossf/scorecard\"
-            # Don't fail the workflow, just warn
+          echo "Current Security Score: $SCORE"
+          if [ "$SCORE" != "null" ] && [ "$SCORE" -lt 5 ]; then
+            echo "Security Score is below threshold (7)"
+            echo "Please review and improve security controls: https://github.com/ossf/scorecard/"
           fi
