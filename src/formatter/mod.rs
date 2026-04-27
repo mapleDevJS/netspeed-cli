@@ -674,8 +674,8 @@ pub fn format_verbose_sections(
 pub struct FormatterFactory;
 
 impl FormatterFactory {
-    /// Create a formatter from config format option.
-    pub fn create(format: Option<crate::config::Format>) -> Box<dyn Formatter> {
+    /// Create a formatter from config format option and theme.
+    pub fn create(format: Option<crate::config::Format>, theme: Theme) -> Box<dyn Formatter> {
         match format {
             Some(crate::config::Format::Json) => Box::new(OutputFormat::Json),
             Some(crate::config::Format::Jsonl) => Box::new(OutputFormat::Jsonl),
@@ -683,12 +683,8 @@ impl FormatterFactory {
                 delimiter: ',',
                 header: true,
             }),
-            Some(crate::config::Format::Simple) => Box::new(OutputFormat::Simple {
-                theme: crate::theme::Theme::Dark,
-            }),
-            Some(crate::config::Format::Minimal) => Box::new(OutputFormat::Minimal {
-                theme: crate::theme::Theme::Dark,
-            }),
+            Some(crate::config::Format::Simple) => Box::new(OutputFormat::Simple { theme }),
+            Some(crate::config::Format::Minimal) => Box::new(OutputFormat::Minimal { theme }),
             Some(crate::config::Format::Compact) => Box::new(OutputFormat::Compact {
                 dl_bytes: 0,
                 ul_bytes: 0,
@@ -696,7 +692,7 @@ impl FormatterFactory {
                 ul_duration: 0.0,
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
-                theme: crate::theme::Theme::Dark,
+                theme,
             }),
             Some(crate::config::Format::Detailed) => Box::new(OutputFormat::Detailed {
                 dl_bytes: 0,
@@ -707,7 +703,7 @@ impl FormatterFactory {
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
                 minimal: false,
-                theme: crate::theme::Theme::Dark,
+                theme,
             }),
             Some(crate::config::Format::Dashboard) => Box::new(OutputFormat::Dashboard {
                 dl_mbps: 0.0,
@@ -720,11 +716,9 @@ impl FormatterFactory {
                 ul_duration: 0.0,
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
-                theme: crate::theme::Theme::Dark,
+                theme,
             }),
-            None => Box::new(OutputFormat::Simple {
-                theme: crate::theme::Theme::Dark,
-            }),
+            None => Box::new(OutputFormat::Simple { theme }),
         }
     }
 }

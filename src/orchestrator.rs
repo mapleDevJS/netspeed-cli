@@ -301,7 +301,7 @@ impl Orchestrator {
 
         let grade_badge = overall_grade.color_str(nc, theme);
         let grade_plain = overall_grade.as_str().to_string();
-        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc);
+        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc, theme);
         crate::progress::reveal_pause();
     }
 

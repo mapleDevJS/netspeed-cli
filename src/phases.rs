@@ -361,7 +361,8 @@ pub(crate) fn run_server_discovery<'a>(
         ctx.set_client_location(client_location);
 
         if let Some(ref pb) = spinner {
-            crate::progress::finish_ok(pb, &format!("Found {} servers", servers.len()));
+            let theme = orch.config().theme();
+            crate::progress::finish_ok(pb, &format!("Found {} servers", servers.len()), theme);
             eprintln!();
         }
 
@@ -470,6 +471,7 @@ pub(crate) fn run_ping<'a>(
         };
 
         if let Some(ref pb) = spinner {
+            let theme = orch.config().theme();
             let msg = if crate::terminal::no_color() {
                 format!("Latency: {:.2} ms", ping_result.0)
             } else {
@@ -479,7 +481,7 @@ pub(crate) fn run_ping<'a>(
                     format!("{:.2} ms", ping_result.0).cyan().bold()
                 )
             };
-            crate::progress::finish_ok(pb, &msg);
+            crate::progress::finish_ok(pb, &msg, theme);
         }
 
         ctx.set_ping_result((ping_result.0, ping_result.1, ping_result.2, ping_result.3));
@@ -529,6 +531,7 @@ pub(crate) fn run_download<'a>(
         match crate::download::run(client, &server, single, progress).await {
             Ok((avg, peak, total_bytes, samples)) => {
                 if let Some(ref pb) = spinner {
+                    let theme = orch.config().theme();
                     let msg = if crate::terminal::no_color() {
                         format!("Download: {:.2} Mbps", avg / 1_000_000.0)
                     } else {
@@ -538,7 +541,7 @@ pub(crate) fn run_download<'a>(
                             format!("{:.2} Mbps", avg / 1_000_000.0).green().bold()
                         )
                     };
-                    crate::progress::finish_ok(pb, &msg);
+                    crate::progress::finish_ok(pb, &msg, theme);
                 }
                 ctx.set_download_result(crate::task_runner::TestRunResult {
                     avg_bps: avg,
@@ -597,6 +600,7 @@ pub(crate) fn run_upload<'a>(
         match crate::upload::run(client, &server, single, progress).await {
             Ok((avg, peak, total_bytes, samples)) => {
                 if let Some(ref pb) = spinner {
+                    let theme = orch.config().theme();
                     let msg = if crate::terminal::no_color() {
                         format!("Upload: {:.2} Mbps", avg / 1_000_000.0)
                     } else {
@@ -606,7 +610,7 @@ pub(crate) fn run_upload<'a>(
                             format!("{:.2} Mbps", avg / 1_000_000.0).green().bold()
                         )
                     };
-                    crate::progress::finish_ok(pb, &msg);
+                    crate::progress::finish_ok(pb, &msg, theme);
                 }
                 ctx.set_upload_result(crate::task_runner::TestRunResult {
                     avg_bps: avg,
