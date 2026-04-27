@@ -1,5 +1,20 @@
 use thiserror::Error;
 
+/// Error category for machine-readable error classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    /// Network-related errors (connectivity, timeouts, etc.)
+    Network,
+    /// Configuration errors (invalid settings, missing files, etc.)
+    Config,
+    /// Parse errors (invalid JSON, XML, CSV, etc.)
+    Parse,
+    /// Output errors (file writing, formatting, etc.)
+    Output,
+    /// Internal errors (bugs, unexpected states, etc.)
+    Internal,
+}
+
 /// Unified error type for netspeed-cli operations.
 ///
 /// This enum preserves the original error cause chains by storing
@@ -86,6 +101,27 @@ impl Error {
         Self::Context {
             msg: msg.into(),
             source: Some(Box::new(source)),
+        }
+    }
+
+    /// Get the category for this error.
+    #[must_use]
+    pub fn category(&self) -> ErrorCategory {
+        match self {
+            Error::NetworkError(_) => ErrorCategory::Network,
+            Error::ServerListFetch(_) => ErrorCategory::Network,
+            Error::DownloadTest(_) => ErrorCategory::Network,
+            Error::DownloadFailure(_) => ErrorCategory::Network,
+            Error::UploadTest(_) => ErrorCategory::Network,
+            Error::UploadFailure(_) => ErrorCategory::Network,
+            Error::IpDiscovery(_) => ErrorCategory::Network,
+            Error::ParseJson(_) => ErrorCategory::Parse,
+            Error::ParseXml(_) => ErrorCategory::Parse,
+            Error::DeserializeXml(_) => ErrorCategory::Parse,
+            Error::Csv(_) => ErrorCategory::Output,
+            Error::ServerNotFound(_) => ErrorCategory::Config,
+            Error::IoError(_) => ErrorCategory::Output,
+            Error::Context { .. } => ErrorCategory::Internal,
         }
     }
 }

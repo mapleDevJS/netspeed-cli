@@ -37,6 +37,7 @@ pub struct LoopState {
 }
 
 /// Final result from a bandwidth test.
+#[derive(Debug)]
 pub struct BandwidthResult {
     pub avg_bps: f64,
     pub peak_bps: f64,
@@ -222,4 +223,374 @@ pub async fn run_concurrent_streams(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+    use std::thread;
+    use std::time::Duration;
+
+    // ── LoopState Tests ──────────────────────────────────────────────────────
+
+    fn make_tracker() -> Arc<Tracker> {
+        Arc::new(Tracker::new("test"))
+    }
+
+    #[test]
+    fn test_loop_state_new_fields() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+        assert_eq!(state.total_bytes.load(Ordering::SeqCst), 0);
+        assert_eq!(state.peak_bps.load(Ordering::SeqCst), 0);
+        assert_eq!(state.estimated_total, 100_000_000);
+        assert!(state.speed_samples.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_loop_state_concurrent_atomic_updates() {
+        let tracker = make_tracker();
+        let state = Arc::new(LoopState::new(100_000_000, tracker));
+
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..1000 {
+                        s.record_bytes(100, SAMPLE_INTERVAL_MS);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // 4 threads * 1000 * 100 = 400,000
+        assert_eq!(state.total_bytes.load(Ordering::SeqCst), 400_000);
+    }
+
+    #[test]
+    fn test_record_bytes_zero_value() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+        state.record_bytes(0, SAMPLE_INTERVAL_MS);
+        assert_eq!(state.total_bytes.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_record_bytes_accumulates() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+        state.record_bytes(1000, SAMPLE_INTERVAL_MS);
+        state.record_bytes(2000, SAMPLE_INTERVAL_MS);
+        state.record_bytes(3000, SAMPLE_INTERVAL_MS);
+        assert_eq!(state.total_bytes.load(Ordering::SeqCst), 6000);
+    }
+
+    #[test]
+    fn test_record_bytes_large_values() {
+        let tracker = make_tracker();
+        let state = LoopState::new(u64::MAX, tracker);
+        state.record_bytes(1_000_000_000, SAMPLE_INTERVAL_MS);
+        assert_eq!(state.total_bytes.load(Ordering::SeqCst), 1_000_000_000);
+    }
+
+    #[test]
+    fn test_record_bytes_throttle_mechanism() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+
+        // Test throttle by verifying that samples are recorded
+        // The throttle mechanism limits sampling to once per interval
+        let interval_ms = 50u64;
+
+        // First call always triggers
+        state.record_bytes(1000, interval_ms);
+        assert_eq!(state.speed_samples.lock().unwrap().len(), 1);
+
+        // Rapid second call - may or may not trigger depending on elapsed time
+        state.record_bytes(1000, interval_ms);
+
+        // Wait enough time for throttle to reset
+        thread::sleep(Duration::from_millis(100));
+        state.record_bytes(1000, interval_ms);
+
+        // Should have at least 2 samples (first + after wait)
+        // The exact count depends on timing, but throttle is working
+        let samples = state.speed_samples.lock().unwrap();
+        assert!(
+            samples.len() >= 2,
+            "Expected at least 2 samples, got {}",
+            samples.len()
+        );
+    }
+
+    #[test]
+    fn test_record_bytes_short_interval_samples_more() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+
+        // Short interval with explicit waits allows more frequent sampling
+        for _ in 0..3 {
+            state.record_bytes(1_000_000, 5); // 5ms interval
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let samples = state.speed_samples.lock().unwrap();
+        // With short interval and time between calls, should get multiple samples
+        assert!(
+            samples.len() >= 2,
+            "Expected >= 2 samples with short interval, got {}",
+            samples.len()
+        );
+    }
+
+    #[test]
+    fn test_record_bytes_updates_peak() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+
+        state.record_bytes(10_000_000, SAMPLE_INTERVAL_MS);
+        thread::sleep(Duration::from_millis(60));
+        state.record_bytes(10_000_000, SAMPLE_INTERVAL_MS);
+
+        let peak = state.peak_bps.load(Ordering::SeqCst);
+        assert!(peak > 0);
+    }
+
+    #[test]
+    fn test_finish_empty_state() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+        thread::sleep(Duration::from_millis(10));
+        let result = state.finish();
+
+        assert_eq!(result.total_bytes, 0);
+        assert_eq!(result.avg_bps, 0.0);
+        assert_eq!(result.peak_bps, 0.0);
+        assert!(result.duration_secs > 0.0);
+        assert!(result.speed_samples.is_empty());
+    }
+
+    #[test]
+    fn test_finish_with_transfer() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+
+        state.record_bytes(20_000_000, SAMPLE_INTERVAL_MS);
+        thread::sleep(Duration::from_millis(100));
+
+        let result = state.finish();
+        assert_eq!(result.total_bytes, 20_000_000);
+        assert!(result.avg_bps > 0.0);
+    }
+
+    #[test]
+    fn test_finish_peak_gte_avg() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+
+        for _ in 0..5 {
+            state.record_bytes(5_000_000, SAMPLE_INTERVAL_MS);
+            thread::sleep(Duration::from_millis(60));
+        }
+
+        let result = state.finish();
+        assert!(result.peak_bps >= result.avg_bps);
+    }
+
+    #[test]
+    fn test_finish_various_estimated_totals() {
+        for estimated in [1u64, 1000, 1_000_000, u64::MAX / 2] {
+            let tracker = make_tracker();
+            let state = LoopState::new(estimated, tracker);
+            state.record_bytes(100, SAMPLE_INTERVAL_MS);
+            thread::sleep(Duration::from_millis(10));
+            let result = state.finish();
+            assert_eq!(result.total_bytes, 100);
+        }
+    }
+
+    #[test]
+    fn test_finish_returns_speed_samples() {
+        let tracker = make_tracker();
+        let state = LoopState::new(10_000_000, tracker);
+
+        for _ in 0..3 {
+            state.record_bytes(1_000_000, 10);
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let result = state.finish();
+        assert!(!result.speed_samples.is_empty());
+        for sample in &result.speed_samples {
+            assert!(*sample >= 0.0);
+        }
+    }
+
+    #[test]
+    fn test_sample_interval_constant() {
+        assert_eq!(SAMPLE_INTERVAL_MS, 50);
+    }
+
+    #[test]
+    fn test_bandwidth_result_struct() {
+        let tracker = make_tracker();
+        let state = LoopState::new(100_000_000, tracker);
+        state.record_bytes(50_000_000, SAMPLE_INTERVAL_MS);
+        thread::sleep(Duration::from_millis(100));
+
+        let result = state.finish();
+
+        // Verify all fields are correctly populated
+        assert!(result.avg_bps >= 0.0);
+        assert!(result.peak_bps >= 0.0);
+        assert!(result.total_bytes > 0);
+        assert!(result.duration_secs > 0.0);
+    }
+
+    // ── run_concurrent_streams Tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_zero_streams() {
+        let tracker = make_tracker();
+        let result = run_concurrent_streams(100_000_000, 0, tracker, "test", |_, _, _| {
+            tokio::spawn(async { Ok(()) })
+        })
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_single_stream_success() {
+        let tracker = make_tracker();
+        let result =
+            run_concurrent_streams(100_000_000, 1, tracker, "download", |_, state, interval| {
+                let s = Arc::clone(&state);
+                tokio::spawn(async move {
+                    s.record_bytes(10_000_000, interval);
+                    Ok(())
+                })
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().total_bytes, 10_000_000);
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_four_streams() {
+        let tracker = make_tracker();
+        let result =
+            run_concurrent_streams(100_000_000, 4, tracker, "upload", |_, state, interval| {
+                let s = Arc::clone(&state);
+                tokio::spawn(async move {
+                    s.record_bytes(1_000_000, interval);
+                    Ok(())
+                })
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().total_bytes, 4_000_000);
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_all_fail() {
+        let tracker = make_tracker();
+        let result = run_concurrent_streams(100_000_000, 3, tracker, "download", |_, _, _| {
+            tokio::spawn(async { Err(Error::DownloadFailure("failed".into())) })
+        })
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_partial_failure() {
+        let tracker = make_tracker();
+        let result =
+            run_concurrent_streams(100_000_000, 4, tracker, "upload", |i, state, interval| {
+                let s = Arc::clone(&state);
+                tokio::spawn(async move {
+                    if i < 2 {
+                        s.record_bytes(1_000_000, interval);
+                        Ok(())
+                    } else {
+                        Err(Error::UploadFailure("failed".into()))
+                    }
+                })
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().total_bytes, 2_000_000);
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_stream_panic() {
+        let tracker = make_tracker();
+        let result =
+            run_concurrent_streams(100_000_000, 2, tracker, "download", |i, state, interval| {
+                let s = Arc::clone(&state);
+                tokio::spawn(async move {
+                    if i == 0 {
+                        s.record_bytes(1_000_000, interval);
+                        Ok(())
+                    } else {
+                        panic!("stream panicked");
+                    }
+                })
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().total_bytes, 1_000_000);
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_zero_bytes_returns_error() {
+        let tracker = make_tracker();
+        let result = run_concurrent_streams(100_000_000, 2, tracker, "download", |_, _, _| {
+            tokio::spawn(async { Ok(()) })
+        })
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_label_different_errors() {
+        for label in ["download", "upload", "custom"] {
+            let tracker = make_tracker();
+            let result = run_concurrent_streams(100_000_000, 0, tracker, label, |_, _, _| {
+                tokio::spawn(async { Ok(()) })
+            })
+            .await;
+
+            assert!(result.is_err());
+            let err_str = format!("{:?}", result.unwrap_err());
+            assert!(err_str.contains(label));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_concurrent_streams_estimated_total_param() {
+        for estimated in [1_000u64, 10_000_000, 1_000_000_000] {
+            let tracker = make_tracker();
+            let result =
+                run_concurrent_streams(estimated, 1, tracker, "test", |_, state, interval| {
+                    let s = Arc::clone(&state);
+                    tokio::spawn(async move {
+                        s.record_bytes(1000, interval);
+                        Ok(())
+                    })
+                })
+                .await;
+            assert!(result.is_ok());
+        }
+    }
 }

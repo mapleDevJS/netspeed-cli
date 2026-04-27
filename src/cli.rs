@@ -38,6 +38,7 @@ Examples:
   netspeed-cli --quiet                  Suppress progress output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
+#[derive(Default)]
 pub struct Args {
     /// Do not perform download test
     #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]

@@ -94,21 +94,109 @@ pub struct TestResult {
     pub phases: TestPhases,
 }
 
-impl TestResult {
-    /// Build a `TestResult` from ping test output and download/upload test runs.
-    #[allow(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn from_test_runs(
-        server: ServerInfo,
-        ping: Option<f64>,
-        jitter: Option<f64>,
-        packet_loss: Option<f64>,
-        ping_samples: &[f64],
-        dl: &crate::task_runner::TestRunResult,
-        ul: &crate::task_runner::TestRunResult,
-        client_ip: Option<String>,
-        client_location: Option<ClientLocation>,
+/// Builder for constructing `TestResult` — separates construction from data types (SRP).
+///
+/// Uses injected `StatsService` for statistical computations,
+/// enabling alternative algorithms without modifying `TestResult`.
+pub struct TestResultBuilder {
+    server: ServerInfo,
+    ping: Option<f64>,
+    jitter: Option<f64>,
+    packet_loss: Option<f64>,
+    ping_samples: Vec<f64>,
+    download_avg_bps: f64,
+    download_peak_bps: f64,
+    download_samples: Vec<f64>,
+    download_latency: Option<f64>,
+    upload_avg_bps: f64,
+    upload_peak_bps: f64,
+    upload_samples: Vec<f64>,
+    upload_latency: Option<f64>,
+    client_ip: Option<String>,
+    client_location: Option<ClientLocation>,
+}
+
+impl TestResultBuilder {
+    pub fn new(server: ServerInfo) -> Self {
+        Self {
+            server,
+            ping: None,
+            jitter: None,
+            packet_loss: None,
+            ping_samples: Vec::new(),
+            download_avg_bps: 0.0,
+            download_peak_bps: 0.0,
+            download_samples: Vec::new(),
+            download_latency: None,
+            upload_avg_bps: 0.0,
+            upload_peak_bps: 0.0,
+            upload_samples: Vec::new(),
+            upload_latency: None,
+            client_ip: None,
+            client_location: None,
+        }
+    }
+
+    pub fn ping(mut self, ping: f64) -> Self {
+        self.ping = Some(ping);
+        self
+    }
+
+    pub fn jitter(mut self, jitter: f64) -> Self {
+        self.jitter = Some(jitter);
+        self
+    }
+
+    pub fn packet_loss(mut self, loss: f64) -> Self {
+        self.packet_loss = Some(loss);
+        self
+    }
+
+    pub fn ping_samples(mut self, samples: &[f64]) -> Self {
+        self.ping_samples = samples.to_vec();
+        self
+    }
+
+    pub fn download_stats(
+        mut self,
+        avg_bps: f64,
+        peak_bps: f64,
+        samples: &[f64],
+        latency_under_load: Option<f64>,
     ) -> Self {
+        self.download_avg_bps = avg_bps;
+        self.download_peak_bps = peak_bps;
+        self.download_samples = samples.to_vec();
+        self.download_latency = latency_under_load;
+        self
+    }
+
+    pub fn upload_stats(
+        mut self,
+        avg_bps: f64,
+        peak_bps: f64,
+        samples: &[f64],
+        latency_under_load: Option<f64>,
+    ) -> Self {
+        self.upload_avg_bps = avg_bps;
+        self.upload_peak_bps = peak_bps;
+        self.upload_samples = samples.to_vec();
+        self.upload_latency = latency_under_load;
+        self
+    }
+
+    pub fn client_ip(mut self, ip: impl Into<String>) -> Self {
+        self.client_ip = Some(ip.into());
+        self
+    }
+
+    pub fn client_location(mut self, location: ClientLocation) -> Self {
+        self.client_location = Some(location);
+        self
+    }
+
+    /// Build the `TestResult` using the given stats service for CV/CI computation.
+    pub fn build(self, stats: &dyn StatsService) -> TestResult {
         fn opt_samples(v: &[f64]) -> Option<Vec<f64>> {
             if v.is_empty() {
                 None
@@ -124,30 +212,30 @@ impl TestResult {
             }
         }
 
-        Self {
+        TestResult {
             status: "ok".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             test_id: Some(uuid_v4()),
-            server,
-            ping,
-            jitter,
-            packet_loss,
-            download: opt_positive(dl.avg_bps),
-            download_peak: opt_positive(dl.peak_bps),
-            download_cv: compute_cv(&dl.speed_samples),
-            upload: opt_positive(ul.avg_bps),
-            upload_peak: opt_positive(ul.peak_bps),
-            upload_cv: compute_cv(&ul.speed_samples),
-            download_ci_95: compute_ci_95(&dl.speed_samples, 1_000_000.0),
-            upload_ci_95: compute_ci_95(&ul.speed_samples, 1_000_000.0),
-            latency_download: dl.latency_under_load,
-            latency_upload: ul.latency_under_load,
-            download_samples: opt_samples(&dl.speed_samples),
-            upload_samples: opt_samples(&ul.speed_samples),
-            ping_samples: opt_samples(ping_samples),
+            server: self.server,
+            ping: self.ping,
+            jitter: self.jitter,
+            packet_loss: self.packet_loss,
+            download: opt_positive(self.download_avg_bps),
+            download_peak: opt_positive(self.download_peak_bps),
+            download_cv: stats.coefficient_of_variation(&self.download_samples),
+            upload: opt_positive(self.upload_avg_bps),
+            upload_peak: opt_positive(self.upload_peak_bps),
+            upload_cv: stats.coefficient_of_variation(&self.upload_samples),
+            download_ci_95: stats.confidence_interval_95(&self.download_samples, 1_000_000.0),
+            upload_ci_95: stats.confidence_interval_95(&self.upload_samples, 1_000_000.0),
+            latency_download: self.download_latency,
+            latency_upload: self.upload_latency,
+            download_samples: opt_samples(&self.download_samples),
+            upload_samples: opt_samples(&self.upload_samples),
+            ping_samples: opt_samples(&self.ping_samples),
             timestamp: chrono::Utc::now().to_rfc3339(),
-            client_ip,
-            client_location,
+            client_ip: self.client_ip,
+            client_location: self.client_location,
             overall_grade: None,
             download_grade: None,
             upload_grade: None,
@@ -158,6 +246,57 @@ impl TestResult {
                 upload: PhaseResult::completed(),
             },
         }
+    }
+}
+
+impl TestResult {
+    /// Build a `TestResult` from ping test output and download/upload test runs.
+    /// Delegates to `TestResultBuilder` for construction.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn from_test_runs(
+        server: ServerInfo,
+        ping: Option<f64>,
+        jitter: Option<f64>,
+        packet_loss: Option<f64>,
+        ping_samples: &[f64],
+        dl: &crate::task_runner::TestRunResult,
+        ul: &crate::task_runner::TestRunResult,
+        client_ip: Option<String>,
+        client_location: Option<ClientLocation>,
+    ) -> Self {
+        let mut builder = TestResultBuilder::new(server)
+            .ping_samples(ping_samples)
+            .download_stats(
+                dl.avg_bps,
+                dl.peak_bps,
+                &dl.speed_samples,
+                dl.latency_under_load,
+            )
+            .upload_stats(
+                ul.avg_bps,
+                ul.peak_bps,
+                &ul.speed_samples,
+                ul.latency_under_load,
+            );
+
+        if let Some(p) = ping {
+            builder = builder.ping(p);
+        }
+        if let Some(j) = jitter {
+            builder = builder.jitter(j);
+        }
+        if let Some(pl) = packet_loss {
+            builder = builder.packet_loss(pl);
+        }
+        if let Some(ip) = client_ip {
+            builder = builder.client_ip(ip);
+        }
+        if let Some(loc) = client_location {
+            builder = builder.client_location(loc);
+        }
+
+        builder.build(&DefaultStats)
     }
 }
 
@@ -204,6 +343,37 @@ fn compute_ci_95(samples: &[f64], scale: f64) -> Option<(f64, f64)> {
         let std_err = variance.sqrt() / (n as f64).sqrt();
         let margin = 1.96 * std_err;
         Some(((mean - margin) / scale, (mean + margin) / scale))
+    }
+}
+
+/// Trait for statistical computations - enables alternative algorithms.
+pub trait StatsService: Send + Sync {
+    fn coefficient_of_variation(&self, samples: &[f64]) -> Option<f64>;
+    fn confidence_interval_95(&self, samples: &[f64], scale: f64) -> Option<(f64, f64)>;
+}
+
+/// Default statistics implementation using standard formulas.
+pub struct DefaultStats;
+
+impl DefaultStats {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for DefaultStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StatsService for DefaultStats {
+    fn coefficient_of_variation(&self, samples: &[f64]) -> Option<f64> {
+        compute_cv(samples)
+    }
+
+    fn confidence_interval_95(&self, samples: &[f64], scale: f64) -> Option<(f64, f64)> {
+        compute_ci_95(samples, scale)
     }
 }
 
@@ -410,6 +580,123 @@ mod tests {
         let json = serde_json::to_string(&loc).unwrap();
         assert!(!json.contains("city"));
         assert!(!json.contains("country"));
+    }
+
+    #[test]
+    fn test_result_builder_full() {
+        let server = ServerInfo {
+            id: "1".to_string(),
+            name: "Server".to_string(),
+            sponsor: "ISP".to_string(),
+            country: "US".to_string(),
+            distance: 50.0,
+        };
+        let result = TestResultBuilder::new(server)
+            .ping(10.0)
+            .jitter(2.0)
+            .packet_loss(0.5)
+            .ping_samples(&[10.0, 12.0])
+            .download_stats(
+                100_000_000.0,
+                120_000_000.0,
+                &[90_000_000.0, 110_000_000.0],
+                Some(25.0),
+            )
+            .upload_stats(
+                50_000_000.0,
+                60_000_000.0,
+                &[45_000_000.0, 55_000_000.0],
+                Some(30.0),
+            )
+            .client_ip("1.2.3.4")
+            .client_location(ClientLocation {
+                lat: 40.0,
+                lon: -74.0,
+                city: Some("NYC".to_string()),
+                country: Some("US".to_string()),
+            })
+            .build(&DefaultStats);
+
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.ping, Some(10.0));
+        assert_eq!(result.jitter, Some(2.0));
+        assert_eq!(result.packet_loss, Some(0.5));
+        assert_eq!(result.download, Some(100_000_000.0));
+        assert_eq!(result.download_peak, Some(120_000_000.0));
+        assert_eq!(result.upload, Some(50_000_000.0));
+        assert_eq!(result.client_ip, Some("1.2.3.4".to_string()));
+        assert!(result.download_samples.is_some());
+        assert!(result.ping_samples.is_some());
+        assert!(result.download_cv.is_some());
+        assert!(result.download_ci_95.is_some());
+        assert!(result.test_id.is_some());
+    }
+
+    #[test]
+    fn test_result_builder_minimal() {
+        let server = ServerInfo {
+            id: "0".to_string(),
+            name: "".to_string(),
+            sponsor: "".to_string(),
+            country: "".to_string(),
+            distance: 0.0,
+        };
+        let result = TestResultBuilder::new(server).build(&DefaultStats);
+
+        assert_eq!(result.status, "ok");
+        assert!(result.ping.is_none());
+        assert!(result.jitter.is_none());
+        assert!(result.download.is_none());
+        assert!(result.upload.is_none());
+        assert!(result.client_ip.is_none());
+        assert!(result.download_samples.is_none());
+        assert!(result.ping_samples.is_none());
+        assert!(result.download_cv.is_none());
+        assert!(result.upload_cv.is_none());
+    }
+
+    #[test]
+    fn test_stats_service_cv_known_data() {
+        let stats = DefaultStats::new();
+        let cv = stats.coefficient_of_variation(&[10.0, 12.0]);
+        assert!(cv.is_some());
+        let val = cv.unwrap();
+        assert!(val > 0.0);
+    }
+
+    #[test]
+    fn test_stats_service_cv_empty() {
+        let stats = DefaultStats::new();
+        assert!(stats.coefficient_of_variation(&[]).is_none());
+    }
+
+    #[test]
+    fn test_stats_service_cv_single() {
+        let stats = DefaultStats::new();
+        assert!(stats.coefficient_of_variation(&[42.0]).is_none());
+    }
+
+    #[test]
+    fn test_stats_service_cv_zero_mean() {
+        let stats = DefaultStats::new();
+        assert!(stats.coefficient_of_variation(&[0.0, 0.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn test_stats_service_ci95_known_data() {
+        let stats = DefaultStats::new();
+        let ci = stats.confidence_interval_95(&[100.0, 102.0, 98.0, 101.0, 99.0], 1.0);
+        assert!(ci.is_some());
+        let (lo, hi) = ci.unwrap();
+        assert!(lo < hi);
+        let mid = (lo + hi) / 2.0;
+        assert!((mid - 100.0).abs() < 2.0);
+    }
+
+    #[test]
+    fn test_stats_service_ci95_too_few_samples() {
+        let stats = DefaultStats::new();
+        assert!(stats.confidence_interval_95(&[50.0], 1.0).is_none());
     }
 }
 

@@ -4,6 +4,8 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
+pub mod output;
+
 // ============================================================================
 // ConfigSource — CLI→config bridge (DIP: config depends on abstraction)
 // ============================================================================
@@ -458,31 +460,31 @@ impl std::fmt::Display for Format {
 /// assert_eq!(output.csv_delimiter, ','); // business-logic default preserved
 /// ```
 #[derive(Debug, Clone)]
-pub(crate) struct OutputConfig {
+pub struct OutputConfig {
     /// Display values in bytes instead of bits
-    pub(crate) bytes: bool,
+    pub bytes: bool,
     /// Suppress verbose output (deprecated, use format)
-    pub(crate) simple: bool,
+    pub simple: bool,
     /// Output in CSV format (deprecated, use format)
-    pub(crate) csv: bool,
+    pub csv: bool,
     /// CSV field delimiter
-    pub(crate) csv_delimiter: char,
+    pub csv_delimiter: char,
     /// Include CSV headers
-    pub(crate) csv_header: bool,
+    pub csv_header: bool,
     /// Output in JSON format (deprecated, use format)
-    pub(crate) json: bool,
+    pub json: bool,
     /// Display server list and exit
-    pub(crate) list: bool,
+    pub list: bool,
     /// Suppress all progress output
-    pub(crate) quiet: bool,
+    pub quiet: bool,
     /// User profile for customized output
-    pub(crate) profile: Option<String>,
+    pub profile: Option<String>,
     /// Color theme for terminal output
-    pub(crate) theme: Theme,
+    pub theme: Theme,
     /// Minimal ASCII-only output (no Unicode box-drawing)
-    pub(crate) minimal: bool,
+    pub minimal: bool,
     /// Output format (supersedes legacy --json/--csv/--simple)
-    pub(crate) format: Option<Format>,
+    pub format: Option<Format>,
 }
 
 // OutputConfig and NetworkConfig have manual Default impls for business logic defaults
@@ -572,13 +574,13 @@ impl OutputConfig {
 /// assert!(!test.no_upload); // unset → false default
 /// ```
 #[derive(Debug, Clone, Default)]
-pub(crate) struct TestSelection {
+pub struct TestSelection {
     /// Do not perform download test
-    pub(crate) no_download: bool,
+    pub no_download: bool,
     /// Do not perform upload test
-    pub(crate) no_upload: bool,
+    pub no_upload: bool,
     /// Use single connection instead of multiple
-    pub(crate) single: bool,
+    pub single: bool,
 }
 
 impl TestSelection {
@@ -624,17 +626,17 @@ impl TestSelection {
 /// assert!(network.source.is_none()); // unset → None default
 /// ```
 #[derive(Debug, Clone)]
-pub(crate) struct NetworkConfig {
+pub struct NetworkConfig {
     /// Source IP address to bind to
-    pub(crate) source: Option<String>,
+    pub source: Option<String>,
     /// HTTP request timeout in seconds
-    pub(crate) timeout: u64,
+    pub timeout: u64,
     /// Path to custom CA certificate for TLS
-    pub(crate) ca_cert: Option<String>,
+    pub ca_cert: Option<String>,
     /// Minimum TLS version (1.2 or 1.3)
-    pub(crate) tls_version: Option<String>,
+    pub tls_version: Option<String>,
     /// Enable certificate pinning for speedtest.net
-    pub(crate) pin_certs: bool,
+    pub pin_certs: bool,
 }
 
 impl Default for NetworkConfig {
@@ -689,11 +691,11 @@ impl NetworkConfig {
 /// assert_eq!(servers.exclude_ids, vec!["9999"]);
 /// ```
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ServerSelection {
+pub struct ServerSelection {
     /// Specific server IDs to use (empty = auto-select)
-    pub(crate) server_ids: Vec<String>,
+    pub server_ids: Vec<String>,
     /// Server IDs to exclude from selection
-    pub(crate) exclude_ids: Vec<String>,
+    pub exclude_ids: Vec<String>,
 }
 
 impl ServerSelection {
@@ -744,20 +746,32 @@ pub struct File {
 /// - `TestSelection` — test execution controls
 /// - `NetworkConfig` — network and TLS settings
 /// - `ServerSelection` — server filtering options
+
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     /// Output and display configuration
-    pub(crate) output: OutputConfig,
+    pub output: OutputConfig,
     /// Test execution controls
-    pub(crate) test: TestSelection,
+    pub test: TestSelection,
     /// Network and transport configuration
-    pub(crate) network: NetworkConfig,
+    pub network: NetworkConfig,
     /// Server selection criteria
-    pub(crate) servers: ServerSelection,
+    pub servers: ServerSelection,
     /// Custom user agent (file config only, not CLI)
-    pub(crate) custom_user_agent: Option<String>,
+    pub custom_user_agent: Option<String>,
     /// Strict validation mode
-    pub(crate) strict: bool,
+    pub strict: bool,
+}
+
+// ConfigProvider trait exposing read‑only config
+pub trait ConfigProvider: Send + Sync {
+    fn config(&self) -> &Config;
+}
+
+impl ConfigProvider for Config {
+    fn config(&self) -> &Config {
+        self
+    }
 }
 
 impl Config {

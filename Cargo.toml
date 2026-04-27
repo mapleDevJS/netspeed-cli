@@ -22,6 +22,8 @@ name = "netspeed_cli"
 path = "src/lib.rs"
 
 [dependencies]
+futures = "0.3"
+async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "stream"] }
 rustls = "0.23"

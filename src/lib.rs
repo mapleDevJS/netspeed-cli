@@ -11,13 +11,15 @@
 //!
 //! ## Modules
 //!
+//! - [`bin_errors`] — Binary-level error handling and exit codes
 //! - [`cli`] — Command-line argument parsing with clap
 //! - [`common`] — Shared utilities (bandwidth calculation, formatting, validation)
-//! - [`config`] — Configuration merging (CLI args + config file)
+//! - [`config`] — Configuration management (CLI args + config file)
+//! - [`domain`] — Core business logic (measurement, reporting, server, speedtest)
 //! - [`download`] — Multi-stream download bandwidth measurement
 //! - [`endpoints`] — Canonical speedtest endpoint derivation
 //! - [`upload`] — Multi-stream upload bandwidth measurement
-//! - [`error`] — Unified error types
+//! - [`error`] — Unified error types with categorization
 //! - [`formatter`] — Output formatting (detailed, simple, JSON, CSV)
 //! - [`grades`] — Quality grade system (A-F ratings)
 //! - [`history`] — Persistent test result history
@@ -37,9 +39,11 @@
 )]
 
 pub mod bandwidth_loop;
+pub mod bin_errors;
 pub mod cli;
 pub mod common;
 pub mod config;
+pub mod domain;
 pub mod download;
 pub mod endpoints;
 pub mod error;
@@ -47,12 +51,20 @@ pub mod formatter;
 pub mod grades;
 pub mod history;
 pub mod http;
+pub mod http_client;
 pub mod logging;
 pub mod orchestrator;
+pub mod output;
 pub mod output_strategy;
+pub mod phase_registry;
+pub mod phase_runner;
+pub mod phases;
 pub mod profiles;
 pub mod progress;
+pub mod result_processor;
 pub mod servers;
+pub mod services;
+pub mod storage;
 pub mod task_runner;
 pub mod terminal;
 pub mod test_config;
