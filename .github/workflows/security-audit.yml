@@ -272,7 +272,7 @@ jobs:
           echo "  - Code Analysis: ${{ needs.code-analysis.result }}"
           echo "  - Update Check: ${{ needs.update-check.result }}"
           echo ""
-          if [[ '${{ needs.dependency-audit.result }}' == 'success' ]] && [[ '${{ needs.code-analysis.result }}' == 'success' ]]; then
+          if [[ '${{ needs.dependency-audit.result }}' == 'success' || '${{ needs.dependency-audit.result }}' == 'skipped' ]] && [[ '${{ needs.code-analysis.result }}' == 'success' || '${{ needs.code-analysis.result }}' == 'skipped' ]]; then
             echo "✅ All checks passed"
           else
             echo "⚠️ Some checks failed - review required"

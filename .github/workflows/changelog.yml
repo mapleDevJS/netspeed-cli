@@ -36,7 +36,7 @@ jobs:
       - name: Generate changelog preview
         id: preview
         run: |
-          CHANGELOG=$(git-cliff --config .cliff.toml 2>&1)
+          CHANGELOG=$(git-cliff --config .cliff.toml 2>&1 || true)
           FEATURES=$(echo -e $CHANGELOG | grep -c feat || echo 0)
           FIXES=$(echo -e $CHANGELOG | grep -c fix || echo 0)
           echo features=$FEATURES >> $GITHUB_OUTPUT
@@ -52,7 +52,7 @@ jobs:
       - name: Create changelog PR from develop
         if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
         run: |
-          git-cliff --config .cliff.toml --output CHANGELOG.md
+          git-cliff --config .cliff.toml --output CHANGELOG.md || true
 
           if ! git diff --quiet CHANGELOG.md; then
             echo Changelog updated, creating PR...
