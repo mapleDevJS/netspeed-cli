@@ -9,6 +9,7 @@
 
 use crate::error::Error;
 use crate::services::Services;
+use crate::theme::Colors;
 use futures::future::BoxFuture;
 use std::sync::Arc;
 
@@ -297,7 +298,7 @@ pub(crate) fn run_early_exit<'a>(
         }
 
         if early_exit.history {
-            match crate::history::show() {
+            match crate::history::show(orch.config().theme()) {
                 Ok(()) => PhaseOutcome::PhaseEarlyExit,
                 Err(e) => PhaseOutcome::PhaseError(e),
             }
@@ -318,20 +319,18 @@ pub(crate) fn run_header<'a>(
         if orch.is_verbose() {
             let version = env!("CARGO_PKG_VERSION");
             let nc = crate::terminal::no_color();
-
+            let theme = orch.config().theme();
+            eprintln!();
             if nc {
-                eprintln!();
-                eprintln!("  NetSpeed CLI v{version}  ·  speedtest.net");
+                eprintln!("  netspeed-cli v{version}  ·  speedtest.net");
                 eprintln!();
             } else {
-                use owo_colors::OwoColorize;
-                eprintln!();
                 eprintln!(
                     "  {} v{}  {}  {}",
-                    "NetSpeed CLI".cyan().bold(),
-                    version.white(),
-                    "·".dimmed(),
-                    "speedtest.net".bright_black()
+                    Colors::header("NetSpeed CLI", theme),
+                    version,
+                    Colors::dimmed("·", theme),
+                    Colors::muted("speedtest.net", theme)
                 );
                 eprintln!();
             }
@@ -367,7 +366,7 @@ pub(crate) fn run_server_discovery<'a>(
         }
 
         if orch.config().list() {
-            if let Err(e) = crate::formatter::format_list(&servers) {
+            if let Err(e) = crate::formatter::format_list(&servers, orch.config().theme()) {
                 return PhaseOutcome::PhaseError(e.into());
             }
             ctx.set_list_printed();
@@ -395,18 +394,22 @@ pub(crate) fn run_server_discovery<'a>(
         if is_verbose {
             let dist = crate::common::format_distance(server.distance);
             eprintln!();
+            let theme = orch.config().theme();
             if crate::terminal::no_color() {
                 eprintln!("  Server:   {} ({})", server.sponsor, server.name);
                 eprintln!("  Location: {} ({dist})", server.country);
             } else {
-                use owo_colors::OwoColorize;
                 eprintln!(
                     "  {}   {} ({})",
-                    "Server:".dimmed(),
-                    server.sponsor.white().bold(),
+                    Colors::dimmed("Server:", theme),
+                    Colors::bold(&server.sponsor, theme),
                     server.name
                 );
-                eprintln!("  {} {} ({dist})", "Location:".dimmed(), server.country);
+                eprintln!(
+                    "  {} {} ({dist})",
+                    Colors::dimmed("Location:", theme),
+                    server.country
+                );
             }
             eprintln!();
         }
@@ -475,10 +478,9 @@ pub(crate) fn run_ping<'a>(
             let msg = if crate::terminal::no_color() {
                 format!("Latency: {:.2} ms", ping_result.0)
             } else {
-                use owo_colors::OwoColorize;
                 format!(
                     "Latency: {}",
-                    format!("{:.2} ms", ping_result.0).cyan().bold()
+                    Colors::info(&format!("{:.2} ms", ping_result.0), theme)
                 )
             };
             crate::progress::finish_ok(pb, &msg, theme);
@@ -535,10 +537,9 @@ pub(crate) fn run_download<'a>(
                     let msg = if crate::terminal::no_color() {
                         format!("Download: {:.2} Mbps", avg / 1_000_000.0)
                     } else {
-                        use owo_colors::OwoColorize;
                         format!(
                             "Download: {}",
-                            format!("{:.2} Mbps", avg / 1_000_000.0).green().bold()
+                            Colors::good(&format!("{:.2} Mbps", avg / 1_000_000.0), theme)
                         )
                     };
                     crate::progress::finish_ok(pb, &msg, theme);
@@ -604,10 +605,9 @@ pub(crate) fn run_upload<'a>(
                     let msg = if crate::terminal::no_color() {
                         format!("Upload: {:.2} Mbps", avg / 1_000_000.0)
                     } else {
-                        use owo_colors::OwoColorize;
                         format!(
                             "Upload: {}",
-                            format!("{:.2} Mbps", avg / 1_000_000.0).green().bold()
+                            Colors::good(&format!("{:.2} Mbps", avg / 1_000_000.0), theme)
                         )
                     };
                     crate::progress::finish_ok(pb, &msg, theme);

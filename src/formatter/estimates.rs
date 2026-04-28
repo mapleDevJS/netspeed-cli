@@ -72,9 +72,13 @@ pub fn build_profile_targets(
     let mut lines = Vec::new();
 
     if nc {
-        lines.push("\n  USAGE CHECK".to_string());
+        lines.push("\n  ◈ USAGE CHECK".to_string());
     } else {
-        lines.push(format!("\n  {}", Colors::header("USAGE CHECK", theme)));
+        lines.push(format!(
+            "\n  {} {}",
+            Colors::muted("◈", theme),
+            Colors::header("USAGE CHECK", theme)
+        ));
     }
 
     for target in targets {
@@ -192,9 +196,13 @@ pub fn build(download_bps: Option<f64>, nc: bool, theme: Theme) -> String {
     let mut lines = Vec::new();
 
     if nc {
-        lines.push("\n  ESTIMATES".to_string());
+        lines.push("\n  ◈ ESTIMATES".to_string());
     } else {
-        lines.push(format!("\n  {}", Colors::header("ESTIMATES", theme)));
+        lines.push(format!(
+            "\n  {} {}",
+            Colors::muted("◈", theme),
+            Colors::header("ESTIMATES", theme)
+        ));
     }
 
     for file in ESTIMATES {

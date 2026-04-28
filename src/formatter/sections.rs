@@ -43,11 +43,15 @@ impl LayoutMode {
 }
 
 /// Build a section header with consistent formatting.
-fn section_header(title: &str, nc: bool) -> String {
+fn section_header(title: &str, nc: bool, theme: Theme) -> String {
     if nc {
-        format!("\n  {title}")
+        format!("\n  ◈ {title}")
     } else {
-        format!("\n  {}", title.bold().underline())
+        format!(
+            "\n  {} {}",
+            Colors::muted("◈", theme),
+            Colors::header(title, theme)
+        )
     }
 }
 
@@ -73,50 +77,41 @@ fn build_speed_section(
     let speed_tabular = common::format_speed_tabular(speed_bps, SPEED_WIDTH);
     let rating = colorize_rating(speed_rating_mbps(speed_bps / 1_000_000.0), nc, theme);
     let bar = crate::common::bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
+    let fill_pct = (speed_bps / 1_000_000.0 / 1000.0).clamp(0.0, 1.0) * 100.0;
     let bar_display = if nc {
         bar
+    } else if fill_pct >= 70.0 {
+        Colors::good(&bar, theme)
+    } else if fill_pct >= 40.0 {
+        Colors::warn(&bar, theme)
     } else {
-        let fill_pct = (speed_bps / 1_000_000.0 / 1000.0).clamp(0.0, 1.0) * 100.0;
-        if fill_pct >= 70.0 {
-            Colors::good(&bar, theme)
-        } else if fill_pct >= 40.0 {
-            Colors::warn(&bar, theme)
-        } else {
-            Colors::bad(&bar, theme)
-        }
+        Colors::bad(&bar, theme)
     };
     if nc {
         format!("  {label:>14}:   {speed_tabular}  {bar_display}")
     } else {
-        let speed_colored = {
-            let fill_pct = (speed_bps / 1_000_000.0 / 1000.0).clamp(0.0, 1.0) * 100.0;
-            if fill_pct >= 70.0 {
-                Colors::good(speed_tabular.trim(), theme)
-            } else if fill_pct >= 40.0 {
-                Colors::warn(speed_tabular.trim(), theme)
-            } else {
-                Colors::bad(speed_tabular.trim(), theme)
-            }
+        // Pad label first, then colorize (ANSI-safe alignment)
+        let lbl = Colors::dimmed(&format!("{label:>14}"), theme);
+        // speed_tabular is pre-padded to SPEED_WIDTH; colorize without trimming
+        let speed_col = if fill_pct >= 70.0 {
+            Colors::good(&speed_tabular, theme)
+        } else if fill_pct >= 40.0 {
+            Colors::warn(&speed_tabular, theme)
+        } else {
+            Colors::bad(&speed_tabular, theme)
         };
-        format!(
-            "  {:>14}:   {:>SPEED_WIDTH$}  {bar_display}  {rating}",
-            Colors::dimmed(label, theme),
-            speed_colored,
-        )
+        format!("  {lbl}:   {speed_col}  {bar_display}  {rating}")
     }
 }
 
 fn build_peak_line(peak_bps: f64, _bytes: bool, nc: bool, theme: Theme) -> String {
     let peak_tabular = common::format_speed_tabular(peak_bps, SPEED_WIDTH);
-    let peak = if nc {
-        peak_tabular
-    } else {
-        Colors::dimmed(peak_tabular.trim(), theme)
-    };
     if nc {
-        format!("  {:>14}:   {peak}", "Peak (1s avg)")
+        format!("  {:>14}:   {peak_tabular}", "Peak (1s avg)")
     } else {
-        format!("  {:>14}:   {peak}", "Peak (1s avg)".dimmed())
+        let lbl = Colors::dimmed(&format!("{:>14}", "Peak (1s avg)"), theme);
+        let peak = Colors::dimmed(peak_tabular.trim(), theme);
+        format!("  {lbl}:   {peak}")
     }
 }
 
@@ -131,9 +126,9 @@ fn build_latency_load_line(
     if nc {
         format!("  {:>14}:   {lat_val}{degradation}", "Latency (load)")
     } else {
+        let lbl = Colors::dimmed(&format!("{:>14}", "Latency (load)"), theme);
         format!(
-            "  {:>14}:   {}{degradation}",
-            "Latency (load)".dimmed(),
+            "  {lbl}:   {}{degradation}",
             Colors::warn(lat_val.trim(), theme),
         )
     }
@@ -155,16 +150,21 @@ pub fn build_latency_section(result: &TestResult, nc: bool, theme: Theme) -> Str
             "Latency"
         ));
     } else {
+        let lbl = Colors::dimmed(&format!("{:>14}", "Latency"), theme);
         lines.push(format!(
-            "  {:>14}:   {}  {rating_str}",
-            "Latency".dimmed(),
+            "  {lbl}:   {}  {rating_str}",
             Colors::info(latency_val.trim(), theme),
         ));
     }
 
     if let Some(jitter) = result.jitter {
         let jitter_val = common::format_jitter_tabular(jitter, JITTER_WIDTH);
-        lines.push(format!("  {:>14}:   {jitter_val}", "Jitter".dimmed()));
+        if nc {
+            lines.push(format!("  {:>14}:   {jitter_val}", "Jitter"));
+        } else {
+            let lbl = Colors::dimmed(&format!("{:>14}", "Jitter"), theme);
+            lines.push(format!("  {lbl}:   {jitter_val}"));
+        }
     }
 
     if let Some(loss) = result.packet_loss {
@@ -180,14 +180,24 @@ pub fn build_latency_section(result: &TestResult, nc: bool, theme: Theme) -> Str
                 Colors::bad(loss_val.trim(), theme)
             }
         };
-        lines.push(format!("  {:>14}:   {loss_str}", "Packet Loss".dimmed()));
+        if nc {
+            lines.push(format!("  {:>14}:   {loss_str}", "Packet Loss"));
+        } else {
+            let lbl = Colors::dimmed(&format!("{:>14}", "Packet Loss"), theme);
+            lines.push(format!("  {lbl}:   {loss_str}"));
+        }
     }
 
     if let (Some(lat_dl), Some(lat_ul)) = (result.latency_download, result.latency_upload) {
         let max_load = lat_dl.max(lat_ul);
         let (grade, added) = bufferbloat_grade(max_load, result.ping.unwrap_or(0.0));
         let display = bufferbloat_colorized(grade, added, nc, theme);
-        lines.push(format!("  {:>14}:   {display}", "Bufferbloat".dimmed()));
+        if nc {
+            lines.push(format!("  {:>14}:   {display}", "Bufferbloat"));
+        } else {
+            let lbl = Colors::dimmed(&format!("{:>14}", "Bufferbloat"), theme);
+            lines.push(format!("  {lbl}:   {display}"));
+        }
     }
 
     lines.join("\n")
@@ -241,6 +251,7 @@ pub fn build_download_section(
                 "Variance"
             ));
         } else {
+            let lbl = Colors::dimmed(&format!("{:>14}", "Variance"), theme);
             let cv_display = format!("{cv_pct:.1}");
             let cv_color = if cv_pct < 5.0 {
                 Colors::good(&cv_display, theme)
@@ -249,11 +260,7 @@ pub fn build_download_section(
             } else {
                 Colors::bad(&cv_display, theme)
             };
-            lines.push(format!(
-                "  {:>14}:   ±{}% ({stability})",
-                "Variance".dimmed(),
-                cv_color
-            ));
+            lines.push(format!("  {lbl}:   ±{}% ({stability})", cv_color));
         }
     }
 
@@ -314,6 +321,7 @@ pub fn build_upload_section(
                 "Variance"
             ));
         } else {
+            let lbl = Colors::dimmed(&format!("{:>14}", "Variance"), theme);
             let cv_display = format!("{cv_pct:.1}");
             let cv_color = if cv_pct < 5.0 {
                 Colors::good(&cv_display, theme)
@@ -322,19 +330,16 @@ pub fn build_upload_section(
             } else {
                 Colors::bad(&cv_display, theme)
             };
-            lines.push(format!(
-                "  {:>14}:   ±{}% ({stability})",
-                "Variance".dimmed(),
-                cv_color
-            ));
+            lines.push(format!("  {lbl}:   ±{}% ({stability})", cv_color));
         }
     }
 
     if let (Some(dl), Some(ul)) = (result.download, result.upload) {
         let ratio = if ul > 0.0 { dl / ul } else { f64::INFINITY };
-        let ratio_str = if nc {
-            format!("{ratio:.2}x")
+        if nc {
+            lines.push(format!("  {:>14}:   {:.2}x", "UL/DL Ratio", ratio));
         } else {
+            let lbl = Colors::dimmed(&format!("{:>14}", "UL/DL Ratio"), theme);
             let label = if ratio > 1.5 {
                 "download-heavy"
             } else if ratio < 0.67 {
@@ -343,15 +348,15 @@ pub fn build_upload_section(
                 "balanced"
             };
             let text = format!("{ratio:.2}x {label}");
-            if ratio > 1.5 {
+            let ratio_col = if ratio > 1.5 {
                 Colors::warn(&text, theme)
             } else if ratio < 0.67 {
                 Colors::info(&text, theme)
             } else {
                 Colors::good(&text, theme)
-            }
-        };
-        lines.push(format!("  {:>14}:   {ratio_str}", "UL/DL Ratio".dimmed()));
+            };
+            lines.push(format!("  {lbl}:   {ratio_col}"));
+        }
     }
 
     lines.join("\n")
@@ -375,37 +380,38 @@ pub fn build_connection_info(result: &TestResult, nc: bool, theme: Theme) -> Str
     let dist = common::format_distance(result.server.distance);
     let mut lines = Vec::new();
 
-    lines.push(section_header("CONNECTION INFO", nc));
+    lines.push(section_header("CONNECTION INFO", nc, theme));
 
     if nc {
         lines.push(format!(
             "  {:>16}:   {} ({})",
             "Server", result.server.sponsor, result.server.name
         ));
-    } else {
-        lines.push(format!(
-            "  {:>16}:   {} ({})",
-            "Server".dimmed(),
-            Colors::bold(&result.server.sponsor, theme),
-            result.server.name
-        ));
-    }
-
-    if nc {
         lines.push(format!(
             "  {:>16}:   {}  ({dist})",
             "Location", result.server.country
         ));
     } else {
+        let server_lbl = Colors::dimmed(&format!("{:>16}", "Server"), theme);
         lines.push(format!(
-            "  {:>16}:   {}  ({dist})",
-            "Location".dimmed(),
-            result.server.country,
+            "  {server_lbl}:   {} ({})",
+            Colors::bold(&result.server.sponsor, theme),
+            result.server.name
+        ));
+        let loc_lbl = Colors::dimmed(&format!("{:>16}", "Location"), theme);
+        lines.push(format!(
+            "  {loc_lbl}:   {}  ({dist})",
+            result.server.country
         ));
     }
 
     if let Some(ip) = &result.client_ip {
-        lines.push(format!("  {:>16}:   {ip}", "Client IP".dimmed()));
+        if nc {
+            lines.push(format!("  {:>16}:   {ip}", "Client IP"));
+        } else {
+            let ip_lbl = Colors::dimmed(&format!("{:>16}", "Client IP"), theme);
+            lines.push(format!("  {ip_lbl}:   {ip}"));
+        }
     }
 
     lines.join("\n")
@@ -422,10 +428,11 @@ pub fn build_test_summary(
     dl_duration: f64,
     ul_duration: f64,
     nc: bool,
+    theme: Theme,
 ) -> String {
     let mut lines = Vec::new();
 
-    lines.push(section_header("TEST SUMMARY", nc));
+    lines.push(section_header("TEST SUMMARY", nc, theme));
 
     if dl_bytes > 0 {
         let size_val = common::format_data_size_tabular(dl_bytes, DATA_SIZE_WIDTH);
@@ -480,22 +487,32 @@ pub fn format_test_summary(
     dl_duration: f64,
     ul_duration: f64,
     nc: bool,
+    theme: Theme,
 ) {
     eprintln!(
         "{}",
-        build_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc)
+        build_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc, theme)
     );
 }
 
 #[must_use]
 pub fn build_footer(timestamp: &str, nc: bool, theme: Theme) -> String {
+    let human_ts = {
+        let date = timestamp.get(..10).unwrap_or(timestamp);
+        let time = timestamp.get(11..16).unwrap_or("");
+        if time.is_empty() {
+            timestamp.to_string()
+        } else {
+            format!("{date}  {time} UTC")
+        }
+    };
     if nc {
-        format!("\n  Completed at: {timestamp}")
+        format!("\n  Completed at: {human_ts}")
     } else {
         format!(
             "\n  {} {}",
             "Completed at:".dimmed(),
-            Colors::muted(timestamp, theme),
+            Colors::muted(&human_ts, theme),
         )
     }
 }
@@ -525,8 +542,8 @@ pub fn format_elapsed_time(elapsed: std::time::Duration, nc: bool, theme: Theme)
 
 /// Format a list of available servers.
 #[must_use]
-pub fn build_list(servers: &[Server]) -> String {
-    let nc = terminal::no_color();
+pub fn build_list(servers: &[Server], theme: Theme) -> String {
+    let nc = terminal::no_color() || theme == Theme::Monochrome;
 
     let (max_id_len, max_sponsor_len, max_name_len) =
         servers
@@ -549,7 +566,10 @@ pub fn build_list(servers: &[Server]) -> String {
     if nc {
         lines.push(String::from("\n  AVAILABLE SERVERS"));
     } else {
-        lines.push(format!("\n  {}", "AVAILABLE SERVERS".bold().underline()));
+        lines.push(format!(
+            "\n  {}",
+            Colors::header("AVAILABLE SERVERS", theme)
+        ));
     }
 
     if nc {
@@ -560,10 +580,10 @@ pub fn build_list(servers: &[Server]) -> String {
     } else {
         lines.push(format!(
             "  {:<idw$}  {:<sw$}  {:<nw$}  {:>10}",
-            "ID".dimmed(),
-            "Sponsor".dimmed(),
-            "Name (Country)".dimmed(),
-            "Distance".dimmed()
+            Colors::dimmed("ID", theme),
+            Colors::dimmed("Sponsor", theme),
+            Colors::dimmed("Name (Country)", theme),
+            Colors::dimmed("Distance", theme),
         ));
     }
 
@@ -578,7 +598,7 @@ pub fn build_list(servers: &[Server]) -> String {
             "",
             "",
             "",
-            "".dimmed()
+            Colors::dimmed("", theme),
         ));
     }
 
@@ -596,9 +616,9 @@ pub fn build_list(servers: &[Server]) -> String {
             lines.push(format!(
                 "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
                 server.id,
-                server.sponsor.white().bold(),
+                Colors::bold(&server.sponsor, theme),
                 format!("{} ({})", server.name, server.country),
-                dist.bright_black(),
+                Colors::muted(&dist, theme),
             ));
         }
     }
@@ -612,7 +632,7 @@ pub fn build_list(servers: &[Server]) -> String {
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
-pub fn format_list(servers: &[Server]) -> Result<(), std::io::Error> {
-    eprintln!("{}", build_list(servers));
+pub fn format_list(servers: &[Server], theme: Theme) -> Result<(), std::io::Error> {
+    eprintln!("{}", build_list(servers, theme));
     Ok(())
 }

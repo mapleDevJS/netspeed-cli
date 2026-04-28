@@ -19,9 +19,8 @@
 
 #![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 
-use owo_colors::OwoColorize;
-
 use crate::terminal;
+use crate::theme::{Colors, Theme};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -273,7 +272,13 @@ fn headroom_level(pct: f64) -> HeadroomLevel {
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 /// Render a capacity bar: [████████░░]
-fn render_capacity_bar(headroom_pct: f64, is_met: bool, _nc: bool, minimal: bool) -> String {
+fn render_capacity_bar(
+    headroom_pct: f64,
+    is_met: bool,
+    _nc: bool,
+    minimal: bool,
+    theme: Theme,
+) -> String {
     let fill = if is_met {
         ((headroom_pct / 100.0) * BAR_WIDTH as f64)
             .ceil()
@@ -288,19 +293,14 @@ fn render_capacity_bar(headroom_pct: f64, is_met: bool, _nc: bool, minimal: bool
     } else if terminal::no_color() {
         format!("[{}{}]", "█".repeat(fill), "░".repeat(empty))
     } else {
-        let bar_color = if headroom_pct > 50.0 {
-            "green"
-        } else if headroom_pct >= 20.0 {
-            "yellow"
-        } else {
-            "red"
-        };
         let filled = "█".repeat(fill);
         let empty_str = "░".repeat(empty);
-        match bar_color {
-            "green" => format!("[{}{}]", filled.green(), empty_str),
-            "yellow" => format!("[{}{}]", filled.yellow(), empty_str),
-            _ => format!("[{}{}]", filled.red().bold(), empty_str),
+        if headroom_pct > 50.0 {
+            format!("[{}{}]", Colors::good(&filled, theme), empty_str)
+        } else if headroom_pct >= 20.0 {
+            format!("[{}{}]", Colors::warn(&filled, theme), empty_str)
+        } else {
+            format!("[{}{}]", Colors::bad(&filled, theme), empty_str)
         }
     }
 }
@@ -320,9 +320,9 @@ fn render_status_symbol(headroom_pct: f64, is_met: bool) -> String {
 }
 
 /// Render a single scenario row.
-fn render_scenario_row(status: &ScenarioStatus, nc: bool, minimal: bool) -> String {
+fn render_scenario_row(status: &ScenarioStatus, nc: bool, minimal: bool, theme: Theme) -> String {
     let s = status.scenario;
-    let bar = render_capacity_bar(status.headroom_pct, status.is_met, nc, minimal);
+    let bar = render_capacity_bar(status.headroom_pct, status.is_met, nc, minimal, theme);
     let symbol = render_status_symbol(status.headroom_pct, status.is_met);
     let concurrent = status.concurrent;
 
@@ -340,9 +340,9 @@ fn render_scenario_row(status: &ScenarioStatus, nc: bool, minimal: bool) -> Stri
     } else {
         // Colorize the requirement based on whether it's met
         let req_colored = if status.is_met {
-            req_display.dimmed().to_string()
+            Colors::dimmed(&req_display, theme)
         } else {
-            req_display.red().bold().to_string()
+            Colors::bad(&req_display, theme)
         };
         format!("{name_display:<NAME_WIDTH$} {req_colored}  {bar} {concurrent:>3}x {symbol:<5}",)
     };
@@ -354,7 +354,7 @@ fn render_scenario_row(status: &ScenarioStatus, nc: bool, minimal: bool) -> Stri
 }
 
 /// Render a category box header.
-fn render_category_header(cat: &ScenarioCategory, nc: bool, minimal: bool) -> String {
+fn render_category_header(cat: &ScenarioCategory, nc: bool, minimal: bool, theme: Theme) -> String {
     let content_width = LINE_WIDTH - 2; // 1 space padding each side
     let title = format!(" {} {} ", cat.icon, cat.name);
     let dashes = "─".repeat(content_width.saturating_sub(title.len()));
@@ -367,7 +367,11 @@ fn render_category_header(cat: &ScenarioCategory, nc: bool, minimal: bool) -> St
         // For colored output, compute the inner content length, then pad
         let inner_len = title.len() + dashes.len();
         let pad = " ".repeat(content_width.saturating_sub(inner_len));
-        format!("  │ {}{}{pad} │", title.cyan().bold(), dashes.dimmed())
+        format!(
+            "  │ {}{}{pad} │",
+            Colors::info(&title, theme),
+            Colors::dimmed(&dashes, theme)
+        )
     }
 }
 
@@ -377,6 +381,7 @@ fn render_category_box(
     statuses: &[ScenarioStatus],
     nc: bool,
     minimal: bool,
+    theme: Theme,
 ) -> String {
     let mut lines = Vec::new();
     let content_width = LINE_WIDTH - 2; // 1 space padding each side
@@ -385,29 +390,35 @@ fn render_category_box(
     if minimal || nc {
         lines.push(format!("  │ {:-<content_width$} │", ""));
     } else {
-        lines.push(format!("  │ {} │", "─".repeat(content_width).dimmed()));
+        lines.push(format!(
+            "  │ {} │",
+            Colors::dimmed(&"─".repeat(content_width), theme)
+        ));
     }
 
     // Category header
-    lines.push(render_category_header(cat, nc, minimal));
+    lines.push(render_category_header(cat, nc, minimal, theme));
 
     // Scenario rows
     for status in statuses {
-        lines.push(render_scenario_row(status, nc, minimal));
+        lines.push(render_scenario_row(status, nc, minimal, theme));
     }
 
     // Bottom border — use │ for interior lines (not └┘)
     if minimal || nc {
         lines.push(format!("  │ {:-<content_width$} │", ""));
     } else {
-        lines.push(format!("  │ {} │", "─".repeat(content_width).dimmed()));
+        lines.push(format!(
+            "  │ {} │",
+            Colors::dimmed(&"─".repeat(content_width), theme)
+        ));
     }
 
     lines.join("\n")
 }
 
 /// Render the overall section header.
-fn render_section_header(dl_mbps: f64, nc: bool, minimal: bool) -> String {
+fn render_section_header(dl_mbps: f64, nc: bool, minimal: bool, theme: Theme) -> String {
     let title = format!(" USAGE CAPABILITY — {dl_mbps:.0} Mbps ");
     let left = (LINE_WIDTH.saturating_sub(title.len())) / 2;
     let right = LINE_WIDTH.saturating_sub(left).saturating_sub(title.len());
@@ -416,21 +427,26 @@ fn render_section_header(dl_mbps: f64, nc: bool, minimal: bool) -> String {
     } else {
         format!(
             "  {}{}{}{}{}",
-            "┌".dimmed(),
-            "─".repeat(left).dimmed(),
-            title.cyan().bold(),
-            "─".repeat(right).dimmed(),
-            "┐".dimmed(),
+            Colors::dimmed("┌", theme),
+            Colors::dimmed(&"─".repeat(left), theme),
+            Colors::header(&title, theme),
+            Colors::dimmed(&"─".repeat(right), theme),
+            Colors::dimmed("┐", theme),
         )
     }
 }
 
 /// Render the section footer.
-fn render_section_footer(nc: bool, minimal: bool) -> String {
+fn render_section_footer(nc: bool, minimal: bool, theme: Theme) -> String {
     if minimal || nc {
         format!("  +{:─<LINE_WIDTH$}+", "")
     } else {
-        format!("  {}{:─<LINE_WIDTH$}{}", "└".dimmed(), "", "┘".dimmed(),)
+        format!(
+            "  {}{}{}",
+            Colors::dimmed("└", theme),
+            Colors::dimmed(&"─".repeat(LINE_WIDTH), theme),
+            Colors::dimmed("┘", theme),
+        )
     }
 }
 
@@ -440,6 +456,7 @@ fn render_summary(
     dl_mbps: f64,
     nc: bool,
     minimal: bool,
+    theme: Theme,
 ) -> String {
     let mut lines = Vec::new();
 
@@ -452,7 +469,10 @@ fn render_summary(
         lines.push(String::new());
         lines.push(format!(
             "  {}",
-            "──── SUMMARY ────────────────────────────────────────────────".dimmed()
+            Colors::dimmed(
+                "──── SUMMARY ────────────────────────────────────────────────",
+                theme
+            )
         ));
     }
 
@@ -479,10 +499,10 @@ fn render_summary(
         } else {
             lines.push(format!(
                 "    {} {:>3}x {} {}",
-                "•".cyan(),
-                count.to_string().green().bold(),
+                Colors::info("•", theme),
+                Colors::good(&count.to_string(), theme),
                 scenario.name,
-                scenario.concurrent_label.dimmed(),
+                Colors::dimmed(scenario.concurrent_label, theme),
             ));
         }
     }
@@ -496,6 +516,7 @@ fn render_recommendation(
     _dl_mbps: f64,
     nc: bool,
     minimal: bool,
+    theme: Theme,
 ) -> String {
     // Find the scenario with the worst headroom that is at least partially met
     let mut worst: Option<&ScenarioStatus> = None;
@@ -521,14 +542,15 @@ fn render_recommendation(
         } else {
             lines.push(format!(
                 "  {} {}",
-                "⚠️".red().bold(),
-                "Your connection speed is insufficient for modern usage."
-                    .red()
-                    .bold(),
+                Colors::bad("⚠️", theme),
+                Colors::bad(
+                    "Your connection speed is insufficient for modern usage.",
+                    theme
+                ),
             ));
             lines.push(format!(
                 "      {} to at least 100 Mbps.",
-                "Consider upgrading".bright_black(),
+                Colors::muted("Consider upgrading", theme),
             ));
         }
         return lines.join("\n");
@@ -560,14 +582,14 @@ fn render_recommendation(
         lines.push(format!(
             "  {} {} {} has limited headroom at {:.0}%.",
             warning_icon,
-            "Recommendation:".yellow().bold(),
-            s.name.yellow(),
+            Colors::warn("Recommendation:", theme),
+            Colors::warn(s.name, theme),
             worst_s.headroom_pct,
         ));
         lines.push(format!(
             "      {} to {}+ Mbps for better performance.",
-            "Consider upgrading".bright_black(),
-            recommended.to_string().cyan().bold(),
+            Colors::muted("Consider upgrading", theme),
+            Colors::info(&recommended.to_string(), theme),
         ));
     }
 
@@ -576,13 +598,13 @@ fn render_recommendation(
 
 /// Format the full scenario grid output.
 #[must_use]
-pub fn format_scenario_grid(dl_mbps: f64, nc: bool, minimal: bool) -> String {
+pub fn format_scenario_grid(dl_mbps: f64, nc: bool, minimal: bool, theme: Theme) -> String {
     let statuses = compute_all_statuses(dl_mbps);
     let mut lines = Vec::new();
 
     // Opening
     lines.push(String::new());
-    lines.push(render_section_header(dl_mbps, nc, minimal));
+    lines.push(render_section_header(dl_mbps, nc, minimal, theme));
     lines.push(String::new());
 
     // Category boxes
@@ -590,19 +612,19 @@ pub fn format_scenario_grid(dl_mbps: f64, nc: bool, minimal: bool) -> String {
         if i > 0 {
             lines.push(String::new());
         }
-        lines.push(render_category_box(cat, &statuses[i], nc, minimal));
+        lines.push(render_category_box(cat, &statuses[i], nc, minimal, theme));
     }
 
     lines.push(String::new());
 
     // Closing
-    lines.push(render_section_footer(nc, minimal));
+    lines.push(render_section_footer(nc, minimal, theme));
 
     // Summary
-    lines.push(render_summary(&statuses, dl_mbps, nc, minimal));
+    lines.push(render_summary(&statuses, dl_mbps, nc, minimal, theme));
 
     // Recommendation
-    lines.push(render_recommendation(&statuses, 0.0, nc, minimal));
+    lines.push(render_recommendation(&statuses, 0.0, nc, minimal, theme));
 
     lines.push(String::new());
 
@@ -612,7 +634,12 @@ pub fn format_scenario_grid(dl_mbps: f64, nc: bool, minimal: bool) -> String {
 /// Format the scenario output, printing to stderr.
 pub fn print_scenario_grid(dl_mbps: f64, minimal: bool) {
     let nc = terminal::no_color() || minimal;
-    let output = format_scenario_grid(dl_mbps, nc, minimal);
+    let theme = if nc {
+        Theme::Monochrome
+    } else {
+        Theme::default()
+    };
+    let output = format_scenario_grid(dl_mbps, nc, minimal, theme);
     eprintln!("{output}");
 }
 
@@ -665,26 +692,26 @@ mod tests {
 
     #[test]
     fn test_render_capacity_bar_full() {
-        let bar = render_capacity_bar(100.0, true, false, false);
+        let bar = render_capacity_bar(100.0, true, false, false, crate::theme::Theme::Dark);
         assert!(bar.contains("##########") || bar.contains("██████████"));
     }
 
     #[test]
     fn test_render_capacity_bar_empty() {
-        let bar = render_capacity_bar(0.0, false, false, false);
+        let bar = render_capacity_bar(0.0, false, false, false, crate::theme::Theme::Dark);
         assert!(bar.contains("----------") || bar.contains("░░░░░░░░░░"));
     }
 
     #[test]
     fn test_render_capacity_bar_half() {
-        let bar = render_capacity_bar(50.0, true, false, false);
+        let bar = render_capacity_bar(50.0, true, false, false, crate::theme::Theme::Dark);
         // 50% of 10 = 5 filled
         assert!(bar.contains("#####") || bar.contains("█████"));
     }
 
     #[test]
     fn test_format_scenario_grid_contains_header() {
-        let output = format_scenario_grid(500.0, true, false);
+        let output = format_scenario_grid(500.0, true, false, crate::theme::Theme::Dark);
         assert!(output.contains("USAGE CAPABILITY"));
         assert!(output.contains("COMMUNICATION"));
         assert!(output.contains("STREAMING"));
@@ -692,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_format_scenario_grid_contains_summary() {
-        let output = format_scenario_grid(500.0, true, false);
+        let output = format_scenario_grid(500.0, true, false, crate::theme::Theme::Dark);
         assert!(output.contains("SUMMARY"));
         assert!(output.contains("500 Mbps"));
     }
@@ -708,7 +735,7 @@ mod tests {
     #[test]
     fn test_recommendation_for_fast_connection() {
         // At 500 Mbps all scenarios are met with good headroom
-        let output = format_scenario_grid(500.0, true, false);
+        let output = format_scenario_grid(500.0, true, false, crate::theme::Theme::Dark);
         assert!(output.contains("SUMMARY"));
         assert!(output.contains("500 Mbps"));
     }
@@ -716,7 +743,7 @@ mod tests {
     #[test]
     fn test_recommendation_for_moderate_connection() {
         // At 100 Mbps, AI Model Download (200 Mbps) won't be met → triggers recommendation
-        let output = format_scenario_grid(100.0, true, false);
+        let output = format_scenario_grid(100.0, true, false, crate::theme::Theme::Dark);
         assert!(
             output.contains("Recommendation")
                 || output.contains("recommend")
@@ -726,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_recommendation_for_slow_connection() {
-        let output = format_scenario_grid(5.0, true, false);
+        let output = format_scenario_grid(5.0, true, false, crate::theme::Theme::Dark);
         assert!(output.contains("insufficient") || output.contains("limited"));
     }
 
@@ -763,7 +790,7 @@ mod tests {
     #[test]
     fn test_render_category_header_colored() {
         let cat = &CAT_COMMUNICATION;
-        let result = render_category_header(cat, false, false);
+        let result = render_category_header(cat, false, false, crate::theme::Theme::Dark);
         assert!(result.contains("COMMUNICATION"));
         assert!(result.contains("│"));
     }
@@ -771,7 +798,7 @@ mod tests {
     #[test]
     fn test_render_category_header_minimal() {
         let cat = &CAT_STREAMING;
-        let result = render_category_header(cat, true, true);
+        let result = render_category_header(cat, true, true, crate::theme::Theme::Dark);
         assert!(result.contains("STREAMING"));
         assert!(result.contains("│"));
     }
@@ -783,7 +810,7 @@ mod tests {
             compute_scenario_status(100.0, &cat.scenarios[0]),
             compute_scenario_status(100.0, &cat.scenarios[1]),
         ];
-        let result = render_category_box(cat, &statuses, false, false);
+        let result = render_category_box(cat, &statuses, false, false, crate::theme::Theme::Dark);
         assert!(result.contains("SMART HOME"));
         assert!(result.contains("│"));
         assert!(result.contains("─"));
@@ -793,7 +820,7 @@ mod tests {
     fn test_render_category_box_minimal() {
         let cat = &CAT_NEXTGEN;
         let statuses = vec![compute_scenario_status(1000.0, &cat.scenarios[0])];
-        let result = render_category_box(cat, &statuses, true, true);
+        let result = render_category_box(cat, &statuses, true, true, crate::theme::Theme::Dark);
         assert!(result.contains("NEXT-GEN"));
         assert!(result.contains("│"));
     }
@@ -802,7 +829,7 @@ mod tests {
     fn test_render_scenario_row_colored_met() {
         let s = &CAT_COMMUNICATION.scenarios[0]; // 8 Mbps
         let status = compute_scenario_status(100.0, s);
-        let result = render_scenario_row(&status, false, false);
+        let result = render_scenario_row(&status, false, false, crate::theme::Theme::Dark);
         assert!(result.contains("8 Mbps"));
         assert!(result.contains("12x"));
     }
@@ -811,7 +838,7 @@ mod tests {
     fn test_render_scenario_row_minimal_not_met() {
         let s = &CAT_NEXTGEN.scenarios[2]; // 200 Mbps
         let status = compute_scenario_status(50.0, s);
-        let result = render_scenario_row(&status, true, true);
+        let result = render_scenario_row(&status, true, true, crate::theme::Theme::Dark);
         assert!(result.contains("200 Mbps"));
         // Not met should show FAIL or ❌ depending on emoji mode
         assert!(result.contains("FAIL") || result.contains("❌"));
@@ -819,7 +846,7 @@ mod tests {
 
     #[test]
     fn test_render_section_header_colored() {
-        let result = render_section_header(500.0, false, false);
+        let result = render_section_header(500.0, false, false, crate::theme::Theme::Dark);
         assert!(result.contains("500"));
         assert!(result.contains("Mbps"));
         assert!(result.contains("┌"));
@@ -827,28 +854,28 @@ mod tests {
 
     #[test]
     fn test_render_section_header_minimal() {
-        let result = render_section_header(100.0, true, true);
+        let result = render_section_header(100.0, true, true, crate::theme::Theme::Dark);
         assert!(result.contains("100"));
         assert!(result.contains("+"));
     }
 
     #[test]
     fn test_render_section_footer_colored() {
-        let result = render_section_footer(false, false);
+        let result = render_section_footer(false, false, crate::theme::Theme::Dark);
         assert!(result.contains("└"));
         assert!(result.contains("┘"));
     }
 
     #[test]
     fn test_render_section_footer_minimal() {
-        let result = render_section_footer(true, true);
+        let result = render_section_footer(true, true, crate::theme::Theme::Dark);
         assert!(result.contains("+"));
     }
 
     #[test]
     fn test_render_summary_colored() {
         let statuses = compute_all_statuses(500.0);
-        let result = render_summary(&statuses, 500.0, false, false);
+        let result = render_summary(&statuses, 500.0, false, false, crate::theme::Theme::Dark);
         assert!(result.contains("SUMMARY"));
         assert!(result.contains("500 Mbps"));
     }
@@ -856,7 +883,7 @@ mod tests {
     #[test]
     fn test_render_summary_minimal() {
         let statuses = compute_all_statuses(100.0);
-        let result = render_summary(&statuses, 100.0, true, true);
+        let result = render_summary(&statuses, 100.0, true, true, crate::theme::Theme::Dark);
         assert!(result.contains("SUMMARY"));
         assert!(result.contains("100"));
     }
@@ -865,7 +892,7 @@ mod tests {
     fn test_render_recommendation_warning_case() {
         // At 80 Mbps, most scenarios met but 4K upload (80 Mbps) has limited headroom
         let statuses = compute_all_statuses(80.0);
-        let result = render_recommendation(&statuses, 80.0, true, true);
+        let result = render_recommendation(&statuses, 80.0, true, true, crate::theme::Theme::Dark);
         assert!(result.contains("limited") || result.contains("headroom"));
     }
 
@@ -873,7 +900,7 @@ mod tests {
     fn test_render_recommendation_insufficient() {
         // At 5 Mbps, nothing is met
         let statuses = compute_all_statuses(5.0);
-        let result = render_recommendation(&statuses, 5.0, true, true);
+        let result = render_recommendation(&statuses, 5.0, true, true, crate::theme::Theme::Dark);
         // Should contain some indication of insufficient capacity
         assert!(!result.is_empty());
         // Check for the message content (insufficient or upgrading recommendation)
@@ -888,7 +915,8 @@ mod tests {
     #[test]
     fn test_render_recommendation_colored_warning() {
         let statuses = compute_all_statuses(80.0);
-        let result = render_recommendation(&statuses, 80.0, false, false);
+        let result =
+            render_recommendation(&statuses, 80.0, false, false, crate::theme::Theme::Dark);
         assert!(!result.is_empty());
         // Should contain recommendation text
         assert!(result.contains("headroom") || result.contains("upgrading"));
@@ -897,7 +925,7 @@ mod tests {
     #[test]
     fn test_render_recommendation_colored_insufficient() {
         let statuses = compute_all_statuses(5.0);
-        let result = render_recommendation(&statuses, 5.0, false, false);
+        let result = render_recommendation(&statuses, 5.0, false, false, crate::theme::Theme::Dark);
         // Should contain recommendation text
         assert!(!result.is_empty());
         // Check for warning icon or insufficient/upgrading text
@@ -975,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_format_scenario_grid_all_categories() {
-        let output = format_scenario_grid(200.0, true, false);
+        let output = format_scenario_grid(200.0, true, false, crate::theme::Theme::Dark);
         // All 5 categories should appear
         assert!(output.contains("COMMUNICATION"));
         assert!(output.contains("STREAMING"));
@@ -986,13 +1014,13 @@ mod tests {
 
     #[test]
     fn test_format_scenario_grid_has_summary() {
-        let output = format_scenario_grid(100.0, true, false);
+        let output = format_scenario_grid(100.0, true, false, crate::theme::Theme::Dark);
         assert!(output.contains("SUMMARY"));
     }
 
     #[test]
     fn test_format_scenario_grid_has_recommendation() {
-        let output = format_scenario_grid(100.0, true, false);
+        let output = format_scenario_grid(100.0, true, false, crate::theme::Theme::Dark);
         // Recommendation section should exist
         assert!(
             output.contains("Recommendation")

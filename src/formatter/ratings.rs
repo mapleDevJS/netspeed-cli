@@ -3,7 +3,6 @@
 use crate::terminal::no_emoji;
 use crate::theme::{Colors, Theme};
 use crate::types::TestResult;
-use owo_colors::OwoColorize;
 
 #[must_use]
 pub fn ping_rating(ping_ms: f64) -> &'static str {
@@ -44,18 +43,12 @@ pub fn colorize_rating(rating: &str, nc: bool, theme: Theme) -> String {
     if nc || no_emoji() {
         format!("[{rating}]")
     } else {
-        let (icon, colored) = match rating {
-            "Excellent" => ("⚡ ", Colors::good(rating, theme)),
-            "Great" => ("🔵  ", Colors::info(rating, theme)),
-            "Good" => ("🟢  ", Colors::good(rating, theme)),
-            "Fair" => ("🟡  ", Colors::warn(rating, theme)),
-            "Moderate" => ("🟠  ", Colors::warn(rating, theme)),
-            "Poor" => ("🔴  ", Colors::bad(rating, theme)),
-            "Slow" => ("🟤  ", Colors::bad(rating, theme)),
-            "Very Slow" => ("⚠️  ", Colors::bad(rating, theme)),
-            _ => ("", rating.to_string()),
-        };
-        format!("{icon}{colored}")
+        match rating {
+            "Excellent" | "Great" | "Good" => Colors::good(rating, theme),
+            "Fair" | "Moderate" => Colors::warn(rating, theme),
+            "Poor" | "Slow" | "Very Slow" => Colors::bad(rating, theme),
+            _ => rating.to_string(),
+        }
     }
 }
 
@@ -255,19 +248,15 @@ pub fn bufferbloat_colorized(
 #[must_use]
 pub fn format_overall_rating(result: &TestResult, nc: bool, theme: Theme) -> String {
     let rating = connection_rating(result);
-    if nc || no_emoji() {
+    if nc {
         format!("  Overall: {rating}")
     } else {
-        let (icon, colored) = match rating {
-            "Excellent" => ("⚡ ", Colors::good(rating, theme)),
-            "Great" => ("🔵  ", Colors::info(rating, theme)),
-            "Good" => ("🟢  ", Colors::good(rating, theme)),
-            "Fair" => ("🟡  ", Colors::warn(rating, theme)),
-            "Moderate" => ("🟠  ", Colors::warn(rating, theme)),
-            "Poor" => ("🔴  ", Colors::bad(rating, theme)),
-            _ => ("", rating.to_string()),
+        let colored = match rating {
+            "Excellent" | "Great" | "Good" => Colors::good(rating, theme),
+            "Fair" | "Moderate" => Colors::warn(rating, theme),
+            _ => Colors::bad(rating, theme),
         };
-        format!("  {} {icon}{colored}", "Overall:".dimmed())
+        format!("  {} {colored}", Colors::dimmed("Overall:", theme))
     }
 }
 

@@ -29,7 +29,7 @@ fn speed_color(speed_mbps: f64, theme: crate::theme::Theme) -> String {
     if speed_mbps >= 100.0 {
         Colors::good(&format!("{speed_mbps:.1} Mb/s"), theme)
     } else if speed_mbps >= 25.0 {
-        format!("{speed_mbps:.1} Mb/s").cyan().to_string()
+        Colors::info(&format!("{speed_mbps:.1} Mb/s"), theme)
     } else if speed_mbps >= 5.0 {
         Colors::warn(&format!("{speed_mbps:.1} Mb/s"), theme)
     } else {
@@ -130,13 +130,20 @@ impl Tracker {
         );
         let style = ProgressStyle::with_template(&tmpl)
             .unwrap()
-            .progress_chars("█░─");
+            .progress_chars("━░─");
 
         bar.set_style(style);
-        bar.set_prefix(if terminal::no_color() {
-            format!("{:<10}", format!("{}:", label))
+        let arrow = if label.starts_with('D') {
+            "↓ "
+        } else if label.starts_with('U') {
+            "↑ "
         } else {
-            format!("{:<10}", format!("{label}:").dimmed())
+            "  "
+        };
+        bar.set_prefix(if terminal::no_color() {
+            format!("{:<12}", format!("{arrow}{label}:"))
+        } else {
+            format!("{:<12}", format!("{arrow}{label}:").dimmed())
         });
         bar.set_message("starting...");
         bar.set_position(0);
@@ -158,14 +165,21 @@ impl Tracker {
         );
         let style = ProgressStyle::with_template(&tmpl)
             .unwrap()
-            .progress_chars("▓▒░▒▓▒░▒▓")
-            .tick_strings(&["▸", "▹", "►", "▻", "▼", "▽", "▾", "▿"]);
+            .progress_chars("━░─")
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠏"]);
 
         bar.set_style(style);
-        bar.set_prefix(if terminal::no_color() {
-            format!("{:<10}", format!("{}:", label))
+        let arrow = if label.starts_with('D') {
+            "↓ "
+        } else if label.starts_with('U') {
+            "↑ "
         } else {
-            format!("{:<10}", format!("{label}:").dimmed())
+            "  "
+        };
+        bar.set_prefix(if terminal::no_color() {
+            format!("{:<12}", format!("{arrow}{label}:"))
+        } else {
+            format!("{:<12}", format!("{arrow}{label}:").dimmed())
         });
         bar.set_message("starting...");
         bar.set_position(0);
@@ -247,7 +261,7 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::with_template("  {spinner} {msg}")
             .unwrap()
-            .tick_strings(&["·", "o", "O", "o"]),
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠏"]),
     );
     pb.set_message(message.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(120));
@@ -258,7 +272,7 @@ pub fn finish_ok(pb: &ProgressBar, message: &str, theme: crate::theme::Theme) {
     if terminal::no_color() {
         pb.finish_with_message(format!("  {message}"));
     } else {
-        pb.finish_with_message(format!("  {} {}", Colors::good("✓", theme), message));
+        pb.finish_with_message(format!("  {} {}", Colors::good("◉", theme), message));
     }
 }
 
@@ -267,7 +281,7 @@ pub fn finish_ok(pb: &ProgressBar, message: &str, theme: crate::theme::Theme) {
 pub fn reveal_grade(label: &str, grade_str: &str, grade_plain: &str, nc: bool) {
     if nc {
         std::thread::sleep(Duration::from_millis(300));
-        eprintln!("  {} → {grade_plain}", label.dimmed());
+        eprintln!("  {label} → {grade_plain}");
     } else {
         let spinner = create_spinner(&format!("Computing {label}..."));
         std::thread::sleep(Duration::from_millis(400));
@@ -284,20 +298,16 @@ pub fn reveal_scan_complete(
     theme: crate::theme::Theme,
 ) {
     if terminal::no_animation() {
-        eprintln!("  SCAN COMPLETE ✓ Scanned {sample_count} samples → {grade_plain}");
+        eprintln!("  ◉ Scanned {sample_count} samples  {grade_plain}");
     } else if nc {
         std::thread::sleep(Duration::from_millis(100));
-        eprintln!(
-            "  {} ✓ Scanned {sample_count} samples → Grade: {grade_plain}",
-            "SCAN COMPLETE".bold()
-        );
+        eprintln!("  ◉ Scanned {sample_count} samples  Grade: {grade_plain}");
     } else {
         std::thread::sleep(Duration::from_millis(100));
         eprintln!(
-            "  {} {} Scanned {} samples → {}",
-            Colors::info("SCAN COMPLETE", theme),
-            Colors::good("✓", theme),
-            sample_count.to_string().white().bold(),
+            "  {}  Scanned {} samples  {}",
+            Colors::good("◉", theme),
+            Colors::bold(&sample_count.to_string(), theme),
             grade_badge,
         );
     }
