@@ -4,261 +4,244 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [unreleased]
 
-## [Unreleased]
+### 🚀 Features
 
+- *(ui)* Enhance progress bar with sparkline, trend, adaptive width and implement dashboard format
+
+### 🐛 Bug Fixes
+
+- Restore full speed test workflow with animated progress bar
+- *(ci)* Remove invalid escaped quotes from stale and lockfile workflows
+- *(ci)* Remove invalid escaped quotes from auto-merge, release, and security-audit workflows
+- *(ci)* Add explicit permissions to all workflow jobs (CodeQL CWE-275)
+
+### 💼 Other
+
+- Update Homebrew formula to v0.9.0
+- Bump to v0.10.0
+
+### 🚜 Refactor
+
+- Improve architecture to 10/10 SOLID compliance
+- *(ui)* Replace direct owo_colors calls with Theme/Colors abstraction
+
+### 📚 Documentation
+
+- Update AGENTS.md with lint/qa/hooks commands
+
+### ⚙️ Miscellaneous Tasks
+
+- Sync local QA gate with CI and add pre-push hook
 ## [0.9.0] - 2026-04-27
 
-### Changed
+### 🐛 Bug Fixes
 
-- **SOLID architecture overhaul** (100/100 score): Extracted monolithic orchestrator into trait-based modules with dependency injection
-  - `services.rs`: async_trait service interfaces (ServerFetcher, ServerPinger, ServerSelector, IpDiscoverer, LatencyMonitor) with ServiceContainer DI
-  - `phases.rs`: phase functions using injected `Arc<dyn Services>` instead of direct module calls
-  - `storage.rs`: HistoryStorage blanket trait, MockStorage for testing
-  - `types.rs`: StatsService trait + DefaultStats, TestResultBuilder fluent API
-  - `task_runner.rs`: TestMetrics trait for result inspection
-  - `phase_runner.rs`: PhaseRunner trait abstraction
-  - `result_processor.rs`: ResultProcessor trait for output formatting
-  - `output.rs`: OutputStrategy trait for format resolution
-  - `http_client.rs`: HttpClient trait for HTTP abstraction
-  - Domain types: `measurement`, `reporting`, `server`, `speedtest` modules
-  - `FormatterFactory` for output format creation
-- **Zero performance regression**: Hot path (bandwidth_loop) uses no trait dispatch; dyn dispatch overhead (~10ns) negligible vs I/O (~500ms)
-- **TLS configuration options**: Custom CA certificates (`--ca-cert`), minimum TLS version (`--tls-version 1.2|1.3`), and certificate pinning (`--pin-certs`) for enterprise/secure network environments
-- **Config source refactoring**: CLI→config bridge using DIP pattern with semantic sub-structs
-- **Security automation**: detect-secrets, security hooks, audit tooling, cargo-deny integration
-- **CI improvements**: Changelog generation, commitlint, benchmark tracking, cross-platform test fixes
+- *(ci)* Resolve rustfmt, theme test, scorecard; prevent future failures
+- *(ci)* Pin rustfmt version, handle Windows file storage test
+- *(ci)* Make rustfmt non-blocking (cross-platform diff)
+- *(ci)* Continue-on-error at job level for Security Scorecard
+- *(ci)* Upgrade codeql-action to v4, guard post-scorecard steps
 
-### Fixed
+### ⚙️ Miscellaneous Tasks
 
-- Handle entries with empty timestamp in history display
-- Platform-specific theme resolution in tests (Windows Monochrome, NO_COLOR env)
-- Multiple CI workflow fixes (clippy pedantic, codeql v4, changelog, security report)
+- Remove .qwen folder from repository tracking
 
-### Removed
+### 🛡️ Security
 
-- Deprecated CLI flags (`--dashboard`, `--simple-output`, `--csv-output`) — use `--format` instead
-
-### Testing
-
-- 895 tests passing (+19 new), up from 876 pre-refactoring
-- Clippy pedantic clean, rustfmt clean
-- All platforms: macOS, Ubuntu, Windows
-
-## [0.8.0] - 2026-04-17
-
-### Changed
-
-- **Internal refactoring**: Renamed public types for clarity and consistency
-  - `CliArgs` → `Args`, `SpeedtestError` → `Error`, `BandwidthLoopState` → `LoopState`,
-    `SpeedProgress` → `Tracker`, `ConfigFile` → `File`
-  - `download_test` / `upload_test` → `download::run` / `upload::run`
-- **Stream deduplication**: Extracted `run_concurrent_streams()` into `bandwidth_loop`,
-   eliminating ~200 lines of duplicated spawn/collect/report logic between download and upload
-- **Bandwidth averaging**: Average speed now uses aggregate throughput (`total_bytes × 8 / duration`)
-  instead of per-stream averaging — more accurate representation of real-world bandwidth
-- **Cast safety**: Added explicit safety comments and clamps for float↔int casts throughout
-- **Config error handling**: Config file read/parse errors now logged to stderr instead of silently ignored
-- **Dependencies**: Updated 6 dependencies to latest versions
-  - `indicatif`: 0.17.11 → 0.18.4
-  - `clap_mangen`: 0.2.33 → 0.3.0
-  - `quick-xml`: 0.37.5 → 0.39.2
-  - `toml`: 0.9.12 → 1.1.2
-  - `criterion`: 0.5.1 → 0.8.2
-  - `actions/upload-artifact`: 4 → 7
-
-### Fixed
-
-- docs.rs build failure: `build.rs` now skips file generation on docs.rs (read-only filesystem)
-- Added `[package.metadata.docs.rs]` configuration to `Cargo.toml`
-- Benchmark compatibility with criterion 0.8 (`std::hint::black_box`)
-
-### Pending
-
-- `actions/download-artifact`: 7 → 8 (requires manual merge — workflow file)
-
+- Bump to v0.9.0
 ## [0.7.0] - 2026-04-07
 
-### Added
+### 🚀 Features
 
-- Dashboard UI: rich boxed layout with bar charts, sparkline history, and section dividers
-- Overall connection rating display below dashboard header
-- `--quiet` flag to suppress all progress output (JSON/CSV still go to stdout)
-- `bandwidth_loop` module for shared download/upload measurement state
-- Shell completion updates: added `dashboard` format and `--quiet` flag to all shells
+- Merge develop UI dashboard features into master
+- *(tls)* Add TLS configuration options
+- *(tls)* Add TLS configuration options
+- *(tls)* Add TLS configuration options
+- *(automation)* Add changelog generation, commitlint, and benchmark tracking
+- *(security)* Add detect-secrets, security hooks, and audit tooling
+- *(ci)* Add automation workflows for deps and changelog
+- Add machine-readable error output and config refactoring
+- Merge staging to master for v0.7.0 release
 
-### Changed
+### 🐛 Bug Fixes
 
-- Dashboard bar alignment: consistent `{:>8.2}` formatting for all speed values
-- Dashboard latency bar: direct scale (proportional to ping value) instead of inverted
-- Dashboard summary: restructured into separate "Download Summary" and "Upload Summary" sections
-- Dashboard history: Unicode block chars for sparklines instead of emojis for better TTY support
-- Homebrew formula SHA256 updated for v0.7.0 release
+- *(dashboard)* Fix broken box layout, alignment, and add overall rating
+- *(tests)* Correct upload failure assertion for HTTP 500 responses
+- Address audit findings - clippy lint, formatting, security policy, coverage threshold
+- Address formatting and add RUSTSEC-2026-0104 advisory ignore
+- Regenerate Cargo.lock clean
+- Ignore RUSTSEC-2025-0134 for unmaintained rustls-pemfile
+- *(ci)* Resolve action resolution and Windows path issues
+- *(tests)* Use temp files for --ca-cert tests (cross-platform)
+- *(tests)* Use cross-platform temp dir for ca-cert directory test
+- *(tests)* Add process ID to temp filenames to prevent race conditions
+- *(tests)* Use tempfile crate for guaranteed unique temp files
+- *(ci)* Lower coverage threshold to 65% for realistic targets
+- *(ci)* Reduce auto-merge check count to 1
+- *(ci)* Sync local CI with GitHub CI failures
+- *(clippy)* Address all pedantic clippy warnings
+- *(history)* Handle entries with empty timestamp in show()
+- *(ci)* Resolve clippy pedantic errors and Windows test failures
+- *(ci)* Handle git-cliff parse warnings and skipped security jobs
+- *(ci)* Set GH_TOKEN for changelog PR creation
+- *(ci)* Continue-on-error for changelog PR (org restricts GITHUB_TOKEN)
 
-### Fixed
+### 💼 Other
 
-- Dashboard ASCII box header: proper dynamic width and `═` padding (was producing empty borders)
-- Upload test assertion: HTTP 500 responses correctly return 0 total bytes
-- `bandwidth_loop` module: added to `lib.rs` (was missing, caused build failure on CI)
-- Man page and completions regenerated with updated CLI surface
+- *(staging)* Integrate TLS configuration and automation tooling
 
+### 🚜 Refactor
+
+- Resolve audit findings — CHANGELOG, SECURITY.md, and --dry-run flag
+- *(tests)* Rename clone tests to copy for accuracy
+- SOLID architecture overhaul with dependency injection
+
+### 📚 Documentation
+
+- *(readme)* Add dynamic version badges (crates.io, GitHub, Homebrew)
+- Add code of conduct and contributing guidelines
+- Update README with new output formats and dashboard examples
+- Add direct download links, platform notes, and verification steps to installation instructions
+
+### ⚙️ Miscellaneous Tasks
+
+- Update formula to v0.6.0
+- *(deps)* Bump actions/download-artifact from 4 to 8 (#14)
+- Sync develop with master v0.6.0
+- *(develop)* Bump to v0.7.0-SNAPSHOT
+- *(release)* Bump to v0.7.0
+- *(homebrew)* Update formula to v0.7.0
+- *(develop)* Bump to v0.8.0-SNAPSHOT
+- *(ci)* Update completions, man page, and track bandwidth_loop module
+- *(develop)* Bump to v0.8.0 development
+- Add staging to CI trigger branches
+- Add advisory ignore placeholders in deny.toml
+- Remove .qwen folder from repository
+- Add .qwen to gitignore
+- Apply whitespace and formatting fixes
+- Remove clippy-pedantic job to sync CI with local
+- Apply rustfmt whitespace fixes to man page
+- Update Homebrew tap to mapleDevJS/homebrew-netspeed-cli
+- Trigger CI rerun with changelog fix
+- *(release)* Bump to v0.7.0
 ## [0.6.0] - 2026-04-06
 
-### Changed
+### 🐛 Bug Fixes
 
-- **Dependencies**: Updated 5 dependencies
-  - `indicatif`: 0.17.11 → 0.18.4
-  - `clap_mangen`: 0.2.33 → 0.3.0
-  - `quick-xml`: 0.37.5 → 0.39.2
-  - `toml`: 0.9.12 → 1.1.2
-  - `criterion`: 0.5.1 → 0.8.2
-- CI: `actions/upload-artifact` 4 → 7
+- *(benchmarks)* Use std::hint::black_box for criterion 0.8 compat
 
-### Fixed
+### 💼 Other
 
-- Benchmark compatibility with criterion 0.8 (`std::hint::black_box`)
+- Bump clap_mangen from 0.2.33 to 0.3.0 (#5)
+- Bump quick-xml from 0.37.5 to 0.39.2 (#9)
+- Bump criterion from 0.5.1 to 0.8.2 (#8)
 
+### 📚 Documentation
+
+- *(changelog)* Add dependency updates and benchmark fixes
+
+### ⚙️ Miscellaneous Tasks
+
+- Update formula to v0.5.1
+- Bump actions/upload-artifact from 4 to 7 (#1)
+- *(release)* Bump to v0.6.0
 ## [0.5.1] - 2026-04-06
 
-### Fixed
+### 🐛 Bug Fixes
 
-- docs.rs build failure: `build.rs` now skips file generation on docs.rs (read-only filesystem)
-- Added `[package.metadata.docs.rs]` configuration to `Cargo.toml`
+- Resolve docs.rs build failure by skipping file generation on docs.rs
 
+### ⚙️ Miscellaneous Tasks
+
+- Update formula to v0.5.0
+- *(release)* Bump to v0.5.1
 ## [0.5.0] - 2026-04-06
 
-### Fixed
+### 🚀 Features
 
-- Release script: restored `main()` function call after refactoring
-- Release workflow: stabilized PR merge flow from develop to master
+- *(ui)* Add dashboard format, bar charts, and UX improvements
 
-## [0.4.0] - 2026-04-05
+### 🐛 Bug Fixes
 
-### Added
+- Make GitHub release creation idempotent
+- Restore main() function call in release.sh
+- Restore main() function call in release.sh
 
-- Criterion benchmark suite for core functions
-- Architecture documentation (`docs/architecture.md`)
-- `CHANGELOG.md` with structured release notes
-- CI: codecov-action v6, actions/checkout v6, download-artifact v7
-- Test isolation: serial tests for environment-dependent tests (`history`, `progress`)
+### 📚 Documentation
 
-### Changed
+- Add CHANGELOG.md
 
-- Adopted `thiserror` for unified error handling
-- Refactored ratings, servers, and stability modules into focused helpers
-- Split formatter module: separated pure formatting from I/O side-effects
-- Throttled hot-path operations (download/upload bandwidth sampling) to 50ms intervals
-- MSRV bumped to 1.86
-- Coverage threshold adjusted to 85%
-- Resolved all audit findings (score 8.2 → 9.2)
+### ⚙️ Miscellaneous Tasks
 
-### Fixed
-
-- Upload double-counting of uploaded bytes
-- Unneeded unit expression in HTTP test
-- rustfmt issues in CI
-- Release workflow: split create and upload steps, added `--clobber` for idempotent releases
-- Homebrew formula: pushed to master branch instead of develop
-- Cargo audit: replaced rustsec/audit-check with direct `cargo audit` command
-
+- *(release)* Bump to v0.5.0
 ## [0.3.0] - 2026-04-05
 
-### Added
+### 🚀 Features
 
-- Latency under load measurement with background pinger during download/upload tests
-- Jitter display alongside latency results
-- Peak speed detection (maximum burst speed for download and upload)
-- Connection quality rating (Excellent / Great / Good / Fair / Moderate / Poor)
-- Data transferred and test duration in summary footer
-- Real server distance using haversine formula with client geolocation from speedtest.net API
-- `NO_COLOR` environment variable support for disabling colored output
-- Crate-level documentation (`src/lib.rs`)
-- Persistent test history module (`src/history.rs`)
-- Progress bar module (`src/progress.rs`) with speed indicator and latency spinner
-- Formatter helper unit tests (101 total tests)
-- Mock network tests
-- Homebrew CI audit job
-- `develop` branch CI triggers
+- Add latency under load, jitter, peak speeds, and connection rating
 
-### Changed
+### 🐛 Bug Fixes
 
-- Bumped version from 0.2.2 to 0.3.0
-- Updated Rust edition from 2021 to 2024
-- Updated minimum Rust version from 1.70 to 1.85
-- Corrected author email to `alexey.ivanov.js@gmail.com`
-- Refactored `format_detailed` output from ~350 lines to ~80 lines with 8 sub-functions
-- Added `#[must_use]` annotations to ~15 pure functions
-- Added `# Errors` documentation to ~15 public `Result`-returning functions
-- Resolved all clippy warnings (85 pedantic warnings → 0)
-- Regenerated shell completions and man page for v0.3.0
+- Update edition to 2024, fix test version assertion, resolve clippy warnings
+- Resolve rustfmt edition 2024 formatting and fix brew-audit CI job
 
-### Removed
+### 📚 Documentation
 
-- `--mini` flag (dead code)
-- `--secure` flag (dead code)
-- `--no-pre-allocate` flag (dead code)
-- `--share` flag and entire share feature (`src/share.rs` deleted)
-- `share_url` field from `TestResult` and `CsvOutput`
-- Unused dependencies: `md-5`, `digest`, `hex`
-- Dead code: `TimeoutError`, `ServerListOutput`, `ServerListItem`, `calculate_server_distances`, `validate_ip`, `build_timeout_duration`, `build_base_url`
+- Improve Homebrew installation instructions with clearer tap workflow
+- Update README with new features and correct examples
 
-### Fixed
+### 🧪 Testing
 
-- Homebrew formula now passes `brew audit --strict --online`
-- CI brew-audit job uses proper tap structure instead of standalone formula file
-- Release workflow handles duplicate GitHub releases gracefully
-- Test version assertion updated from `0.2.x` to `0.3.x`
+- Add formatter helper tests and mock network tests
 
-### Distribution
+### ⚙️ Miscellaneous Tasks
 
-- Published to [crates.io](https://crates.io/crates/netspeed-cli) as `netspeed-cli 0.3.0`
-- Homebrew tap updated: `brew install mapleDevJS/homebrew-netspeed-cli/netspeed-cli`
-- GitHub Release: [v0.3.0](https://github.com/mapleDevJS/netspeed-cli/releases/tag/v0.3.0)
-
+- Update Homebrew formula to v0.2.2
+- Remove dead flags and share feature
+- Remove unused dependencies
+- Improve Homebrew compliance and CI workflow
+- Regenerate completions and man page
+- Bump version to 0.3.0
+- Add develop to CI triggers and update formula to v0.3.0
 ## [0.2.2] - 2026-04-04
 
-### Fixed
+### 🐛 Bug Fixes
 
-- Switched from `native-tls` to `rustls-tls` for cross-platform TLS compatibility
-
+- Switch from native-tls to rustls-tls for cross-platform compatibility
 ## [0.2.1] - 2026-04-04
 
-### Fixed
+### 🐛 Bug Fixes
 
-- Linux compatibility fix
-
+- Remove unused deps, add native-tls for Linux compatibility
 ## [0.2.0] - 2026-04-04
 
-### Added
+### 💼 Other
 
-- CI/CD pipeline with GitHub Actions
-- More accurate speed measurement
-
+- V0.2.0 - CI/CD, accurate speed measurement, crates.io ready
 ## [0.1.3] - 2026-04-04
 
-### Fixed
+### 💼 Other
 
-- Minor fixes
-
+- V0.1.3
 ## [0.1.2] - 2026-04-04
 
-### Fixed
+### 🐛 Bug Fixes
 
-- Download speed always returning 0
+- Resolve download speed always returning 0
 
+### 💼 Other
+
+- Version 0.1.1 -> 0.1.2
 ## [0.1.1] - 2026-04-04
 
-### Fixed
+### 🐛 Bug Fixes
 
-- XML parsing error and output formatting
+- Resolve XML parse error and fix output formatting
 
+### 💼 Other
+
+- Version 0.1.0 -> 0.1.1
 ## [0.1.0] - 2026-04-04
-
-### Added
-
-- Initial release
-- Download, upload, and latency testing against speedtest.net servers
-- Multiple output formats: simple, JSON, CSV
-- Shell completions (bash, zsh, fish, PowerShell, Elvish)
-- Man page
-- Server selection and listing
+<!-- generated by git-cliff -->
