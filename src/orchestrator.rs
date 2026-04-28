@@ -529,7 +529,14 @@ mod tests {
 
     #[test]
     fn test_storage_builder_defaults() {
-        let builder = StorageBuilder::new();
+        let shared = std::sync::Arc::new(crate::storage::MockStorage::new());
+        let saver = shared.clone() as std::sync::Arc<dyn crate::storage::SaveResult + Send + Sync>;
+        let history =
+            shared.clone() as std::sync::Arc<dyn crate::storage::LoadHistory + Send + Sync>;
+
+        let builder = StorageBuilder::new()
+            .with_saver_arc(saver)
+            .with_history_arc(history);
         let (saver, history) = builder.build();
         <dyn crate::storage::SaveResult>::save(&*saver, &crate::types::TestResult::default())
             .unwrap();
