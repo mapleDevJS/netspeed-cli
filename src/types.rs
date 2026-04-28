@@ -548,6 +548,32 @@ mod tests {
     }
 
     #[test]
+    fn test_uuid_v4_unique_concurrent() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        let ids: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let threads: Vec<_> = (0..32)
+            .map(|_| {
+                let ids = Arc::clone(&ids);
+                thread::spawn(move || {
+                    let id = uuid_v4();
+                    ids.lock().unwrap().insert(id);
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(
+            ids.lock().unwrap().len(),
+            32,
+            "concurrent uuid_v4 produced duplicates"
+        );
+    }
+
+    #[test]
     fn test_client_location_serialization() {
         let loc = ClientLocation {
             lat: 40.7128,
@@ -717,13 +743,17 @@ fn uuid_v4() -> String {
 fn rand_simple() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
     static STATE: AtomicU64 = AtomicU64::new(0x123456789ABCDEF0);
-    let mut state = STATE.load(Ordering::Relaxed);
-    if state == 0 {
-        state = 0x123456789ABCDEF0;
+    loop {
+        let prev = STATE.load(Ordering::Relaxed);
+        let mut next = if prev == 0 { 0x123456789ABCDEF0 } else { prev };
+        next ^= next << 13;
+        next ^= next >> 7;
+        next ^= next << 17;
+        if STATE
+            .compare_exchange_weak(prev, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return next;
+        }
     }
-    state ^= state << 13;
-    state ^= state >> 7;
-    state ^= state << 17;
-    STATE.store(state, Ordering::Relaxed);
-    state
 }

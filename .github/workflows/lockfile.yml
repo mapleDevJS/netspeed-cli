@@ -3,7 +3,7 @@ name: Lock File Check
 on:
   schedule:
     # Run weekly on Monday at 6 AM UTC
-    - cron: \"0 6 * * 1\"
+    - cron: "0 6 * * 1"
   workflow_dispatch: # Allow manual trigger
   push:
     branches:
@@ -32,14 +32,14 @@ jobs:
         run: |
           # Fetch dependencies with locked flag - fails if lock is stale
           if ! cargo fetch --locked 2>&1; then
-            echo \"\"
-            echo \"::error::Cargo.lock is stale or out of sync with Cargo.toml\"
-            echo \"\"
-            echo \"Run 'cargo update' to refresh the lock file and commit the changes.\"
-            echo \"\"
+            echo ""
+            echo "::error::Cargo.lock is stale or out of sync with Cargo.toml"
+            echo ""
+            echo "Run 'cargo update' to refresh the lock file and commit the changes."
+            echo ""
             exit 1
           fi
-          echo \"Cargo.lock is up-to-date ✓\"
+          echo "Cargo.lock is up-to-date ✓"
 
       - name: Check for dependency updates
         run: |
@@ -48,12 +48,12 @@ jobs:
 
           if [ -s /tmp/cargo-outdated.json ]; then
             # Count updates
-            UPDATE_COUNT=$(cat /tmp/cargo-outdated.json | grep -o '\"update\"' | wc -l)
-            if [ \"$UPDATE_COUNT\" -gt 0 ]; then
-              echo \"\"
-              echo \"Found $UPDATE_COUNT dependency updates available.\"
-              echo \"Consider running 'cargo update' to refresh Cargo.lock.\"
-              echo \"Dependabot will create PRs for these automatically.\"
+            UPDATE_COUNT=$(cat /tmp/cargo-outdated.json | grep -o '"update"' | wc -l)
+            if [ "$UPDATE_COUNT" -gt 0 ]; then
+              echo ""
+              echo "Found $UPDATE_COUNT dependency updates available."
+              echo "Consider running 'cargo update' to refresh Cargo.lock."
+              echo "Dependabot will create PRs for these automatically."
             fi
           fi
 

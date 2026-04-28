@@ -1,5 +1,7 @@
+use crate::common;
 use crate::error::Error;
 use crate::terminal;
+use crate::theme::{Colors, Theme};
 use crate::types::TestResult;
 use directories::ProjectDirs;
 use owo_colors::OwoColorize;
@@ -192,7 +194,7 @@ pub fn load() -> Result<Vec<Entry>, Error> {
 ///
 /// Returns [`Error::IoError`] if reading the history file fails.
 /// Returns [`Error::ParseJson`] if the history file contains invalid JSON.
-pub fn show() -> Result<(), Error> {
+pub fn show(theme: Theme) -> Result<(), Error> {
     let history = load()?;
 
     if history.is_empty() {
@@ -200,51 +202,189 @@ pub fn show() -> Result<(), Error> {
         return Ok(());
     }
 
-    let nc = terminal::no_color();
+    let nc = terminal::no_color() || theme == Theme::Monochrome;
+    let term_w = common::get_terminal_width().unwrap_or(90) as usize;
+    let box_w = term_w.min(80);
+    let inner_w = box_w.saturating_sub(4); // 2 leading spaces + 2 border chars
+    let content_w = inner_w.saturating_sub(4); // 2 spaces each side inside box
+
+    let count = history.len();
+    let left_text = "◉ TEST HISTORY";
+    let right_text = format!("{count} entries");
+    let pad = content_w.saturating_sub(left_text.chars().count() + right_text.chars().count());
+    let spaces = " ".repeat(pad);
+
+    let top_border = format!("  ┌{}┐", "─".repeat(inner_w));
+    let mid_border = format!("  └{}┘", "─".repeat(inner_w));
+
     println!();
+    println!("{top_border}");
     if nc {
-        println!("  TEST HISTORY");
+        println!("  │  {left_text}{spaces}{right_text}  │");
     } else {
-        println!("  {}", "TEST HISTORY".bold().underline());
+        let left_col = format!(
+            "{} {}",
+            Colors::muted("◉", theme),
+            Colors::header("TEST HISTORY", theme)
+        );
+        let right_col = Colors::muted(&right_text, theme);
+        println!("  │  {left_col}{spaces}{right_col}  │");
     }
-    println!(
-        "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-        "Date", "Sponsor", "Ping", "Download", "Upload"
-    );
+    println!("{mid_border}");
+    println!();
 
-    for entry in history.iter().rev() {
-        let date = if entry.timestamp.len() >= 10 {
-            &entry.timestamp[0..10]
-        } else {
-            entry.timestamp.as_str()
-        };
-        let ping = entry.ping.map_or("-".to_string(), |p| format!("{p:.1} ms"));
-        let dl = entry
-            .download
-            .map_or("-".to_string(), |d| format!("{:.2} Mb/s", d / 1_000_000.0));
-        let ul = entry
-            .upload
-            .map_or("-".to_string(), |u| format!("{:.2} Mb/s", u / 1_000_000.0));
+    // Column widths (plain)
+    const DATE_W: usize = 10;
+    const DL_W: usize = 12;
+    const UL_W: usize = 12;
+    const PING_W: usize = 9;
+    const SERVER_W: usize = 18;
 
-        let ping_display = if nc { ping } else { format!("{}", ping.cyan()) };
-        let dl_display = if nc { dl } else { format!("{}", dl.green()) };
-        let ul_display = if nc { ul } else { format!("{}", ul.yellow()) };
-
+    // Header row
+    let h_date = format!("{:<DATE_W$}", "Date");
+    let h_dl = format!("{:>DL_W$}", "↓ Download");
+    let h_ul = format!("{:>UL_W$}", "↑ Upload");
+    let h_ping = format!("{:>PING_W$}", "Ping");
+    let h_server = format!("{:<SERVER_W$}", "Server");
+    if nc {
+        println!("  {h_date}  {h_dl}  {h_ul}  {h_ping}  {h_server}");
+    } else {
         println!(
-            "  {:<20}  {:<15}  {:>10}  {:>12}  {:>12}",
-            date,
-            if entry.sponsor.len() > 15 {
-                &entry.sponsor[0..12]
-            } else {
-                &entry.sponsor
-            },
-            ping_display,
-            dl_display,
-            ul_display
+            "  {}  {}  {}  {}  {}",
+            Colors::muted(&h_date, theme),
+            Colors::muted(&h_dl, theme),
+            Colors::muted(&h_ul, theme),
+            Colors::muted(&h_ping, theme),
+            Colors::muted(&h_server, theme),
         );
     }
 
+    // Thin dashed separator
+    let sep_len = DATE_W + 2 + DL_W + 2 + UL_W + 2 + PING_W + 2 + SERVER_W;
+    let sep = format!("  {}", "╌".repeat(sep_len));
+    if nc {
+        println!("{sep}");
+    } else {
+        println!("{}", sep.dimmed());
+    }
+
+    // Data rows — newest first
+    for entry in history.iter().rev() {
+        let date_plain = if entry.timestamp.len() >= 10 {
+            entry.timestamp[0..10].to_string()
+        } else {
+            entry.timestamp.clone()
+        };
+
+        let dl_mbps = entry.download.map(|d| d / 1_000_000.0);
+        let ul_mbps = entry.upload.map(|u| u / 1_000_000.0);
+
+        let dl_plain = dl_mbps.map_or("-".to_string(), |d| format!("{d:.1} Mb/s"));
+        let ul_plain = ul_mbps.map_or("-".to_string(), |u| format!("{u:.1} Mb/s"));
+        let ping_plain = entry.ping.map_or("-".to_string(), |p| format!("{p:.0} ms"));
+
+        let sponsor_truncated = if entry.sponsor.chars().count() > SERVER_W {
+            let truncated: String = entry.sponsor.chars().take(SERVER_W - 1).collect();
+            format!("{truncated}…")
+        } else {
+            entry.sponsor.clone()
+        };
+
+        // Pad plain strings to column widths BEFORE colorizing (ANSI-safe)
+        let date_col = format!("{date_plain:<DATE_W$}");
+        let dl_col_plain = format!("{dl_plain:>DL_W$}");
+        let ul_col_plain = format!("{ul_plain:>UL_W$}");
+        let ping_col_plain = format!("{ping_plain:>PING_W$}");
+        let server_col = format!("{sponsor_truncated:<SERVER_W$}");
+
+        if nc {
+            println!(
+                "  {date_col}  {dl_col_plain}  {ul_col_plain}  {ping_col_plain}  {server_col}"
+            );
+        } else {
+            let date_colored = Colors::muted(&date_col, theme);
+            let dl_colored = color_speed(&dl_col_plain, dl_mbps, theme);
+            let ul_colored = color_speed(&ul_col_plain, ul_mbps, theme);
+            let ping_colored = color_ping(&ping_col_plain, entry.ping, theme);
+            let server_colored = server_col.dimmed().to_string();
+            println!(
+                "  {date_colored}  {dl_colored}  {ul_colored}  {ping_colored}  {server_colored}"
+            );
+        }
+    }
+
+    // Sparkline section — last 20 entries in chronological order
+    let spark_start = if history.len() > 20 {
+        history.len() - 20
+    } else {
+        0
+    };
+    let spark_slice = &history[spark_start..];
+    let dl_vals: Vec<f64> = spark_slice
+        .iter()
+        .filter_map(|e| e.download.map(|d| d / 1_000_000.0))
+        .collect();
+    let ul_vals: Vec<f64> = spark_slice
+        .iter()
+        .filter_map(|e| e.upload.map(|u| u / 1_000_000.0))
+        .collect();
+
+    if !dl_vals.is_empty() || !ul_vals.is_empty() {
+        let n = spark_slice.len();
+        if nc {
+            println!("{sep}");
+        } else {
+            println!("{}", sep.dimmed());
+        }
+        if !dl_vals.is_empty() {
+            let dl_spark = sparkline(&dl_vals);
+            if nc {
+                println!("  ↓  {dl_spark}  Download trend ({n} tests)");
+            } else {
+                println!(
+                    "  {}  {}  {}",
+                    Colors::muted("↓", theme),
+                    Colors::info(&dl_spark, theme),
+                    Colors::muted(&format!("Download trend ({n} tests)"), theme),
+                );
+            }
+        }
+        if !ul_vals.is_empty() {
+            let ul_spark = sparkline(&ul_vals);
+            if nc {
+                println!("  ↑  {ul_spark}  Upload trend");
+            } else {
+                println!(
+                    "  {}  {}  {}",
+                    Colors::muted("↑", theme),
+                    Colors::good(&ul_spark, theme),
+                    Colors::muted("Upload trend", theme),
+                );
+            }
+        }
+    }
+
+    println!();
     Ok(())
+}
+
+fn color_speed(col: &str, mbps: Option<f64>, theme: Theme) -> String {
+    match mbps {
+        None => col.dimmed().to_string(),
+        Some(v) if v >= 100.0 => Colors::good(col, theme),
+        Some(v) if v >= 25.0 => Colors::info(col, theme),
+        Some(v) if v >= 5.0 => Colors::warn(col, theme),
+        Some(_) => Colors::bad(col, theme),
+    }
+}
+
+fn color_ping(col: &str, ping: Option<f64>, theme: Theme) -> String {
+    match ping {
+        None => col.dimmed().to_string(),
+        Some(v) if v <= 20.0 => Colors::good(col, theme),
+        Some(v) if v <= 50.0 => Colors::warn(col, theme),
+        Some(_) => Colors::bad(col, theme),
+    }
 }
 
 /// Compute average download and upload speeds from history (last 20 entries).
@@ -281,7 +421,12 @@ pub fn get_averages() -> Option<(f64, f64)> {
 /// Format historical comparison as a string for display.
 /// Returns None if insufficient history data.
 #[must_use]
-pub fn format_comparison(download_mbps: f64, upload_mbps: f64, nc: bool) -> Option<String> {
+pub fn format_comparison(
+    download_mbps: f64,
+    upload_mbps: f64,
+    nc: bool,
+    theme: Theme,
+) -> Option<String> {
     let (download_avg, upload_avg) = get_averages()?;
 
     // Use the combined metric: dl + ul as a single score
@@ -298,24 +443,23 @@ pub fn format_comparison(download_mbps: f64, upload_mbps: f64, nc: bool) -> Opti
         if nc {
             "~ On par with your history".to_string()
         } else {
-            "~ On par with your history".bright_black().to_string()
+            Colors::muted("~ On par with your history", theme)
         }
     } else if pct_change > 0.0 {
         if nc {
             format!("↑ {pct_change:.0}% faster than your average")
         } else {
-            format!("↑ {pct_change:.0}% faster than your average")
-                .green()
-                .to_string()
+            Colors::good(
+                &format!("↑ {pct_change:.0}% faster than your average"),
+                theme,
+            )
         }
     } else {
         let abs_pct = pct_change.abs();
         if nc {
             format!("↓ {abs_pct:.0}% slower than your average")
         } else {
-            format!("↓ {abs_pct:.0}% slower than your average")
-                .red()
-                .to_string()
+            Colors::bad(&format!("↓ {abs_pct:.0}% slower than your average"), theme)
         }
     };
 
@@ -989,7 +1133,7 @@ mod tests {
     fn test_format_comparison_with_insufficient_history() {
         // format_comparison calls get_averages() which uses actual history path
         // Test that it gracefully returns None when there's no history
-        let result = format_comparison(50_000_000.0, 25_000_000.0, true);
+        let result = format_comparison(50_000_000.0, 25_000_000.0, true, crate::theme::Theme::Dark);
         // Result is None when there's no history data
         assert!(result.is_none() || result.is_some());
     }
@@ -1050,7 +1194,7 @@ mod tests {
     #[serial]
     fn test_show_history_no_panic() {
         // show uses load() - should not panic even with malformed entries
-        let result = show();
+        let result = show(crate::theme::Theme::Dark);
         assert!(result.is_ok());
     }
 

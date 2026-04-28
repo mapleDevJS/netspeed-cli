@@ -21,6 +21,7 @@ fn main() {
     };
 
     if args.no_emoji {
+        // SAFETY: called before any threads are spawned; set_var is UB only under data races.
         unsafe {
             std::env::set_var("NO_EMOJI", "1");
         }
@@ -66,13 +67,4 @@ async fn run_speedtest(
             exit_codes::INTERNAL_ERROR
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_main_handles_args_parsing_error() {}
-
-    #[test]
-    fn test_run_speedtest_success() {}
 }

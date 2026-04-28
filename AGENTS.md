@@ -27,9 +27,15 @@ cargo build          # Build
 cargo test           # Run tests
 cargo clippy --all-targets --all-features -- -D warnings  # Lint (mirrors CI)
 cargo fmt --check    # Format check
-just qa              # Full CI gate: fmt + clippy + tests
+just lint            # Format + clippy (mirrors CI exactly)
+just qa              # Full CI gate: fmt + clippy + tests + doc + deny
+just install-hooks   # Install pre-push hook (runs `just qa` before every push)
 netspeed-cli         # Run speed test
 ```
+
+## Pre-Push Hook
+
+A git pre-push hook is available that runs `just qa` before every push. Install once with `just install-hooks`. The hook prevents pushes that would fail CI.
 
 ## Architecture
 

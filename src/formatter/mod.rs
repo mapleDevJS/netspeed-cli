@@ -27,9 +27,13 @@ pub struct SkipState {
 /// Build a section header with consistent formatting.
 fn section_header(title: &str, nc: bool, theme: Theme) -> String {
     if nc {
-        format!("  {title}")
+        format!("  ◈ {title}")
     } else {
-        format!("  {}", Colors::header(title, theme))
+        format!(
+            "  {} {}",
+            Colors::muted("◈", theme),
+            Colors::header(title, theme)
+        )
     }
 }
 
@@ -239,7 +243,7 @@ impl Formatter for OutputFormat {
     }
 
     fn format_list(&self, servers: &[crate::types::Server]) -> Result<(), crate::error::Error> {
-        sections::format_list(servers).map_err(crate::error::Error::IoError)
+        sections::format_list(servers, Theme::Dark).map_err(crate::error::Error::IoError)
     }
 }
 
@@ -381,17 +385,13 @@ pub fn format_compact(
         result.upload,
         profile,
     );
+    let term_w = common::get_terminal_width().unwrap_or(90) as usize;
 
     eprintln!();
-    eprintln!("{}", section_header("TEST RESULTS", nc, theme));
-    eprintln!("{}", ratings::format_overall_rating(result, nc, theme));
-    if !nc {
-        eprintln!(
-            "  {} {}",
-            "Grade:".dimmed(),
-            overall_grade.color_str(nc, theme)
-        );
-    }
+    eprintln!(
+        "{}",
+        dashboard::boxed_header(&overall_grade, nc, theme, term_w)
+    );
     eprintln!();
 
     sections::format_latency_section(result, nc, theme);
@@ -425,7 +425,7 @@ pub fn format_compact(
     if dl_bytes > 0 {
         eprintln!(
             "  {:>14}:   {} in {:.1}s",
-            "Download".dimmed(),
+            Colors::dimmed("Download", theme),
             common::format_data_size(dl_bytes),
             dl_duration
         );
@@ -433,7 +433,7 @@ pub fn format_compact(
     if ul_bytes > 0 {
         eprintln!(
             "  {:>14}:   {} in {:.1}s",
-            "Upload".dimmed(),
+            Colors::dimmed("Upload", theme),
             common::format_data_size(ul_bytes),
             ul_duration
         );
@@ -480,27 +480,22 @@ pub fn format_detailed(
         result.upload,
         profile,
     );
+    let term_w = common::get_terminal_width().unwrap_or(90) as usize;
 
-    if nc {
-        eprintln!("\n  TEST RESULTS");
-    } else {
-        eprintln!("\n  {}", Colors::header("TEST RESULTS", theme));
-    }
-    eprintln!("{}", ratings::format_overall_rating(result, nc, theme));
-    if !nc {
-        eprintln!(
-            "  {} {}",
-            "Grade:".dimmed(),
-            overall_grade.color_str(nc, theme)
-        );
-    }
+    eprintln!();
+    eprintln!(
+        "{}",
+        dashboard::boxed_header(&overall_grade, nc, theme, term_w)
+    );
     eprintln!();
 
     sections::format_latency_section(result, nc, theme);
+    eprintln!();
     sections::format_download_section(result, bytes, nc, skipped.download, theme);
+    eprintln!();
     sections::format_upload_section(result, bytes, nc, skipped.upload, theme);
     sections::format_connection_info(result, nc, theme);
-    sections::format_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc);
+    sections::format_test_summary(dl_bytes, ul_bytes, dl_duration, ul_duration, nc, theme);
 
     eprintln!();
     if nc {
@@ -657,7 +652,7 @@ pub fn format_verbose_sections(
     if profile.show_history() {
         let dl_mbps = result.download.map_or(0.0, |d| d / 1_000_000.0);
         let ul_mbps = result.upload.map_or(0.0, |u| u / 1_000_000.0);
-        if let Some(comparison) = crate::history::format_comparison(dl_mbps, ul_mbps, nc) {
+        if let Some(comparison) = crate::history::format_comparison(dl_mbps, ul_mbps, nc, theme) {
             eprintln!();
             eprintln!("  {comparison}");
         }
@@ -674,8 +669,8 @@ pub fn format_verbose_sections(
 pub struct FormatterFactory;
 
 impl FormatterFactory {
-    /// Create a formatter from config format option.
-    pub fn create(format: Option<crate::config::Format>) -> Box<dyn Formatter> {
+    /// Create a formatter from config format option and theme.
+    pub fn create(format: Option<crate::config::Format>, theme: Theme) -> Box<dyn Formatter> {
         match format {
             Some(crate::config::Format::Json) => Box::new(OutputFormat::Json),
             Some(crate::config::Format::Jsonl) => Box::new(OutputFormat::Jsonl),
@@ -683,12 +678,8 @@ impl FormatterFactory {
                 delimiter: ',',
                 header: true,
             }),
-            Some(crate::config::Format::Simple) => Box::new(OutputFormat::Simple {
-                theme: crate::theme::Theme::Dark,
-            }),
-            Some(crate::config::Format::Minimal) => Box::new(OutputFormat::Minimal {
-                theme: crate::theme::Theme::Dark,
-            }),
+            Some(crate::config::Format::Simple) => Box::new(OutputFormat::Simple { theme }),
+            Some(crate::config::Format::Minimal) => Box::new(OutputFormat::Minimal { theme }),
             Some(crate::config::Format::Compact) => Box::new(OutputFormat::Compact {
                 dl_bytes: 0,
                 ul_bytes: 0,
@@ -696,7 +687,7 @@ impl FormatterFactory {
                 ul_duration: 0.0,
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
-                theme: crate::theme::Theme::Dark,
+                theme,
             }),
             Some(crate::config::Format::Detailed) => Box::new(OutputFormat::Detailed {
                 dl_bytes: 0,
@@ -707,7 +698,7 @@ impl FormatterFactory {
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
                 minimal: false,
-                theme: crate::theme::Theme::Dark,
+                theme,
             }),
             Some(crate::config::Format::Dashboard) => Box::new(OutputFormat::Dashboard {
                 dl_mbps: 0.0,
@@ -720,11 +711,9 @@ impl FormatterFactory {
                 ul_duration: 0.0,
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
-                theme: crate::theme::Theme::Dark,
+                theme,
             }),
-            None => Box::new(OutputFormat::Simple {
-                theme: crate::theme::Theme::Dark,
-            }),
+            None => Box::new(OutputFormat::Simple { theme }),
         }
     }
 }

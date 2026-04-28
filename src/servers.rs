@@ -258,7 +258,7 @@ pub async fn measure_latency_under_load(
     let config = TestConfig::default();
     let poll_interval = config.latency_poll_interval_ms;
 
-    while !stop.load(Ordering::Relaxed) {
+    while !stop.load(Ordering::Acquire) {
         let start = std::time::Instant::now();
         let response = client
             .get(ServerEndpoints::from_server_url(&server_url).latency())

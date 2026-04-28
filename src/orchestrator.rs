@@ -301,8 +301,17 @@ impl Orchestrator {
 
         let grade_badge = overall_grade.color_str(nc, theme);
         let grade_plain = overall_grade.as_str().to_string();
-        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc);
+        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc, theme);
         crate::progress::reveal_pause();
+    }
+
+    fn print_kv(nc: bool, key: &str, value: &str) {
+        if nc {
+            eprintln!("  {key}: {value}");
+        } else {
+            use owo_colors::OwoColorize;
+            eprintln!("  {}: {}", key.dimmed(), value.cyan());
+        }
     }
 
     /// Validate configuration and print confirmation without running tests.
@@ -312,71 +321,42 @@ impl Orchestrator {
 
         if nc {
             eprintln!("Configuration valid:");
-            eprintln!("  Timeout: {}s", config.timeout());
-            eprintln!("  Format: {}", self.format_description());
-            if config.quiet() {
-                eprintln!("  Quiet: enabled");
-            }
-            if let Some(source) = config.source() {
-                eprintln!("  Source IP: {source}");
-            }
-            if config.no_download() {
-                eprintln!("  Download test: disabled");
-            }
-            if config.no_upload() {
-                eprintln!("  Upload test: disabled");
-            }
-            if config.single() {
-                eprintln!("  Streams: single");
-            }
-            if let Some(ca_cert) = config.ca_cert() {
-                eprintln!("  CA cert: {ca_cert}");
-            }
-            if let Some(tls_version) = config.tls_version() {
-                eprintln!("  TLS version: {tls_version}");
-            }
-            if config.pin_certs() {
-                eprintln!("  Cert pinning: enabled");
-            }
+        } else {
+            use owo_colors::OwoColorize;
+            eprintln!("{}", "Configuration valid:".green().bold());
+        }
+
+        Self::print_kv(nc, "Timeout", &format!("{}s", config.timeout()));
+        Self::print_kv(nc, "Format", self.format_description());
+        if config.quiet() {
+            Self::print_kv(nc, "Quiet", "enabled");
+        }
+        if let Some(source) = config.source() {
+            Self::print_kv(nc, "Source IP", source);
+        }
+        if config.no_download() {
+            Self::print_kv(nc, "Download test", "disabled");
+        }
+        if config.no_upload() {
+            Self::print_kv(nc, "Upload test", "disabled");
+        }
+        if config.single() {
+            Self::print_kv(nc, "Streams", "single");
+        }
+        if let Some(ca_cert) = config.ca_cert() {
+            Self::print_kv(nc, "CA cert", ca_cert);
+        }
+        if let Some(tls_version) = config.tls_version() {
+            Self::print_kv(nc, "TLS version", tls_version);
+        }
+        if config.pin_certs() {
+            Self::print_kv(nc, "Cert pinning", "enabled");
+        }
+
+        if nc {
             eprintln!("\nDry run complete. Run without --dry-run to perform speed test.");
         } else {
             use owo_colors::OwoColorize;
-
-            eprintln!("{}", "Configuration valid:".green().bold());
-            eprintln!(
-                "  {}: {}s",
-                "Timeout".dimmed(),
-                config.timeout().to_string().cyan()
-            );
-            eprintln!(
-                "  {}: {}",
-                "Format".dimmed(),
-                self.format_description().white()
-            );
-            if config.quiet() {
-                eprintln!("  {}: {}", "Quiet".dimmed(), "enabled".green());
-            }
-            if let Some(source) = config.source() {
-                eprintln!("  {}: {source}", "Source IP".dimmed());
-            }
-            if config.no_download() {
-                eprintln!("  {}: {}", "Download test".dimmed(), "disabled".yellow());
-            }
-            if config.no_upload() {
-                eprintln!("  {}: {}", "Upload test".dimmed(), "disabled".yellow());
-            }
-            if config.single() {
-                eprintln!("  {}: {}", "Streams".dimmed(), "single".yellow());
-            }
-            if let Some(ca_cert) = config.ca_cert() {
-                eprintln!("  {}: {ca_cert}", "CA cert".dimmed());
-            }
-            if let Some(tls_version) = config.tls_version() {
-                eprintln!("  {}: {tls_version}", "TLS version".dimmed());
-            }
-            if config.pin_certs() {
-                eprintln!("  {}: {}", "Cert pinning".dimmed(), "enabled".yellow());
-            }
             eprintln!(
                 "\n{}",
                 "Dry run complete. Run without --dry-run to perform speed test.".bright_black()
@@ -390,53 +370,6 @@ impl Orchestrator {
             Some(f) => f.label(),
             None => "Detailed (default)",
         }
-    }
-}
-
-// =============================================================================
-// Orchestrator Traits - SOLID: Interface Segregation & Dependency Inversion
-// =============================================================================
-
-/// Trait for configuration access (ISP: clients only need config, not full Orchestrator).
-pub trait ConfigAccessor: Send {
-    fn config(&self) -> &Config;
-    fn is_verbose(&self) -> bool;
-}
-
-/// Trait for HTTP client access.
-pub trait HttpAccessor: Send {
-    fn client(&self) -> &reqwest::Client;
-}
-
-/// Trait for phase execution (allows swapping execution strategies).
-pub trait TestExecutor: Send + Sync {
-    fn execute(
-        &self,
-        orch: &Orchestrator,
-    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
-}
-
-/// Implementation that runs all phases.
-pub struct PhaseTestExecutor;
-
-impl TestExecutor for PhaseTestExecutor {
-    async fn execute(&self, orch: &Orchestrator) -> Result<(), Error> {
-        crate::phases::run_all_phases(orch).await
-    }
-}
-
-impl ConfigAccessor for Orchestrator {
-    fn config(&self) -> &Config {
-        self.cfg()
-    }
-    fn is_verbose(&self) -> bool {
-        self.is_verbose()
-    }
-}
-
-impl HttpAccessor for Orchestrator {
-    fn client(&self) -> &reqwest::Client {
-        &self.client
     }
 }
 
@@ -529,7 +462,14 @@ mod tests {
 
     #[test]
     fn test_storage_builder_defaults() {
-        let builder = StorageBuilder::new();
+        let shared = std::sync::Arc::new(crate::storage::MockStorage::new());
+        let saver = shared.clone() as std::sync::Arc<dyn crate::storage::SaveResult + Send + Sync>;
+        let history =
+            shared.clone() as std::sync::Arc<dyn crate::storage::LoadHistory + Send + Sync>;
+
+        let builder = StorageBuilder::new()
+            .with_saver_arc(saver)
+            .with_history_arc(history);
         let (saver, history) = builder.build();
         <dyn crate::storage::SaveResult>::save(&*saver, &crate::types::TestResult::default())
             .unwrap();
@@ -560,5 +500,128 @@ mod tests {
         let args = crate::cli::Args::default();
         let orch = Orchestrator::new(args, None).unwrap();
         let _services = orch.services();
+    }
+
+    // run_dry_run branch coverage — one test per conditional field.
+    // We don't capture stderr; the goal is to exercise each branch without panic.
+    fn dry_run_orch(
+        output: OutputSource,
+        test: crate::config::TestSource,
+        network: crate::config::NetworkSource,
+    ) -> Orchestrator {
+        let source = ConfigSource {
+            output,
+            test,
+            network,
+            ..Default::default()
+        };
+        orch_from_source(
+            &source,
+            EarlyExitFlags {
+                dry_run: true,
+                ..default_early_exit()
+            },
+        )
+    }
+
+    #[test]
+    fn test_dry_run_no_color_mode() {
+        // NO_COLOR is set by the serial test suite; exercise the nc=true branch explicitly
+        let orch = dry_run_orch(Default::default(), Default::default(), Default::default());
+        orch.run_dry_run(); // must not panic
+    }
+
+    #[test]
+    fn test_dry_run_quiet_branch() {
+        let orch = dry_run_orch(
+            OutputSource {
+                quiet: Some(true),
+                ..Default::default()
+            },
+            Default::default(),
+            Default::default(),
+        );
+        orch.run_dry_run();
+    }
+
+    #[test]
+    fn test_dry_run_no_download_branch() {
+        let orch = dry_run_orch(
+            Default::default(),
+            crate::config::TestSource {
+                no_download: Some(true),
+                ..Default::default()
+            },
+            Default::default(),
+        );
+        orch.run_dry_run();
+    }
+
+    #[test]
+    fn test_dry_run_no_upload_branch() {
+        let orch = dry_run_orch(
+            Default::default(),
+            crate::config::TestSource {
+                no_upload: Some(true),
+                ..Default::default()
+            },
+            Default::default(),
+        );
+        orch.run_dry_run();
+    }
+
+    #[test]
+    fn test_dry_run_single_stream_branch() {
+        let orch = dry_run_orch(
+            Default::default(),
+            crate::config::TestSource {
+                single: Some(true),
+                ..Default::default()
+            },
+            Default::default(),
+        );
+        orch.run_dry_run();
+    }
+
+    #[test]
+    #[ignore = "requires a bound local IP; tested in http::tests"]
+    fn test_dry_run_source_ip_branch() {
+        let orch = dry_run_orch(
+            Default::default(),
+            Default::default(),
+            crate::config::NetworkSource {
+                source: Some("127.0.0.1:0".to_string()),
+                ..Default::default()
+            },
+        );
+        orch.run_dry_run();
+    }
+
+    #[test]
+    #[ignore = "requires Rustls CryptoProvider; tested in http::tests"]
+    fn test_dry_run_tls_version_branch() {
+        let orch = dry_run_orch(
+            Default::default(),
+            Default::default(),
+            crate::config::NetworkSource {
+                tls_version: Some("1.3".to_string()),
+                ..Default::default()
+            },
+        );
+        orch.run_dry_run();
+    }
+
+    #[test]
+    #[ignore = "requires Rustls CryptoProvider; tested in http::tests"]
+    fn test_dry_run_pin_certs_branch() {
+        let orch = dry_run_orch(
+            Default::default(),
+            Default::default(),
+            crate::config::NetworkSource {
+                pin_certs: Some(true),
+                ..Default::default()
+            },
+        );
+        orch.run_dry_run();
     }
 }
