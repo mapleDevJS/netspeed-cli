@@ -30,6 +30,12 @@ brew install netspeed-cli
 
 > **Note:** After adding the tap, you can use `brew install netspeed-cli` for all future installations and updates.
 
+### Cargo
+
+```bash
+cargo install netspeed-cli
+```
+
 ### Direct Download
 
 Pre-built binaries are available for download at:
@@ -138,7 +144,7 @@ Rich terminal dashboard with 3-column metrics and capability matrix:
 
 ```
   ╭────────────────────────────────────────────────────────╮
-  │          NetSpeed CLI v0.8.0                          │
+  │          NetSpeed CLI v0.10.0                         │
   │  Rogers (Toronto) • CA • 12km • 192.168.1.1            │
   ╰────────────────────────────────────────────────────────╯
 
