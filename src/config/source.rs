@@ -1,7 +1,7 @@
 //! Raw CLI input types that bridge the CLI layer to the config layer.
 //!
 //! These structs carry unmerged, unvalidated values from [`crate::cli::Args`].
-//! The only place that touches `Args` directly is [`ConfigSource::from_args`];
+//! The only place that touches `Args` directly is `ConfigSource::from_args`;
 //! everything downstream depends on these source types, not on the CLI crate.
 
 use super::Format;
