@@ -326,6 +326,7 @@ mod tests {
     use serial_test::serial;
 
     fn set_no_color() {
+        // SAFETY: tests in this module run serially via #[serial]; no concurrent set_var calls.
         #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("NO_COLOR", "1");
@@ -333,6 +334,7 @@ mod tests {
     }
 
     fn unset_no_color() {
+        // SAFETY: tests in this module run serially via #[serial]; no concurrent remove_var calls.
         #[allow(unsafe_code)]
         unsafe {
             std::env::remove_var("NO_COLOR");

@@ -17,12 +17,21 @@ use crate::orchestrator::Orchestrator;
 use crate::task_runner::TestRunResult;
 use crate::types::Server;
 
+/// Named result from a ping/latency test — replaces the positional tuple.
+#[derive(Debug, Clone)]
+pub struct PingResult {
+    pub latency_ms: f64,
+    pub jitter_ms: f64,
+    pub packet_loss_pct: f64,
+    pub samples: Vec<f64>,
+}
+
 /// Context passed between phases — holds all data accumulated during execution.
 pub struct PhaseContext {
     client_location: Option<crate::types::ClientLocation>,
     client_ip: Option<String>,
     server: Option<Server>,
-    ping_result: Option<(f64, f64, f64, Vec<f64>)>,
+    ping_result: Option<PingResult>,
     download_result: Option<TestRunResult>,
     upload_result: Option<TestRunResult>,
     list_printed: bool,
@@ -69,12 +78,12 @@ impl PhaseContext {
     }
 
     /// Set ping result.
-    pub fn set_ping_result(&mut self, result: (f64, f64, f64, Vec<f64>)) {
+    pub fn set_ping_result(&mut self, result: PingResult) {
         self.ping_result = Some(result);
     }
 
     /// Take ping result.
-    pub fn take_ping_result(&mut self) -> Option<(f64, f64, f64, Vec<f64>)> {
+    pub fn take_ping_result(&mut self) -> Option<PingResult> {
         self.ping_result.take()
     }
 
@@ -167,7 +176,7 @@ impl PhaseExecutor {
 }
 
 pub type PhaseResults = (
-    Option<(f64, f64, f64, Vec<f64>)>,
+    Option<PingResult>,
     Option<TestRunResult>,
     Option<TestRunResult>,
 );
@@ -186,7 +195,7 @@ impl PhaseContext {
         self.server.as_ref()
     }
 
-    pub fn ping_result(&self) -> Option<&(f64, f64, f64, Vec<f64>)> {
+    pub fn ping_result(&self) -> Option<&PingResult> {
         self.ping_result.as_ref()
     }
 
@@ -229,7 +238,7 @@ impl PhaseContext {
         self
     }
 
-    pub fn with_ping_result(mut self, ping: (f64, f64, f64, Vec<f64>)) -> Self {
+    pub fn with_ping_result(mut self, ping: PingResult) -> Self {
         self.ping_result = Some(ping);
         self
     }
@@ -486,7 +495,12 @@ pub(crate) fn run_ping<'a>(
             crate::progress::finish_ok(pb, &msg, theme);
         }
 
-        ctx.set_ping_result((ping_result.0, ping_result.1, ping_result.2, ping_result.3));
+        ctx.set_ping_result(PingResult {
+            latency_ms: ping_result.0,
+            jitter_ms: ping_result.1,
+            packet_loss_pct: ping_result.2,
+            samples: ping_result.3,
+        });
         // Put server back for download/upload phases
         ctx.set_server(server);
         PhaseOutcome::PhaseCompleted
@@ -651,7 +665,12 @@ pub(crate) fn run_result<'a>(
         let (ping_result, download_result, upload_result) = ctx.take_results();
 
         let (ping, jitter, packet_loss, ping_samples) = match ping_result {
-            Some((p, j, pl, s)) => (Some(p), Some(j), Some(pl), s),
+            Some(r) => (
+                Some(r.latency_ms),
+                Some(r.jitter_ms),
+                Some(r.packet_loss_pct),
+                r.samples,
+            ),
             None => (None, None, None, Vec::new()),
         };
 
@@ -758,5 +777,57 @@ mod tests {
         let _executor = PhaseExecutor::new()
             .register(run_early_exit)
             .register(run_header);
+    }
+
+    fn make_ping_result() -> PingResult {
+        PingResult {
+            latency_ms: 12.5,
+            jitter_ms: 1.3,
+            packet_loss_pct: 0.0,
+            samples: vec![11.0, 12.0, 14.0],
+        }
+    }
+
+    #[test]
+    fn test_ping_result_fields() {
+        let r = make_ping_result();
+        assert!((r.latency_ms - 12.5).abs() < f64::EPSILON);
+        assert!((r.jitter_ms - 1.3).abs() < f64::EPSILON);
+        assert!((r.packet_loss_pct - 0.0).abs() < f64::EPSILON);
+        assert_eq!(r.samples, vec![11.0, 12.0, 14.0]);
+    }
+
+    #[test]
+    fn test_phase_context_set_take_ping_result() {
+        let mut ctx = PhaseContext::new(make_test_services());
+        assert!(ctx.ping_result().is_none());
+
+        ctx.set_ping_result(make_ping_result());
+        assert!(ctx.ping_result().is_some());
+        assert!((ctx.ping_result().unwrap().latency_ms - 12.5).abs() < f64::EPSILON);
+
+        let taken = ctx.take_ping_result().unwrap();
+        assert!((taken.latency_ms - 12.5).abs() < f64::EPSILON);
+        assert!(ctx.ping_result().is_none());
+    }
+
+    #[test]
+    fn test_phase_context_with_ping_result_builder() {
+        let ctx = PhaseContext::new(make_test_services()).with_ping_result(make_ping_result());
+        assert!((ctx.ping_result().unwrap().jitter_ms - 1.3).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_take_results_returns_ping() {
+        let mut ctx = PhaseContext::new(make_test_services());
+        ctx.set_ping_result(make_ping_result());
+
+        let (ping, dl, ul) = ctx.take_results();
+        assert!(ping.is_some());
+        assert!((ping.unwrap().packet_loss_pct).abs() < f64::EPSILON);
+        assert!(dl.is_none());
+        assert!(ul.is_none());
+        // Fields consumed — context is empty after take
+        assert!(ctx.ping_result().is_none());
     }
 }

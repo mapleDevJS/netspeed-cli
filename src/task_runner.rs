@@ -141,7 +141,7 @@ where
     let duration = test_start.elapsed().as_secs_f64();
 
     // Stop latency monitoring
-    stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+    stop_signal.store(true, std::sync::atomic::Ordering::Release);
     let _ = ping_handle.await;
 
     // Calculate average latency under load

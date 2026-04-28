@@ -61,7 +61,7 @@ where
     let (avg, peak, total_bytes, speed_samples) = test_fn(progress).await?;
     let duration = test_start.elapsed().as_secs_f64();
 
-    stop_signal.store(true, Ordering::Relaxed);
+    stop_signal.store(true, Ordering::Release);
     let _ = ping_handle.await;
 
     let latency_under_load = {
