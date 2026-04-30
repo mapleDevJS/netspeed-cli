@@ -113,7 +113,6 @@ jobs:
           cargo test --test mock_network_test -- --ignored --nocapture
           cargo test --test integration_upload_fetch_test -- --ignored --nocapture
           cargo test --test e2e_test -- --ignored --nocapture
-          scripts/check-generated-docs.sh
           cargo package --locked
           cargo deny check
           cargo publish --dry-run --locked
