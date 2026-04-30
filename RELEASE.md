@@ -13,6 +13,8 @@ develop --(PR)--> main --(Release workflow)--> GitHub + crates.io + Homebrew PR
 ## Prerequisites
 
 - `CARGO_REGISTRY_TOKEN` repository secret with crates.io publish access.
+- `RELEASE_TOKEN` repository secret with contents access to create release
+  commits, tags, and GitHub Releases in `mapleDevJS/netspeed-cli`.
 - `HOMEBREW_TAP_TOKEN` repository secret with branch and PR access to
   `mapleDevJS/homebrew-netspeed-cli`.
 - `main` contains the changes intended for release.
