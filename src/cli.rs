@@ -221,17 +221,16 @@ pub struct Args {
     #[arg(long, value_name = "VERSION", value_parser = validate_tls_version, long_help = "Minimum TLS version to use (1.2 or 1.3).\nThe default allows both TLS 1.2 and 1.3.\nUse this to restrict connections to a specific TLS version.")]
     pub tls_version: Option<String>,
 
-    /// Enable certificate pinning for speedtest.net servers
+    /// Restrict TLS connections to speedtest.net and ookla.com domains
     ///
-    /// When enabled, the client only accepts connections to speedtest.net
-    /// and ookla.com domains. This provides some protection against MITM attacks
-    /// but does NOT verify actual certificate hashes (domain-only pinning).
+    /// Normal rustls/webpki certificate-chain and hostname validation still run.
+    /// This option adds a speedtest.net/ookla.com domain allowlist on top.
     #[arg(
         long,
         action = ArgAction::Set,
         default_missing_value = "true",
         num_args = 0..=1,
-        long_help = "Enable certificate pinning for speedtest.net servers.\nWhen enabled, the client only accepts connections to speedtest.net\nand ookla.com domains.\n\n⚠ SECURITY LIMITATION: This is DOMAIN-ONLY pinning. It only validates\nthat the server hostname ends with .speedtest.net or .ookla.com.\nIt does NOT verify certificate hashes or the certificate chain.\nAn attacker with a valid certificate from any CA for these domains\ncould still perform a man-in-the-middle (MITM) attack.\n\nFor production security, use a custom CA certificate (--ca-cert) instead."
+        long_help = "Restrict TLS connections to speedtest.net and ookla.com domains.\nNormal rustls/webpki certificate-chain and hostname validation still run;\nthis option adds a domain allowlist on top. It does not bypass TLS verification."
     )]
     pub pin_certs: Option<bool>,
 }
@@ -278,12 +277,12 @@ fn validate_ca_cert_path(s: &str) -> Result<String, String> {
     let path = std::path::Path::new(s);
     if !path.exists() {
         return Err(format!(
-            "CA certificate file not found: {s}\nUse --pin-certs for domain-only pinning instead."
+            "CA certificate file not found: {s}\nUse a valid PEM/DER file or omit --ca-cert to use the bundled trust roots."
         ));
     }
     if !path.is_file() {
         return Err(format!(
-            "CA certificate path is not a file: {s}\nUse --pin-certs for domain-only pinning instead."
+            "CA certificate path is not a file: {s}\nUse a valid PEM/DER file or omit --ca-cert to use the bundled trust roots."
         ));
     }
     Ok(s.to_string())
@@ -449,7 +448,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("not found"));
         assert!(err.contains("/nonexistent/path/to/cert.pem"));
-        assert!(err.contains("--pin-certs")); // Suggest alternative
+        assert!(err.contains("bundled trust roots"));
     }
 
     #[test]

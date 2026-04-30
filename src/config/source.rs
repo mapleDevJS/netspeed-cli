@@ -125,7 +125,7 @@ pub struct NetworkSource {
     pub ca_cert: Option<String>,
     /// Minimum TLS version (1.2 or 1.3)
     pub tls_version: Option<String>,
-    /// Enable certificate pinning for speedtest.net
+    /// Restrict TLS connections to speedtest.net and ookla.com domains.
     pub pin_certs: Option<bool>,
 }
 

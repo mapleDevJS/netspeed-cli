@@ -48,7 +48,7 @@ This document provides a comprehensive security audit framework for netspeed-cli
 |---------|---------------|--------|
 | TLS 1.3 support | `rustls` v0.23 | ✅ Implemented |
 | TLS 1.2 support | `rustls` v0.23 | ✅ Implemented |
-| Certificate pinning | `PinningVerifier` | ✅ Implemented |
+| Domain-restricted TLS | `PinningVerifier` wrapper around rustls webpki validation | ✅ Implemented |
 | Custom CA support | `--ca-cert` flag | ✅ Implemented |
 | Root CA trust store | `webpki-roots` | ✅ Implemented |
 
@@ -132,15 +132,16 @@ cargo test --test e2e_test -- --ignored --nocapture
 
 ## Known Security Considerations
 
-### Domain Validation (PinningVerifier)
+### Domain-restricted TLS (`--pin-certs`)
 
-The current certificate pinning implementation uses domain-based pinning rather than certificate hash pinning. This means:
+The `--pin-certs` option is intentionally implemented as domain-restricted TLS rather than raw certificate-hash pinning. This means:
 
 - ✅ Only connections to `*.speedtest.net` and `*.ookla.com` are allowed
-- ✅ Certificate structure is validated via `webpki`
-- ⚠️ A valid speedtest.net certificate from a trusted CA would still pass
+- ✅ The normal rustls/webpki certificate chain, validity, and hostname checks still run
+- ✅ The custom verifier delegates TLS signature verification to rustls
+- ⚠️ It does not pin SPKI/certificate hashes because speedtest.net server certificates are operationally rotated
 
-For true certificate pinning, SPKI (Subject Public Key Info) hash verification would be required.
+If stable SPKI pins become available, add them only after normal webpki verification succeeds.
 
 ### No TLS Certificate Revocation
 
@@ -188,10 +189,10 @@ Response time: Within 48 hours for initial acknowledgment.
 tls_version = "1.3"  # Require TLS 1.3 (or use 1.2)
 ```
 
-### Certificate Pinning
+### Domain-restricted TLS
 
 ```bash
-# Enable domain-based pinning
+# Add speedtest.net/ookla.com domain restriction on top of normal TLS validation
 netspeed-cli --pin-certs
 
 # Use custom CA certificate

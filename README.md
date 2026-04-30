@@ -147,7 +147,7 @@ netspeed-cli --show-config-path
 | `--no-emoji` | Disable emoji indicators in output |
 | `--ca-cert PATH` | Path to custom CA certificate file (PEM/DER) |
 | `--tls-version VERSION` | Minimum TLS version: `1.2` or `1.3` |
-| `--pin-certs` | Enable certificate pinning for speedtest.net servers |
+| `--pin-certs` | Restrict TLS connections to speedtest.net and ookla.com domains while preserving normal certificate validation |
 | `--history` | Show test history with sparkline trends |
 | `--dry-run` | Show test configuration without running the test |
 | `--show-config-path` | Print the config file path and exit |

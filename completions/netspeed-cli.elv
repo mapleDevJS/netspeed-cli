@@ -40,7 +40,7 @@ set edit:completion:arg-completer[netspeed-cli] = {|@words|
             cand --strict-config 'Enable strict config mode - show warnings for invalid config values'
             cand --ca-cert 'Path to a custom CA certificate file (PEM/DER format)'
             cand --tls-version 'Minimum TLS version to use (1.2 or 1.3)'
-            cand --pin-certs 'Enable certificate pinning for speedtest.net servers'
+            cand --pin-certs 'Restrict TLS connections to speedtest.net and ookla.com domains'
             cand --list 'Display a list of speedtest.net servers sorted by distance'
             cand --history 'Display test history'
             cand --dry-run 'Validate configuration and exit without running tests'

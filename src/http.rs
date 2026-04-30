@@ -2,7 +2,9 @@ use crate::common;
 use crate::error::Error;
 use crate::test_config::TestConfig;
 use reqwest::Client;
+use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::ServerCertVerifier;
+use rustls::crypto::CryptoProvider;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
 use std::sync::Arc;
@@ -14,7 +16,7 @@ pub struct TlsConfig {
     pub ca_cert_path: Option<std::path::PathBuf>,
     /// Minimum TLS version to use (e.g., "1.2", "1.3").
     pub min_tls_version: Option<String>,
-    /// Enable certificate pinning for speedtest.net servers.
+    /// Restrict TLS connections to speedtest.net and ookla.com domains.
     pub pin_speedtest_certs: bool,
 }
 
@@ -33,7 +35,7 @@ impl TlsConfig {
         self
     }
 
-    /// Enable certificate pinning for speedtest.net.
+    /// Enable speedtest.net/ookla.com TLS domain restriction.
     #[must_use]
     pub fn with_cert_pinning(mut self) -> Self {
         self.pin_speedtest_certs = true;
@@ -165,39 +167,39 @@ fn build_tls_config(tls: &TlsConfig) -> Result<ClientConfig, Error> {
         None => rustls::DEFAULT_VERSIONS,
     };
 
-    // Warn if both CA cert and pinning are configured (pinning takes precedence)
     if tls.pin_speedtest_certs && tls.ca_cert_path.is_some() {
         eprintln!(
-            "Warning: Both --ca-cert and --pin-certs are set. Certificate pinning takes precedence and --ca-cert will be ignored."
+            "Warning: Both --ca-cert and --pin-certs are set. Custom CA verification will be used before the speedtest.net domain restriction."
         );
     }
 
-    // Build configuration based on whether custom CA or pinning is enabled
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let builder = ClientConfig::builder_with_provider(Arc::clone(&provider))
+        .with_protocol_versions(versions)
+        .map_err(|e| Error::context(format!("Invalid TLS configuration: {e}")))?;
+
+    let root_store = match tls.ca_cert_path.as_deref() {
+        Some(ca_path) => load_custom_ca_cert(ca_path)?,
+        None => default_root_store(),
+    };
+
     if tls.pin_speedtest_certs {
-        // For pinning, use the dangerous builder with custom verifier
-        // Note: This only validates domain names, not actual certificate hashes
-        // For true pinning, additional SPKI hash verification would be needed
-        return Ok(ClientConfig::builder_with_protocol_versions(versions)
+        let verifier = PinningVerifier::try_new(root_store, provider)?;
+        return Ok(builder
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(PinningVerifier::new()))
+            .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth());
     }
 
-    // Standard configuration with webpki-roots (Mozilla's root certs)
-    let mut root_store = RootCertStore::empty();
-    // webpki-roots 0.26 provides TLS_SERVER_ROOTS which can be extended into the store
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    if let Some(ref ca_path) = tls.ca_cert_path {
-        // Load custom CA certificate instead of webpki-roots
-        return Ok(ClientConfig::builder_with_protocol_versions(versions)
-            .with_root_certificates(load_custom_ca_cert(ca_path)?)
-            .with_no_client_auth());
-    }
-
-    Ok(ClientConfig::builder_with_protocol_versions(versions)
+    Ok(builder
         .with_root_certificates(root_store)
         .with_no_client_auth())
+}
+
+fn default_root_store() -> RootCertStore {
+    let mut root_store = RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    root_store
 }
 
 /// Load a custom CA certificate from a PEM or DER file.
@@ -234,17 +236,32 @@ fn load_custom_ca_cert(path: &std::path::Path) -> Result<RootCertStore, Error> {
     Ok(store)
 }
 
-/// Certificate verifier for speedtest.net pinning.
+/// Certificate verifier that restricts TLS to speedtest.net and ookla.com domains
+/// while preserving normal webpki chain, hostname, and validity checks.
 #[derive(Debug)]
-struct PinningVerifier;
+struct PinningVerifier {
+    inner: Arc<WebPkiServerVerifier>,
+}
 
 impl PinningVerifier {
+    #[cfg(test)]
     fn new() -> Self {
-        Self
+        Self::try_new(
+            default_root_store(),
+            Arc::new(rustls::crypto::aws_lc_rs::default_provider()),
+        )
+        .expect("default TLS verifier should build")
+    }
+
+    fn try_new(root_store: RootCertStore, provider: Arc<CryptoProvider>) -> Result<Self, Error> {
+        let inner = WebPkiServerVerifier::builder_with_provider(Arc::new(root_store), provider)
+            .build()
+            .map_err(|e| Error::context(format!("Failed to build TLS verifier: {e:?}")))?;
+        Ok(Self { inner })
     }
 
     fn is_valid_domain(host: &str) -> bool {
-        // Check exact domains first, then subdomains ending with the suffix
+        // Check exact domains first, then subdomains ending with the suffix.
         host == "speedtest.net"
             || host == "ookla.com"
             || host.ends_with(".speedtest.net")
@@ -271,9 +288,6 @@ impl ServerCertVerifier for PinningVerifier {
             }
         };
 
-        // Check if the domain is allowed (domain pinning)
-        // Note: This only validates domain names, not actual certificate hashes
-        // An attacker with a valid speedtest.net certificate could still MITM
         if !Self::is_valid_domain(hostname) {
             return Err(rustls::Error::General(format!(
                 "'{}' is not a speedtest.net domain",
@@ -281,42 +295,35 @@ impl ServerCertVerifier for PinningVerifier {
             )));
         }
 
-        // Verify the certificate can be parsed by webpki
-        webpki::EndEntityCert::try_from(end_entity.as_ref())
-            .map_err(|_| rustls::Error::General("Invalid certificate structure".to_string()))?;
-
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
+        self.inner.verify_server_cert(
+            end_entity,
+            _intermediate_certs,
+            server_name,
+            _ocsp_response,
+            _now,
+        )
     }
 
     fn verify_tls12_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        self.inner.verify_tls12_signature(message, cert, dss)
     }
 
     fn verify_tls13_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        self.inner.verify_tls13_signature(message, cert, dss)
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-        ]
+        self.inner.supported_verify_schemes()
     }
 }
 
@@ -832,7 +839,7 @@ mod tests {
     fn test_pinning_verifier_new_returns_self() {
         // Test that new() creates an instance
         let verifier = PinningVerifier::new();
-        assert!(matches!(verifier, PinningVerifier));
+        assert!(!verifier.supported_verify_schemes().is_empty());
     }
 
     #[test]
@@ -840,7 +847,7 @@ mod tests {
         // Test that Debug can be derived and used
         let verifier = PinningVerifier::new();
         let debug_str = format!("{:?}", verifier);
-        assert_eq!(debug_str, "PinningVerifier");
+        assert!(debug_str.contains("PinningVerifier"));
     }
 
     #[test]
@@ -858,8 +865,7 @@ mod tests {
         assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA384));
         assert!(schemes.contains(&SignatureScheme::RSA_PSS_SHA512));
 
-        // Should have exactly 8 schemes
-        assert_eq!(schemes.len(), 8);
+        assert!(schemes.len() >= 8);
     }
 
     // Note: Signature verification tests are omitted because DigitallySignedStruct
@@ -927,8 +933,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
-        // The error should be about certificate structure, not domain
-        assert!(err_msg.contains("Invalid certificate structure"));
+        // The error should be about certificate validation, not domain validation.
+        assert!(!err_msg.contains("not a speedtest.net domain"));
     }
 
     #[test]
@@ -951,10 +957,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = format!("{:?}", err);
-        // The error should be about certificate structure, not domain
-        assert!(
-            err_msg.contains("Invalid certificate structure") || err_msg.contains("EndEntityCert")
-        );
+        // The error should be about certificate validation, not domain validation.
+        assert!(!err_msg.contains("not a speedtest.net domain"));
     }
 
     #[test]

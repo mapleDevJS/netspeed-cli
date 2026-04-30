@@ -156,8 +156,8 @@ fn test_tls_conflict_warning() {
         "Warning should mention both --ca-cert and --pin-certs. stderr: {stderr}"
     );
     assert!(
-        stderr.contains("ignored") || stderr.contains("takes precedence"),
-        "Warning should mention that one option is ignored. stderr: {stderr}"
+        stderr.contains("Custom CA verification") && stderr.contains("domain restriction"),
+        "Warning should mention verification order. stderr: {stderr}"
     );
 
     // Clean up temp file

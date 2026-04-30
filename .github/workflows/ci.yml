@@ -69,7 +69,6 @@ jobs:
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
-        continue-on-error: true
 
   doc:
     name: Documentation
@@ -98,6 +97,17 @@ jobs:
         uses: taiki-e/install-action@cargo-deny
       - name: Run cargo-deny (advisories, licenses, bans, sources)
         run: cargo deny check
+
+  package:
+    name: Package Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Verify crate package
+        run: cargo package --locked
 
   msrv:
     name: MSRV Check
