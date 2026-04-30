@@ -57,7 +57,7 @@ cargo build --release
 
 | Requirement | Details |
 |-------------|---------|
-| **OS** | macOS 12+, Linux (kernel 5.4+) |
+| **OS** | macOS 12+, Linux (kernel 5.4+), Windows 10+ |
 | **Rust** | 1.86+ (for building from source) |
 | **Terminal** | Any Unicode-capable terminal (UTF-8) |
 | **Network** | Internet access to speedtest.net servers |
@@ -203,8 +203,8 @@ Profiles adjust scoring weights, grading thresholds, and which sections appear i
 |---------|-------------|-------|
 | `power-user` | Full report with all metrics (default) | Shows everything: estimates, percentiles, stability, bufferbloat, UL/DL ratio |
 | `gamer` | Optimized for gaming quality | Higher weight on ping and jitter; strict latency thresholds |
-| `streamer` | Optimized for live streaming | Higher weight on upload speed and stability |
-| `remote-worker` | Optimized for remote work/video calls | Balanced weights with emphasis on jitter and upload |
+| `streamer` | Optimized for streaming quality | Higher weight on download speed and consistency |
+| `remote-worker` | Optimized for remote work/video calls | Higher weight on upload speed and stability |
 | `casual` | Simplified output | Relaxed thresholds, fewer sections, minimal output |
 
 Profiles are case-insensitive. Aliases: `poweruser`, `remote`, `remoteworker`.
@@ -217,7 +217,7 @@ Rich terminal dashboard with 3-column metrics and capability matrix:
 
 ```
   ┌────────────────────────────────────────────────────────┐
-  │          NetSpeed CLI v0.10.0                         │
+  │          NetSpeed CLI                                 │
   │  Rogers (Toronto) - CA - 12km - 192.168.1.1           │
   └────────────────────────────────────────────────────────┘
 

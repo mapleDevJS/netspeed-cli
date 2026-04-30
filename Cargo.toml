@@ -12,6 +12,18 @@ readme = "README.md"
 keywords = ["speedtest", "bandwidth", "network", "internet", "cli"]
 categories = ["command-line-utilities", "network-programming"]
 rust-version = "1.86"
+exclude = [
+    "/.claude/",
+    "/.codex/",
+    "/.opencode/",
+    "/.qwen/",
+    "/.secrets.baseline",
+    "/AGENTS.md",
+    "/Cargo.toml.orig",
+    "/graphify-out/",
+    "/opencode.json",
+    "/tarpaulin-report.*",
+]
 
 [[bin]]
 name = "netspeed-cli"
