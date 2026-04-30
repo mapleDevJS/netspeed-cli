@@ -127,6 +127,18 @@ generate-docs:
 	cargo build
 	@echo \"Completions and man page generated via build.rs\"
 
+# Verify generated shell completions and man page are committed
+check-generated-docs:
+	scripts/check-generated-docs.sh
+
+# Render the Homebrew formula for a released version
+render-homebrew-formula version:
+	scripts/render-homebrew-formula.sh {{version}}
+
+# Check GitHub/crates.io/Homebrew release channel sync
+release-sync:
+	scripts/check-release-sync.sh
+
 # Check MSRV (Minimum Supported Rust Version)
 msrv:
 	cargo check

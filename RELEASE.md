@@ -1,17 +1,29 @@
 # Release Process
 
-Releases are built and published from the **`main`** branch. All development
-happens on **`develop`** and flows to `main` via pull request.
+Releases are built and published from the **`main`** branch. Development flows
+from **`develop`** to `main` by pull request, then the manual GitHub Actions
+release workflow creates the release commit and tag.
 
 ## Workflow
 
-```
-develop ──(PR)──► main ──(tag)──► CI publishes
+```text
+develop --(PR)--> main --(Release workflow)--> GitHub + crates.io + Homebrew PR
 ```
 
-### Step-by-step
+## Prerequisites
 
-#### 1. Ensure `develop` is ready for release
+- `CARGO_REGISTRY_TOKEN` repository secret with crates.io publish access.
+- `RELEASE_TOKEN` repository secret with contents access to create release
+  commits, tags, and GitHub Releases in `mapleDevJS/netspeed-cli`.
+- `HOMEBREW_TAP_TOKEN` repository secret with branch and PR access to
+  `mapleDevJS/homebrew-netspeed-cli`.
+- `main` contains the changes intended for release.
+- The requested version is greater than the latest `vX.Y.Z` tag and is not
+  already published on crates.io.
+
+## Release Steps
+
+### 1. Prepare `develop`
 
 ```bash
 git checkout develop
@@ -19,93 +31,85 @@ git pull origin develop
 just qa
 ```
 
-#### 2. Open PR from `develop` → `main`
+Open and merge the release PR:
 
 ```bash
 gh pr create --base main --head develop \
   --title "Release v<version>" \
-  --body "Merge develop into main for v<version> release"
+  --body "Merge develop into main for v<version> release."
 ```
 
-Review the PR, ensure all CI checks pass, then **merge to `main`**.
+### 2. Start the Release Workflow
 
-#### 3. Create the release
+Run the canonical release workflow from `main`:
 
-Check out `main` and run the release script:
+```bash
+gh workflow run release.yml --ref main -f version=<version>
+gh run list --workflow release.yml --limit 1
+```
+
+The legacy local command is intentionally non-mutating:
+
+```bash
+./scripts/release.sh <version>
+```
+
+It prints the `gh workflow run` command instead of editing files, committing,
+tagging, or publishing.
+
+### 3. What the Workflow Does
+
+| Job | Responsibility |
+|---|---|
+| `release-context` | Validates version, updates versioned files, runs release checks, commits, and tags |
+| `build-binaries` | Builds Linux, macOS, and Windows release binaries |
+| `publish-github-release` | Creates the GitHub Release, checksums, SBOM, and uploads assets |
+| `publish-crates-io` | Verifies and publishes the crate to crates.io |
+| `homebrew-tap-pr` | Opens a PR in `mapleDevJS/homebrew-netspeed-cli` with the updated formula |
+
+### 4. Merge the Homebrew Tap PR
+
+After the release workflow succeeds, review and merge the generated tap PR.
+This is the step that makes `brew upgrade netspeed-cli` pick up the new version.
+
+### 5. Verify Channel Sync
+
+```bash
+scripts/check-release-sync.sh
+```
+
+Expected result: `Cargo.toml`, GitHub Releases, crates.io, the in-repo formula,
+and the tap formula all report the same version.
+
+## Release Readiness
+
+The `Release Readiness` workflow runs on PRs to `main`, on demand, and weekly.
+It checks:
+
+- Rust formatting, clippy, unit/doc/socket tests, docs, package, and cargo-deny.
+- Generated completions and man page are committed.
+- `cargo publish --dry-run --locked` succeeds.
+- The Homebrew formula can be rendered from the current package version.
+- Scheduled runs detect drift between GitHub, crates.io, and Homebrew.
+
+## Emergency Hotfix
 
 ```bash
 git checkout main
 git pull origin main
-./scripts/release.sh <version>
+git checkout -b hotfix/critical-fix
+# make the fix
+git commit -m "fix: describe critical bug"
+git push origin hotfix/critical-fix
+gh pr create --base main --head hotfix/critical-fix
 ```
 
-The script will:
-- Validate you're on `main` with a clean tree
-- Update `Cargo.toml` version
-- Commit with `chore(release): bump to v0.5.0`
-- Push to `origin/main`
-- Create and push annotated tag `v0.5.0`
-
-#### 4. Monitor CI
-
-The `release.yml` workflow triggers automatically on the tag push and handles:
-
-| Job | What it does |
-|---|---|
-| `build-binaries` | Cross-compiles for macOS, Linux, Windows (7 targets) |
-| `socket-integration` | Runs ignored socket-binding integration tests |
-| `publish-github-release` | Creates GitHub Release, uploads binaries + SBOM + checksums |
-| `publish-crates-io` | Publishes the crate to crates.io |
-
-Monitor progress:
-```bash
-gh run list --limit 1
-```
-
-#### 5. Verify the release
-
-After CI completes:
-
-```bash
-# Check GitHub Release
-gh release view v<version> --repo mapleDevJS/netspeed-cli
-
-# Test Homebrew install
-brew upgrade mapleDevJS/homebrew-netspeed-cli/netspeed-cli
-
-# Test crates.io install
-cargo install netspeed-cli
-```
+After the hotfix PR merges, run the release workflow with the next patch version.
 
 ## Version Numbering
 
-Follows [Semantic Versioning](https://semver.org/):
+This project follows Semantic Versioning:
 
-- **Major** (`1.0.0` → `2.0.0`): Breaking changes, incompatible API
-- **Minor** (`0.4.0` → `0.5.0`): New features, backward compatible
-- **Patch** (`0.4.0` → `0.4.1`): Bug fixes only
-
-## Emergency Hotfix
-
-If a critical bug needs immediate fixing:
-
-```bash
-git checkout main
-git checkout -b hotfix/critical-fix
-# ... make fix ...
-git commit -m "fix: critical bug description"
-git push origin hotfix/critical-fix
-gh pr create --base main --head hotfix/critical-fix
-# Merge PR, then run release script with patch version
-./scripts/release.sh <patch-version>
-```
-
-## What CI Publishes
-
-| Asset | Destination |
-|---|---|
-| Binaries (7 platforms) | GitHub Release |
-| SBOM (SPDX JSON) | GitHub Release |
-| SHA256 checksums | GitHub Release |
-| Crate | crates.io |
-| Homebrew formula | mapleDevJS/homebrew-netspeed-cli tap |
+- **Major**: breaking changes.
+- **Minor**: backward-compatible features.
+- **Patch**: backward-compatible fixes, docs/package/release corrections.
