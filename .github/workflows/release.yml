@@ -144,7 +144,7 @@ jobs:
       - name: Update CHANGELOG.md for release
         run: |
           echo "Generating release changelog..."
-          git-cliff --config .cliff.toml --changelog CHANGELOG.md
+          git-cliff --config .cliff.toml --output CHANGELOG.md
           echo "Changelog generated"
           cat CHANGELOG.md | head -50
       - name: Create GitHub Release
