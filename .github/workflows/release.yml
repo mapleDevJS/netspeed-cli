@@ -113,9 +113,9 @@ jobs:
           cargo test --test mock_network_test -- --ignored --nocapture
           cargo test --test integration_upload_fetch_test -- --ignored --nocapture
           cargo test --test e2e_test -- --ignored --nocapture
-          cargo package --locked
+          cargo package --locked --allow-dirty
           cargo deny check
-          cargo publish --dry-run --locked
+          cargo publish --dry-run --locked --allow-dirty
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
