@@ -1,7 +1,7 @@
 # Graph Report - /Users/alexey.ivanov/vibe.dev/netspeed-cli  (2026-04-30)
 
 ## Corpus Check
-- 64 files · ~324,179 words
+- 64 files · ~324,183 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -202,11 +202,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.076) - this node is a cross-community bridge._
+  _High betweenness centrality (0.053) - this node is a cross-community bridge._
+- **Why does `ping_test()` connect `Community 4` to `Community 0`, `Community 9`, `Community 6`?**
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
 - **Why does `grade_overall()` connect `Community 7` to `Community 1`, `Community 13`, `Community 5`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
-- **Why does `degradation_str()` connect `Community 1` to `Community 6`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Args` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 35 inferred relationships involving `no_color()` (e.g. with `print_error()` and `print_suggestion()`) actually correct?**

@@ -31,11 +31,9 @@ jobs:
         uses: ossf/scorecard-action@v2.4.1
         id: scorecard
         with:
-          results-file: results.sarif
-          results-format: sarif
-          publish-results: true
-          upload-to-ossf-scores: true
-          shade-scorecard: 900s
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
 
       - name: Upload results to GitHub
         if: steps.scorecard.outcome == 'success'
