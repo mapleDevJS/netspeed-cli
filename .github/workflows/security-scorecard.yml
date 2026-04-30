@@ -16,7 +16,6 @@ jobs:
   scorecard:
     name: OpenSSF Security Scorecard
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       id-token: write
       contents: read
@@ -30,14 +29,11 @@ jobs:
 
       - name: Run Security Scorecard
         uses: ossf/scorecard-action@v2.4.1
-        continue-on-error: true
         id: scorecard
         with:
-          results-file: results.sarif
-          results-format: sarif
-          publish-results: true
-          upload-to-ossf-scores: true
-          shade-scorecard: 900s
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
 
       - name: Upload results to GitHub
         if: steps.scorecard.outcome == 'success'
@@ -64,7 +60,8 @@ jobs:
         run: |
           SCORE=$(cat results.sarif | jq -r '.runs[0].properties.score')
           echo "Current Security Score: $SCORE"
-          if [ "$SCORE" != "null" ] && [ "$SCORE" -lt 5 ]; then
+          if [ "$SCORE" != "null" ] && awk "BEGIN { exit !($SCORE < 7) }"; then
             echo "Security Score is below threshold (7)"
             echo "Please review and improve security controls: https://github.com/ossf/scorecard/"
+            exit 1
           fi

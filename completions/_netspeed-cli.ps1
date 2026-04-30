@@ -43,7 +43,7 @@ Register-ArgumentCompleter -Native -CommandName 'netspeed-cli' -ScriptBlock {
             [CompletionResult]::new('--strict-config', '--strict-config', [CompletionResultType]::ParameterName, 'Enable strict config mode - show warnings for invalid config values')
             [CompletionResult]::new('--ca-cert', '--ca-cert', [CompletionResultType]::ParameterName, 'Path to a custom CA certificate file (PEM/DER format)')
             [CompletionResult]::new('--tls-version', '--tls-version', [CompletionResultType]::ParameterName, 'Minimum TLS version to use (1.2 or 1.3)')
-            [CompletionResult]::new('--pin-certs', '--pin-certs', [CompletionResultType]::ParameterName, 'Enable certificate pinning for speedtest.net servers')
+            [CompletionResult]::new('--pin-certs', '--pin-certs', [CompletionResultType]::ParameterName, 'Restrict TLS connections to speedtest.net and ookla.com domains')
             [CompletionResult]::new('--list', '--list', [CompletionResultType]::ParameterName, 'Display a list of speedtest.net servers sorted by distance')
             [CompletionResult]::new('--history', '--history', [CompletionResultType]::ParameterName, 'Display test history')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Validate configuration and exit without running tests')

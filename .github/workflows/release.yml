@@ -167,7 +167,7 @@ jobs:
             release-assets/* \
             --repo "${{ github.repository }}" \
             --clobber
-      - name: Update Homebrew formula
+      - name: Generate Homebrew formula update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -218,12 +218,14 @@ jobs:
           echo "Updated formula:"
           cat netspeed-cli.rb
 
-          # Commit and push to main branch
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add netspeed-cli.rb
-          git commit -m "chore: update formula to ${VERSION}"
-          git push origin HEAD:main
+          mkdir -p formula-update
+          cp netspeed-cli.rb formula-update/netspeed-cli.rb
+          echo "Formula update staged as an artifact. Open a reviewed PR to apply it."
+      - name: Upload Homebrew formula artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: homebrew-formula-${{ github.ref_name }}
+          path: formula-update/netspeed-cli.rb
 
   publish-crates-io:
     name: Publish to crates.io

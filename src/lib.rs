@@ -17,7 +17,7 @@
 //! - **Quality grading**: A–F ratings for each metric and an overall score
 //! - **Latency under load**: measures ping degradation during bandwidth saturation
 //! - **Test history**: persistent local storage with backup and corruption recovery
-//! - **TLS options**: custom CA certs, certificate pinning, configurable TLS version
+//! - **TLS options**: custom CA certs, domain-restricted TLS, configurable TLS version
 //!
 //! ## Modules
 //!

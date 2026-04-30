@@ -270,17 +270,9 @@ The default allows both TLS 1.2 and 1.3.
 Use this to restrict connections to a specific TLS version.
 .TP
 \fB\-\-pin\-certs\fR [\fI<PIN_CERTS>\fR]
-Enable certificate pinning for speedtest.net servers.
-When enabled, the client only accepts connections to speedtest.net
-and ookla.com domains.
-
-⚠ SECURITY LIMITATION: This is DOMAIN\-ONLY pinning. It only validates
-that the server hostname ends with .speedtest.net or .ookla.com.
-It does NOT verify certificate hashes or the certificate chain.
-An attacker with a valid certificate from any CA for these domains
-could still perform a man\-in\-the\-middle (MITM) attack.
-
-For production security, use a custom CA certificate (\-\-ca\-cert) instead.
+Restrict TLS connections to speedtest.net and ookla.com domains.
+Normal rustls/webpki certificate\-chain and hostname validation still run;
+this option adds a domain allowlist on top. It does not bypass TLS verification.
 .br
 
 .br

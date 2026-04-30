@@ -350,7 +350,7 @@ impl Orchestrator {
             Self::print_kv(nc, "TLS version", tls_version);
         }
         if config.pin_certs() {
-            Self::print_kv(nc, "Cert pinning", "enabled");
+            Self::print_kv(nc, "TLS domain restriction", "speedtest.net/ookla.com");
         }
 
         if nc {

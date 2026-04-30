@@ -100,7 +100,7 @@ pub struct NetworkConfig {
     pub ca_cert: Option<String>,
     /// Minimum TLS version (1.2 or 1.3)
     pub tls_version: Option<String>,
-    /// Enable certificate pinning for speedtest.net
+    /// Restrict TLS connections to speedtest.net and ookla.com domains.
     pub pin_certs: bool,
 }
 
@@ -200,7 +200,7 @@ pub struct File {
     pub ca_cert: Option<String>,
     /// Minimum TLS version (1.2 or 1.3).
     pub tls_version: Option<String>,
-    /// Enable certificate pinning for speedtest.net servers.
+    /// Restrict TLS connections to speedtest.net and ookla.com domains.
     pub pin_certs: Option<bool>,
 }
 
@@ -655,7 +655,7 @@ impl Config {
         self.network.tls_version.as_deref()
     }
 
-    /// Whether certificate pinning is enabled.
+    /// Whether speedtest.net/ookla.com TLS domain restriction is enabled.
     #[must_use]
     pub fn pin_certs(&self) -> bool {
         self.network.pin_certs

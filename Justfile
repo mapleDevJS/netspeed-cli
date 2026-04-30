@@ -36,10 +36,12 @@ build:
 
 # Full release verification
 release:
-	cargo fmt -- --check
+	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test --verbose
 	cargo test --doc
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+	cargo package --locked
 	cargo build --release
 
 # CI-quality gate used locally and in automation — mirrors all CI jobs
@@ -48,8 +50,12 @@ qa:
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test --verbose
 	cargo test --doc
-	cargo doc --no-deps --workspace 2>&1 || { echo "Doc warnings found"; exit 1; }
-	cargo deny check || echo "Warning: cargo-deny not installed, skipping audit"
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+	cargo test --test mock_network_test -- --ignored --nocapture
+	cargo test --test integration_upload_fetch_test -- --ignored --nocapture
+	cargo test --test e2e_test -- --ignored --nocapture
+	cargo package --locked
+	cargo deny check
 
 # Run security audit
 audit:

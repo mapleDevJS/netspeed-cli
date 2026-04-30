@@ -42,7 +42,7 @@ complete -c netspeed-cli -l strict-config -d 'Enable strict config mode - show w
 false\t''"
 complete -c netspeed-cli -l ca-cert -d 'Path to a custom CA certificate file (PEM/DER format)' -r
 complete -c netspeed-cli -l tls-version -d 'Minimum TLS version to use (1.2 or 1.3)' -r
-complete -c netspeed-cli -l pin-certs -d 'Enable certificate pinning for speedtest.net servers' -r -f -a "true\t''
+complete -c netspeed-cli -l pin-certs -d 'Restrict TLS connections to speedtest.net and ookla.com domains' -r -f -a "true\t''
 false\t''"
 complete -c netspeed-cli -l list -d 'Display a list of speedtest.net servers sorted by distance'
 complete -c netspeed-cli -l history -d 'Display test history'

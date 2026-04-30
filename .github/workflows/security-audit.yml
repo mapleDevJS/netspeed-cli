@@ -41,6 +41,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
       - name: Update RUSTSEC advisory database
         run: cargo audit --fetch-index
 
