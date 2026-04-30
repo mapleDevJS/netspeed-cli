@@ -104,7 +104,6 @@ jobs:
           cargo check
           cargo build --quiet
           git-cliff --config .cliff.toml --tag "v${VERSION}" --output CHANGELOG.md
-          scripts/render-homebrew-formula.sh "${VERSION}"
 
           cargo fmt --all -- --check
           cargo clippy --all-targets --all-features -- -D warnings
@@ -121,7 +120,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock CHANGELOG.md completions netspeed-cli.1 netspeed-cli.rb
+          git add Cargo.toml Cargo.lock CHANGELOG.md completions netspeed-cli.1
           git commit -m "chore(release): bump to v${VERSION}"
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
@@ -280,6 +279,45 @@ jobs:
             --notes-file CHANGELOG.md \
             --repo "${{ github.repository }}"
           gh release upload "${TAG}" release-assets/* --repo "${{ github.repository }}" --clobber
+
+  update-local-homebrew-formula:
+    name: Update Local Homebrew Formula
+    runs-on: ubuntu-latest
+    needs: [release-context, publish-github-release]
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Render and commit formula
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          VERSION: ${{ needs.release-context.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::RELEASE_TOKEN is required to update the local Homebrew formula."
+            exit 1
+          fi
+
+          git pull --ff-only origin main
+          scripts/render-homebrew-formula.sh "${VERSION}"
+
+          if git diff --quiet -- netspeed-cli.rb; then
+            echo "Local Homebrew formula is already at v${VERSION}."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add netspeed-cli.rb
+          git commit -m "chore(release): update Homebrew formula for v${VERSION}"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push origin main
 
   publish-crates-io:
     name: Publish to crates.io
