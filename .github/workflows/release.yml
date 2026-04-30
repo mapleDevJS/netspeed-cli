@@ -1,42 +1,150 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer version to release, without a leading v"
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
 
 env:
   CARGO_TERM_COLOR: always
+  HOMEBREW_TAP_REPO: mapleDevJS/homebrew-netspeed-cli
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  verify-tag-on-main:
-    name: Verify Tag is on Main
+  release-context:
+    name: Prepare Release Context
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.context.outputs.version }}
+      tag: ${{ steps.context.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
           fetch-depth: 0
-      - name: Verify tag points to main branch
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install git-cliff
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo install git-cliff --locked
+
+      - name: Install cargo-deny
+        if: github.event_name == 'workflow_dispatch'
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Validate existing tag release
+        if: github.event_name == 'push'
         run: |
+          set -euo pipefail
           if ! git branch -r --contains "${{ github.ref_name }}" | grep -q 'origin/main'; then
             echo "::error::Tag ${{ github.ref_name }} is not on the 'main' branch."
-            echo "::error::Releases must be created from main. Merge develop → main first."
-            echo "::error::See RELEASE.md for the release process."
+            echo "::error::Releases must be created from main. See RELEASE.md."
             exit 1
           fi
-          echo "Tag ${{ github.ref_name }} is on main branch"
+
+      - name: Prepare manual release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version '${VERSION}'. Expected X.Y.Z."
+            exit 1
+          fi
+
+          git fetch origin main --tags
+          git checkout -B main origin/main
+
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::Working tree is not clean before release prep."
+            git status --short
+            exit 1
+          fi
+
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists."
+            exit 1
+          fi
+
+          if gh release view "v${VERSION}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::GitHub release v${VERSION} already exists."
+            exit 1
+          fi
+
+          CRATES_VERSION="$(cargo search netspeed-cli --limit 1 | sed -n 's/^netspeed-cli = "\([^"]*\)".*/\1/p' | head -1)"
+          if [[ "${CRATES_VERSION}" == "${VERSION}" ]]; then
+            echo "::error::netspeed-cli ${VERSION} already exists on crates.io."
+            exit 1
+          fi
+
+          LATEST_TAG="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
+          if [[ -n "${LATEST_TAG}" && "$(printf '%s\n%s\n' "${LATEST_TAG}" "${VERSION}" | sort -V | tail -1)" != "${VERSION}" ]]; then
+            echo "::error::Version ${VERSION} must be greater than latest tag ${LATEST_TAG}."
+            exit 1
+          fi
+
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          cargo check
+          cargo build --quiet
+          git-cliff --config .cliff.toml --tag "v${VERSION}" --output CHANGELOG.md
+          scripts/render-homebrew-formula.sh "${VERSION}"
+
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --verbose
+          cargo test --doc
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+          cargo test --test mock_network_test -- --ignored --nocapture
+          cargo test --test integration_upload_fetch_test -- --ignored --nocapture
+          cargo test --test e2e_test -- --ignored --nocapture
+          scripts/check-generated-docs.sh
+          cargo package --locked
+          cargo deny check
+          cargo publish --dry-run --locked
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock CHANGELOG.md completions netspeed-cli.1 netspeed-cli.rb
+          git commit -m "chore(release): bump to v${VERSION}"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin main
+          git push origin "v${VERSION}"
+
+      - name: Set release context
+        id: context
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${INPUT_VERSION}"
+            TAG="v${VERSION}"
+          else
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
   build-binaries:
     name: Build Binary (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    needs: [verify-tag-on-main]
+    needs: [release-context]
     strategy:
       matrix:
         include:
-          # Linux GNU (glibc)
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: netspeed-cli
@@ -45,7 +153,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             artifact_name: netspeed-cli
             asset_name: netspeed-cli-aarch64-linux-gnu
-          # Linux musl (static)
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             artifact_name: netspeed-cli
@@ -54,7 +161,6 @@ jobs:
             target: aarch64-unknown-linux-musl
             artifact_name: netspeed-cli
             asset_name: netspeed-cli-aarch64-linux-musl
-          # macOS
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: netspeed-cli
@@ -63,23 +169,28 @@ jobs:
             target: aarch64-apple-darwin
             artifact_name: netspeed-cli
             asset_name: netspeed-cli-aarch64-macos
-          # Windows
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: netspeed-cli.exe
             asset_name: netspeed-cli-x86_64-windows.exe
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-context.outputs.tag }}
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+
       - name: Install cross-compilation tools (aarch64 Linux GNU)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Configure aarch64 linker
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -88,50 +199,60 @@ jobs:
           [target.aarch64-unknown-linux-gnu]
           linker = "aarch64-linux-gnu-gcc"
           EOF
+
       - name: Install musl tools (x86_64)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
+
       - name: Install cross (aarch64 musl)
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: cargo install cross --locked
+
       - name: Build release (cross)
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: cross build --release --target ${{ matrix.target }}
+
       - name: Build release (native)
         if: matrix.target != 'aarch64-unknown-linux-musl'
         run: cargo build --release --target ${{ matrix.target }}
+
       - name: Prepare artifact
         shell: bash
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" dist/
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "dist/${{ matrix.asset_name }}"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset_name }}
-          path: dist/${{ matrix.artifact_name }}
+          path: dist/${{ matrix.asset_name }}
 
   publish-github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-binaries]
+    needs: [release-context, build-binaries]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.release-context.outputs.tag }}
           fetch-depth: 0
+
       - uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
+
       - name: Generate SHA256 checksums
         run: |
           cd release-assets
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -139,121 +260,91 @@ jobs:
           artifact-name: sbom.spdx.json
           output-file: release-assets/sbom.spdx.json
           format: spdx-json
-      - name: Install git-cliff for changelog
-        run: cargo install git-cliff --locked
-      - name: Update CHANGELOG.md for release
-        run: |
-          echo "Generating release changelog..."
-          git-cliff --config .cliff.toml --output CHANGELOG.md
-          echo "Changelog generated"
-          cat CHANGELOG.md | head -50
+
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Read changelog for release notes
-          CHANGELOG_CONTENT=$(cat CHANGELOG.md)
-          
-          gh release delete "${{ github.ref_name }}" --yes --repo "${{ github.repository }}" 2>/dev/null || true
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --notes "$CHANGELOG_CONTENT" \
-            --repo "${{ github.repository }}"
-      - name: Upload assets to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" \
-            release-assets/* \
-            --repo "${{ github.repository }}" \
-            --clobber
-      - name: Generate Homebrew formula update
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-context.outputs.tag }}
         run: |
           set -euo pipefail
-
-          VERSION="${{ github.ref_name }}"
-          VERSION_NO_V="${VERSION#v}"
-
-          # Download tarball and calculate SHA256 with error handling
-          echo "Downloading tarball to calculate SHA256..."
-          if ! SHA256=$(curl -sfL "https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz" | sha256sum | awk '{print $1}'); then
-            echo "::error::Failed to download tarball or calculate SHA256"
-            exit 1
-          fi
-
-          if [ -z "$SHA256" ]; then
-            echo "::error::SHA256 is empty - download may have failed"
-            exit 1
-          fi
-          echo "SHA256: $SHA256"
-
-          # Update formula file with robust sed patterns
-          awk -v version="${VERSION_NO_V}" '
-            /^[[:space:]]*version "/ {
-              print "  version \"" version "\""
-              found = 1
-              next
-            }
-            { print }
-            /^[[:space:]]*url "/ && !found && !inserted {
-              print "  version \"" version "\""
-              inserted = 1
-            }
-          ' netspeed-cli.rb > netspeed-cli.rb.tmp
-          mv netspeed-cli.rb.tmp netspeed-cli.rb
-          sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz\"|" netspeed-cli.rb
-          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" netspeed-cli.rb
-
-          # Verify all updates were applied correctly
-          echo "Verifying formula updates..."
-          if ! grep -q "version \"${VERSION_NO_V}\"" netspeed-cli.rb; then
-            echo "::error::Version not updated correctly"
-            cat netspeed-cli.rb
-            exit 1
-          fi
-
-          if ! grep -q "archive/refs/tags/${VERSION}.tar.gz\"$" netspeed-cli.rb; then
-            echo "::error::URL not updated correctly"
-            cat netspeed-cli.rb
-            exit 1
-          fi
-
-          if ! grep -q "sha256 \"$SHA256\"" netspeed-cli.rb; then
-            echo "::error::SHA256 not updated correctly"
-            cat netspeed-cli.rb
-            exit 1
-          fi
-
-          echo "Formula update verified successfully"
-          echo "Updated formula:"
-          cat netspeed-cli.rb
-
-          mkdir -p formula-update
-          cp netspeed-cli.rb formula-update/netspeed-cli.rb
-          echo "Formula update staged as an artifact. Open a reviewed PR to apply it."
-      - name: Upload Homebrew formula artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: homebrew-formula-${{ github.ref_name }}
-          path: formula-update/netspeed-cli.rb
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes-file CHANGELOG.md \
+            --repo "${{ github.repository }}"
+          gh release upload "${TAG}" release-assets/* --repo "${{ github.repository }}" --clobber
 
   publish-crates-io:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    needs: [publish-github-release]
+    needs: [release-context, publish-github-release]
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-context.outputs.tag }}
+
       - uses: dtolnay/rust-toolchain@stable
+
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
-      - name: Verify tests pass
+
+      - name: Verify package
         run: |
           cargo test --verbose
           cargo test --doc
           cargo package --locked
+
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish --locked
+
+  homebrew-tap-pr:
+    name: Open Homebrew Tap PR
+    runs-on: ubuntu-latest
+    needs: [release-context, publish-crates-io]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-context.outputs.tag }}
+
+      - name: Create or update tap PR
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: ${{ env.HOMEBREW_TAP_REPO }}
+          VERSION: ${{ needs.release-context.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is required to open the tap PR."
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" homebrew-tap
+          scripts/render-homebrew-formula.sh "${VERSION}" homebrew-tap/netspeed-cli.rb
+
+          cd homebrew-tap
+          BRANCH="release/netspeed-cli-v${VERSION}"
+          git checkout -B "${BRANCH}"
+
+          if git diff --quiet -- netspeed-cli.rb; then
+            echo "Homebrew tap formula is already at v${VERSION}."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add netspeed-cli.rb
+          git commit -m "netspeed-cli v${VERSION}"
+          git push --force-with-lease origin "${BRANCH}"
+
+          if gh pr view "${BRANCH}" --repo "${TAP_REPO}" >/dev/null 2>&1; then
+            echo "Homebrew tap PR already exists for ${BRANCH}."
+          else
+            gh pr create \
+              --repo "${TAP_REPO}" \
+              --base main \
+              --head "${BRANCH}" \
+              --title "netspeed-cli v${VERSION}" \
+              --body "Update netspeed-cli formula to v${VERSION}."
+          fi

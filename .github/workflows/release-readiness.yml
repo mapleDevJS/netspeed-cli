@@ -1,0 +1,86 @@
+name: Release Readiness
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  readiness:
+    name: Release Readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Run QA gate
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --verbose
+          cargo test --doc
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+          cargo test --test mock_network_test -- --ignored --nocapture
+          cargo test --test integration_upload_fetch_test -- --ignored --nocapture
+          cargo test --test e2e_test -- --ignored --nocapture
+          cargo package --locked
+          cargo deny check
+
+      - name: Check generated docs
+        run: scripts/check-generated-docs.sh
+
+      - name: Check package dry run
+        run: |
+          cargo package --locked --no-verify
+          cargo publish --dry-run --locked
+
+      - name: Render local Homebrew formula
+        run: |
+          VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)"
+          scripts/render-homebrew-formula.sh "${VERSION}" /tmp/netspeed-cli.rb
+          grep -q "version \"${VERSION}\"" /tmp/netspeed-cli.rb
+
+  scheduled-sync:
+    name: Scheduled Release Sync
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check release channel sync
+        id: sync
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/check-release-sync.sh
+
+      - name: Open drift issue
+        if: steps.sync.outcome == 'failure' && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "Release channel drift detected" \
+            --body "The scheduled release sync check failed. Run \`scripts/check-release-sync.sh\` locally and update the out-of-sync channel."
