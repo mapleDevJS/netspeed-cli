@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Update Homebrew formula for v0.10.3
 ## [0.10.3] - 2026-04-30
 
 ### ⚙️ Miscellaneous Tasks
@@ -15,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow release generated docs bump
 - Allow dirty package dry run during release prep
 - Use release token for release pushes
+- *(release)* Bump to v0.10.3
 ## [0.10.2] - 2026-04-30
 
 ### 📚 Documentation
