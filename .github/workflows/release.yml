@@ -190,7 +190,19 @@ jobs:
           echo "SHA256: $SHA256"
 
           # Update formula file with robust sed patterns
-          sed -i "s/version \".*\"/version \"${VERSION_NO_V}\"/" netspeed-cli.rb
+          awk -v version="${VERSION_NO_V}" '
+            /^[[:space:]]*version "/ {
+              print "  version \"" version "\""
+              found = 1
+              next
+            }
+            { print }
+            /^[[:space:]]*url "/ && !found && !inserted {
+              print "  version \"" version "\""
+              inserted = 1
+            }
+          ' netspeed-cli.rb > netspeed-cli.rb.tmp
+          mv netspeed-cli.rb.tmp netspeed-cli.rb
           sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz\"|" netspeed-cli.rb
           sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" netspeed-cli.rb
 
