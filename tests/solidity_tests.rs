@@ -8,18 +8,13 @@ use netspeed_cli::{
 };
 
 #[tokio::test]
-async fn test_http_client_impl() {
-    // Build a minimal config to create a client via http::create_client (already used in orchestrator)
+async fn test_http_client_impl_rejects_invalid_url_without_network() {
     let config = Config::default();
     let settings = netspeed_cli::http::Settings::from(&config);
     let client = netspeed_cli::http::create_client(&settings).expect("client creation");
     let wrapper = ReqwestClient(client.clone());
-    // GET a known URL (httpbin) – use http://example.com which is fast and deterministic
-    let resp = wrapper
-        .get("https://example.com")
-        .await
-        .expect("GET succeeds");
-    assert!(resp.status().is_success());
+    let result = wrapper.get("not a url").await;
+    assert!(result.is_err());
 }
 
 #[tokio::test]
