@@ -10,11 +10,9 @@ all-features = false
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-# Known RUSTSEC advisories - add entries here when published
+# Known RUSTSEC advisories - add entries here when a temporary exception is required.
 # Format: { id = "RUSTSEC-XXXX-XXXX", reason = "description" }
-ignore = [
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained (archived); no replacement in tree; functionality covered by rustls-pki-types which is already used" },
-]
+ignore = []
 
 [licenses]
 allow = [

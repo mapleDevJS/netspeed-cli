@@ -5,7 +5,7 @@ use reqwest::Client;
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::ServerCertVerifier;
 use rustls::crypto::CryptoProvider;
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime, pem::PemObject};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
 use std::sync::Arc;
 
@@ -209,28 +209,20 @@ fn load_custom_ca_cert(path: &std::path::Path) -> Result<RootCertStore, Error> {
 
     let mut store = RootCertStore::empty();
 
-    // Try PEM first (returns iterator in newer versions)
-    let mut cursor = std::io::Cursor::new(&pem_data);
-    let mut found_cert = false;
-    for cert_result in rustls_pemfile::certs(&mut cursor) {
-        match cert_result {
-            Ok(cert) => {
-                store
-                    .add(cert)
-                    .map_err(|e| Error::context(format!("Failed to add cert: {}", e)))?;
-                found_cert = true;
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to parse PEM cert: {}", e);
-            }
-        }
-    }
+    let certs = CertificateDer::pem_slice_iter(&pem_data)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| Error::context(format!("Failed to parse PEM cert: {e}")))?;
 
-    // If no PEM certs found, try DER format
-    if !found_cert {
+    if certs.is_empty() {
         store
             .add(CertificateDer::from(pem_data))
             .map_err(|e| Error::context(format!("Failed to parse cert: {}", e)))?;
+    } else {
+        for cert in certs {
+            store
+                .add(cert)
+                .map_err(|e| Error::context(format!("Failed to add cert: {}", e)))?;
+        }
     }
 
     Ok(store)

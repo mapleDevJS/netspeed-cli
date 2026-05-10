@@ -1,11 +1,11 @@
-# Graph Report - /Users/alexey.ivanov/vibe.dev/netspeed-cli  (2026-04-30)
+# Graph Report - /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli  (2026-05-10)
 
 ## Corpus Check
-- 64 files · ~324,183 words
+- 64 files · ~323,967 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1723 nodes · 3902 edges · 29 communities detected
+- 1723 nodes · 3901 edges · 30 communities detected
 - Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 1053 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -39,6 +39,7 @@
 - [[_COMMUNITY_Community 26|Community 26]]
 - [[_COMMUNITY_Community 27|Community 27]]
 - [[_COMMUNITY_Community 28|Community 28]]
+- [[_COMMUNITY_Community 29|Community 29]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Args` - 46 edges
@@ -59,8 +60,8 @@
   tests/e2e_test.rs → src/common.rs
 - `test_upload_build_url()` --calls--> `build_upload_url()`  [INFERRED]
   tests/integration_upload_fetch_test.rs → src/upload.rs
-- `test_http_client_impl_rejects_invalid_url_without_network()` --calls--> `ReqwestClient`  [INFERRED]
-  /Users/alexey.ivanov/vibe.dev/netspeed-cli/tests/solidity_tests.rs → src/http_client.rs
+- `test_output_strategy_resolver()` --calls--> `resolve_output_format()`  [INFERRED]
+  /Users/alexey.ivanov/vibe.dev/netspeed-cli/tests/solidity_tests.rs → src/output_strategy.rs
 - `bench_calculate_distance()` --calls--> `calculate_distance()`  [INFERRED]
   benches/core_benchmarks.rs → src/domain/server.rs
 
@@ -80,23 +81,23 @@ Nodes (101): is_valid_ipv4(), Error, ErrorCategory, test_context_error_display()
 
 ### Community 3 - "Community 3"
 Cohesion: 0.04
-Nodes (44): Config, OutputFormat, Format, OutputConfig, make_config(), make_test_run(), make_upload_run(), resolve_output_format() (+36 more)
+Nodes (42): Config, OutputFormat, Format, OutputConfig, make_config(), make_test_run(), make_upload_run(), resolve_output_format() (+34 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.04
-Nodes (73): BandwidthResult, LoopState, make_tracker(), run_concurrent_streams(), test_bandwidth_result_struct(), test_finish_empty_state(), test_finish_peak_gte_avg(), test_finish_returns_speed_samples() (+65 more)
-
-### Community 5 - "Community 5"
 Cohesion: 0.03
 Nodes (72): grade_stability(), format_compact(), format_csv(), format_detailed(), format_json(), format_jsonl(), format_minimal(), format_simple() (+64 more)
 
-### Community 6 - "Community 6"
+### Community 5 - "Community 5"
 Cohesion: 0.05
 Nodes (71): main(), Args, create_mock_speedtest_server(), test_e2e_download_only(), test_e2e_full_speedtest_flow(), test_e2e_upload_only(), test_context_with_source(), test_error_source_chain() (+63 more)
 
-### Community 7 - "Community 7"
+### Community 6 - "Community 6"
 Cohesion: 0.03
 Nodes (40): boxed_header(), format_grade_line(), grade_badge(), grade_download(), grade_jitter(), grade_overall(), grade_ping(), grade_upload() (+32 more)
+
+### Community 7 - "Community 7"
+Cohesion: 0.06
+Nodes (64): BandwidthResult, LoopState, make_tracker(), run_concurrent_streams(), test_bandwidth_result_struct(), test_finish_empty_state(), test_finish_peak_gte_avg(), test_finish_returns_speed_samples() (+56 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.06
@@ -139,74 +140,78 @@ Cohesion: 0.1
 Nodes (33): build(), build_profile_targets(), build_targets(), FileEstimate, format_targets(), format_time_estimate(), show(), Target (+25 more)
 
 ### Community 18 - "Community 18"
+Cohesion: 0.08
+Nodes (11): OutputFormatType, ShellType, test_validate_ca_cert_path_is_directory(), test_validate_ca_cert_path_not_found(), test_validate_ca_cert_path_valid(), test_validate_timeout_too_large(), test_validate_timeout_zero(), validate_ca_cert_path() (+3 more)
+
+### Community 19 - "Community 19"
 Cohesion: 0.13
 Nodes (5): test_test_metrics_impl_default(), test_test_run_result_default_explicit(), test_test_run_result_default_values(), TestMetrics, TestRunResult
 
-### Community 19 - "Community 19"
+### Community 20 - "Community 20"
 Cohesion: 0.23
 Nodes (8): determine_stream_count(), test_default_values(), test_retry_delay_beyond_max_attempts(), test_retry_delay_exhausted(), test_retry_delay_first_attempt(), test_retry_delay_second_attempt(), test_retry_delay_third_attempt(), TestConfig
 
-### Community 20 - "Community 20"
+### Community 21 - "Community 21"
 Cohesion: 0.2
 Nodes (5): ConfigProvider, File, NetworkConfig, ServerSelection, TestSelection
 
-### Community 21 - "Community 21"
+### Community 22 - "Community 22"
 Cohesion: 0.22
 Nodes (5): ConfigSource, NetworkSource, OutputSource, ServerSource, TestSource
 
-### Community 22 - "Community 22"
+### Community 23 - "Community 23"
 Cohesion: 0.67
 Nodes (1): NetspeedCli
 
-### Community 23 - "Community 23"
-Cohesion: 1.0
-Nodes (0): 
-
 ### Community 24 - "Community 24"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 25 - "Community 25"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 26 - "Community 26"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 27 - "Community 27"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 28 - "Community 28"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
+
+### Community 29 - "Community 29"
+Cohesion: 1.0
+Nodes (0):
 
 ## Knowledge Gaps
 - **56 isolated node(s):** `TestServer`, `TestServersWrapper`, `TestServerConfig`, `TestMetrics`, `ServerConfig` (+51 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 23`** (2 nodes): `run_all_phases()`, `speedtest.rs`
+- **Thin community `Community 24`** (2 nodes): `run_all_phases()`, `speedtest.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 24`** (1 nodes): `commitlint.config.js`
+- **Thin community `Community 25`** (1 nodes): `commitlint.config.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 25`** (1 nodes): `_netspeed-cli.ps1`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 26`** (1 nodes): `lib.rs`
+- **Thin community `Community 26`** (1 nodes): `_netspeed-cli.ps1`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 27`** (1 nodes): `lib.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 28`** (1 nodes): `mod.rs`
+- **Thin community `Community 28`** (1 nodes): `lib.rs`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 29`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
+- **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
+  _High betweenness centrality (0.067) - this node is a cross-community bridge._
+- **Why does `grade_overall()` connect `Community 6` to `Community 1`, `Community 4`, `Community 13`?**
   _High betweenness centrality (0.053) - this node is a cross-community bridge._
-- **Why does `ping_test()` connect `Community 4` to `Community 0`, `Community 9`, `Community 6`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
-- **Why does `grade_overall()` connect `Community 7` to `Community 1`, `Community 13`, `Community 5`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
+- **Why does `format_simple()` connect `Community 4` to `Community 1`, `Community 3`, `Community 5`, `Community 7`?**
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Args` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 35 inferred relationships involving `no_color()` (e.g. with `print_error()` and `print_suggestion()`) actually correct?**
