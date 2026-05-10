@@ -445,8 +445,30 @@ fn parse_ip_from_xml(xml: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustls::pki_types::pem::PemObject;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const TEST_CA_CERT_PEM: &[u8] = b"-----BEGIN CERTIFICATE-----
+MIIDJzCCAg+gAwIBAgIUbB8GF40fGT74B52EjKq8d7t6NbYwDQYJKoZIhvcNAQEL
+BQAwGzEZMBcGA1UEAwwQbmV0c3BlZWQtdGVzdC1jYTAeFw0yNjA1MTAxMzUxMDha
+Fw0yNzA1MTAxMzUxMDhaMBsxGTAXBgNVBAMMEG5ldHNwZWVkLXRlc3QtY2EwggEi
+MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCkeVBlb2A7LCzpij6xz0YIKRyR
+cCF6ln44r2VDmu//caxxsBY2WRlCpCty+gyBQtsswJ35FbXeAoQ0+9TGKAPj4lQL
+xLtRpdW4g/7nKx8JIyKmpHxBjP3yT1ZxquQLwXQwW/PlQn6JaLLLg7DimQJXC5g8
+fQdMeMF3cKxeNVhsrHpSP1ZttUa0qfsUSjkSO0u4fZFuqN+WWo27p2C+svRPhOK7
+ox6IqeJkAt8m3Bli3rBC5WLdZYAjBz449qbOnBU4IhwlZv7Dp9EuHlP3x1Vc4bK1
+cnM+DJMjj7ExvDOYIGdIQOCLXYLMgqvB6d8N8mVLnWdMHC7L0nPLewCwepltAgMB
+AAGjYzBhMB0GA1UdDgQWBBTXK0U9DSLkSKDHNdoRNSd2hDvCHDAfBgNVHSMEGDAW
+gBTXK0U9DSLkSKDHNdoRNSd2hDvCHDAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB
+/wQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAc3kwHtl5yOUqC3UmcG1Wad9r6aFx
+s3LXvUII3PuwI1tt9Vy5KbdRcvVwqaIesbIXXTz7tIJnDrCXy26P+aISKPwDm1gR
+eHh5c/YpHK/6n7yLWzEgsQ8ubYp7gmEyOi67XswLSo9cir+uyrHTfJW21ZHC6QLX
+Qd5zUwl9sGx9KYJyQh4yaTZXARfatMS8ZUMravtalVF/u6wqrXW0IlnH5fhiAUij
+fPZ9jkztl7jt12t+a0il05PmJjbq+L+gFfzQ5xKIZRzx+XHZczVZl5qkUwl4kN6I
+zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
+-----END CERTIFICATE-----
+";
 
     // ==================== TlsConfig Builder Method Tests ====================
 
@@ -645,6 +667,41 @@ mod tests {
         // Test with a directory path instead of file
         let result = load_custom_ca_cert(std::path::Path::new("/tmp"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_custom_ca_cert_pem() {
+        let cert_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), TEST_CA_CERT_PEM).unwrap();
+
+        let store = load_custom_ca_cert(cert_file.path()).unwrap();
+
+        assert_eq!(store.roots.len(), 1);
+    }
+
+    #[test]
+    fn test_load_custom_ca_cert_der() {
+        let der = CertificateDer::from_pem_slice(TEST_CA_CERT_PEM).unwrap();
+        let cert_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), der.as_ref()).unwrap();
+
+        let store = load_custom_ca_cert(cert_file.path()).unwrap();
+
+        assert_eq!(store.roots.len(), 1);
+    }
+
+    #[test]
+    fn test_load_custom_ca_cert_rejects_malformed_pem() {
+        let cert_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            cert_file.path(),
+            b"-----BEGIN CERTIFICATE-----\nnot-base64\n-----END CERTIFICATE-----\n",
+        )
+        .unwrap();
+
+        let err = load_custom_ca_cert(cert_file.path()).unwrap_err();
+
+        assert!(format!("{err}").contains("Failed to parse PEM cert"));
     }
 
     // ==================== create_client Tests ====================

@@ -1,11 +1,11 @@
 # Graph Report - /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli  (2026-05-10)
 
 ## Corpus Check
-- 64 files · ~323,967 words
+- 64 files · ~324,320 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1723 nodes · 3901 edges · 30 communities detected
+- 1726 nodes · 3910 edges · 30 communities detected
 - Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 1053 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -60,8 +60,8 @@
   tests/e2e_test.rs → src/common.rs
 - `test_upload_build_url()` --calls--> `build_upload_url()`  [INFERRED]
   tests/integration_upload_fetch_test.rs → src/upload.rs
-- `test_output_strategy_resolver()` --calls--> `resolve_output_format()`  [INFERRED]
-  /Users/alexey.ivanov/vibe.dev/netspeed-cli/tests/solidity_tests.rs → src/output_strategy.rs
+- `test_http_client_impl_rejects_invalid_url_without_network()` --calls--> `ReqwestClient`  [INFERRED]
+  /Users/alexey.ivanov/vibe.dev/netspeed-cli/tests/solidity_tests.rs → src/http_client.rs
 - `bench_calculate_distance()` --calls--> `calculate_distance()`  [INFERRED]
   benches/core_benchmarks.rs → src/domain/server.rs
 
@@ -69,47 +69,47 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
-Nodes (182): test_settings_from_config_default_user_agent(), test_settings_from_config_retry_enabled_by_default(), test_settings_from_config_timeout(), test_settings_from_config_with_ca_cert(), test_settings_from_config_with_pinning(), test_settings_from_config_with_source_ip(), test_settings_from_config_with_tls_version(), test_config_from_default_source() (+174 more)
+Nodes (175): test_config_from_default_source(), test_config_from_source_all_format_variants(), test_config_from_source_fully_custom(), test_config_from_source_only_network(), test_config_from_source_only_output(), test_config_from_source_only_servers(), test_config_from_source_only_test_selection(), test_config_source_composes_sub_sources() (+167 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (124): bar_chart(), format_data_size_tabular(), format_distance(), format_duration_tabular(), format_jitter_tabular(), format_latency_tabular(), format_loss_tabular(), format_speed_tabular() (+116 more)
+Nodes (125): bar_chart(), format_data_size_tabular(), format_distance(), format_duration_tabular(), format_jitter_tabular(), format_latency_tabular(), format_loss_tabular(), format_speed_tabular() (+117 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.03
-Nodes (101): is_valid_ipv4(), Error, ErrorCategory, test_context_error_display(), test_context_without_source(), test_debug_trait(), test_error_trait_implementation(), test_from_csv_error_direct() (+93 more)
+Nodes (112): Error, ErrorCategory, test_context_error_display(), test_context_with_source(), test_context_without_source(), test_debug_trait(), test_error_source_chain(), test_error_trait_implementation() (+104 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.04
-Nodes (42): Config, OutputFormat, Format, OutputConfig, make_config(), make_test_run(), make_upload_run(), resolve_output_format() (+34 more)
+Nodes (45): Config, OutputFormat, Orchestrator, Format, OutputConfig, make_config(), make_test_run(), make_upload_run() (+37 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.03
-Nodes (72): grade_stability(), format_compact(), format_csv(), format_detailed(), format_json(), format_jsonl(), format_minimal(), format_simple() (+64 more)
+Cohesion: 0.02
+Nodes (53): boxed_header(), format_grade_line(), grade_badge(), grade_download(), grade_jitter(), grade_overall(), grade_ping(), grade_upload() (+45 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.05
-Nodes (71): main(), Args, create_mock_speedtest_server(), test_e2e_download_only(), test_e2e_full_speedtest_flow(), test_e2e_upload_only(), test_context_with_source(), test_error_source_chain() (+63 more)
+Cohesion: 0.03
+Nodes (76): BandwidthResult, LoopState, make_tracker(), run_concurrent_streams(), test_bandwidth_result_struct(), test_finish_empty_state(), test_finish_peak_gte_avg(), test_finish_returns_speed_samples() (+68 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.03
-Nodes (40): boxed_header(), format_grade_line(), grade_badge(), grade_download(), grade_jitter(), grade_overall(), grade_ping(), grade_upload() (+32 more)
+Cohesion: 0.05
+Nodes (66): Args, create_mock_speedtest_server(), test_e2e_download_only(), test_e2e_full_speedtest_flow(), test_e2e_upload_only(), test_cli_help(), test_cli_version(), test_combined_flags() (+58 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.06
-Nodes (64): BandwidthResult, LoopState, make_tracker(), run_concurrent_streams(), test_bandwidth_result_struct(), test_finish_empty_state(), test_finish_peak_gte_avg(), test_finish_returns_speed_samples() (+56 more)
+Cohesion: 0.04
+Nodes (46): calculate_bandwidth(), format_data_size(), is_valid_ipv4(), bench_build_test_url(), bench_build_upload_url(), bench_calculate_bandwidth(), bench_calculate_bandwidth_zero_elapsed(), bench_calculate_distance() (+38 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.06
-Nodes (38): default_early_exit(), dry_run_orch(), EarlyExitFlags, orch_from_source(), Orchestrator, StorageBuilder, test_dry_run_no_color_mode(), test_dry_run_no_download_branch() (+30 more)
+Nodes (63): grade_stability(), format_compact(), format_csv(), format_detailed(), format_json(), format_jsonl(), format_minimal(), format_simple() (+55 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.04
-Nodes (43): calculate_bandwidth(), format_data_size(), bench_build_test_url(), bench_build_upload_url(), bench_calculate_bandwidth(), bench_calculate_bandwidth_zero_elapsed(), bench_calculate_distance(), bench_extract_base_url() (+35 more)
-
-### Community 10 - "Community 10"
 Cohesion: 0.06
 Nodes (62): all_categories(), compute_all_statuses(), compute_scenario_status(), format_scenario_grid(), headroom_level(), HeadroomLevel, print_scenario_grid(), render_capacity_bar() (+54 more)
+
+### Community 10 - "Community 10"
+Cohesion: 0.07
+Nodes (37): default_early_exit(), dry_run_orch(), EarlyExitFlags, orch_from_source(), StorageBuilder, test_dry_run_no_color_mode(), test_dry_run_no_download_branch(), test_dry_run_no_upload_branch() (+29 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.05
@@ -117,15 +117,15 @@ Nodes (37): is_config_error(), is_list_sentinel(), is_network_error(), machine_e
 
 ### Community 12 - "Community 12"
 Cohesion: 0.09
-Nodes (59): backup_path(), corrupt_path(), Entry, get_history_path(), load_entries(), load_history_from_path(), make_test_result(), save_report() (+51 more)
+Nodes (58): backup_path(), corrupt_path(), Entry, get_history_path(), load_entries(), load_history_from_path(), make_test_result(), save_report() (+50 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.06
-Nodes (43): adaptive_bar_width(), create_spinner(), finish_ok(), render_sparkline(), reveal_grade(), reveal_pause(), reveal_scan_complete(), set_no_color() (+35 more)
-
-### Community 14 - "Community 14"
 Cohesion: 0.08
 Nodes (28): ClientLocation, compute_ci_95(), compute_cv(), CsvOutput, DefaultStats, PhaseResult, PhaseState, rand_simple() (+20 more)
+
+### Community 14 - "Community 14"
+Cohesion: 0.1
+Nodes (33): adaptive_bar_width(), create_spinner(), finish_ok(), render_sparkline(), reveal_grade(), reveal_pause(), reveal_scan_complete(), set_no_color() (+25 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.08
@@ -140,12 +140,12 @@ Cohesion: 0.1
 Nodes (33): build(), build_profile_targets(), build_targets(), FileEstimate, format_targets(), format_time_estimate(), show(), Target (+25 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.08
-Nodes (11): OutputFormatType, ShellType, test_validate_ca_cert_path_is_directory(), test_validate_ca_cert_path_not_found(), test_validate_ca_cert_path_valid(), test_validate_timeout_too_large(), test_validate_timeout_zero(), validate_ca_cert_path() (+3 more)
-
-### Community 19 - "Community 19"
 Cohesion: 0.13
 Nodes (5): test_test_metrics_impl_default(), test_test_run_result_default_explicit(), test_test_run_result_default_values(), TestMetrics, TestRunResult
+
+### Community 19 - "Community 19"
+Cohesion: 0.18
+Nodes (4): resolve(), test_resolve_theme_default(), test_validate_invalid(), Theme
 
 ### Community 20 - "Community 20"
 Cohesion: 0.23
@@ -206,12 +206,12 @@ Nodes (0):
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`?**
-  _High betweenness centrality (0.067) - this node is a cross-community bridge._
-- **Why does `grade_overall()` connect `Community 6` to `Community 1`, `Community 4`, `Community 13`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
-- **Why does `format_simple()` connect `Community 4` to `Community 1`, `Community 3`, `Community 5`, `Community 7`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+- **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 14`, `Community 19`?**
+  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **Why does `grade_overall()` connect `Community 4` to `Community 8`, `Community 1`, `Community 14`?**
+  _High betweenness centrality (0.036) - this node is a cross-community bridge._
+- **Why does `degradation_str()` connect `Community 1` to `Community 6`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Args` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 35 inferred relationships involving `no_color()` (e.g. with `print_error()` and `print_suggestion()`) actually correct?**
