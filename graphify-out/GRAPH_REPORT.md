@@ -1,7 +1,7 @@
-# Graph Report - /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli  (2026-05-10)
+# Graph Report - /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli  (2026-05-16)
 
 ## Corpus Check
-- 64 files · ~324,320 words
+- 64 files · ~324,315 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -165,27 +165,27 @@ Nodes (1): NetspeedCli
 
 ### Community 24 - "Community 24"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 25 - "Community 25"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 26 - "Community 26"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 27 - "Community 27"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 28 - "Community 28"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 29 - "Community 29"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ## Knowledge Gaps
 - **56 isolated node(s):** `TestServer`, `TestServersWrapper`, `TestServerConfig`, `TestMetrics`, `ServerConfig` (+51 more)
@@ -207,11 +207,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 14`, `Community 19`?**
-  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+  _High betweenness centrality (0.089) - this node is a cross-community bridge._
 - **Why does `grade_overall()` connect `Community 4` to `Community 8`, `Community 1`, `Community 14`?**
-  _High betweenness centrality (0.036) - this node is a cross-community bridge._
-- **Why does `degradation_str()` connect `Community 1` to `Community 6`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+  _High betweenness centrality (0.059) - this node is a cross-community bridge._
+- **Why does `format_minimal()` connect `Community 8` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Args` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 35 inferred relationships involving `no_color()` (e.g. with `print_error()` and `print_suggestion()`) actually correct?**
