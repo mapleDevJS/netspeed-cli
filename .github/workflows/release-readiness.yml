@@ -43,6 +43,8 @@ jobs:
           cargo test --verbose
           cargo test --doc
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+          cargo test --lib socket_regression -- --ignored
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           cargo test --test mock_network_test -- --ignored --nocapture
           cargo test --test integration_upload_fetch_test -- --ignored --nocapture
           cargo test --test e2e_test -- --ignored --nocapture
