@@ -17,6 +17,12 @@ Runtime behavior highlights:
 - Corrupted local history files fail safely instead of being silently overwritten.
 - Human-readable formats output to **stderr** (so they don't interfere with pipes); machine-readable formats (JSON, JSONL, CSV) output to **stdout**.
 
+### Measurement limits
+
+Download and upload each warm connections for up to one second (16 MiB total), then measures for up to five seconds (256 MiB total). Upload payloads adapt from 200 KB to 2 MB to reduce request overhead. These caps apply across all streams, including `--single`; hitting a data cap ends the phase early. Download bytes are capped as response chunks arrive. Warm-up is excluded from measured bytes and samples. Upload bytes are counted as HTTP consumes request-body chunks, excluding warm-up traffic; at least one request must complete successfully. Slow requests are cancelled at the phase deadline.
+
+Peak speed and stability use interval throughput samples, including zero-throughput stalls. Very short or capped runs provide less evidence about sustained speed. Latency under load is measured concurrently with each transfer, and reported durations include setup and upload warm-up.
+
 ## Installation
 
 ### Homebrew (macOS/Linux) - Recommended
@@ -78,6 +84,8 @@ Test your connection automatically:
 ```bash
 netspeed-cli
 ```
+
+Automatic selection probes up to 20 candidates, with five concurrent probes and a four-second selection deadline, then chooses the healthy server with the lowest measured latency. Candidates are shortlisted by distance when client location is available. If location lookup fails, candidates are spread across the server list; distance is shown as `unknown`, JSON uses `null`, and CSV leaves the distance field empty.
 
 Test against a specific server:
 
