@@ -1,7 +1,7 @@
 # Graph Report - /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli  (2026-10-08)
 
 ## Corpus Check
-- 68 files · ~337,440 words
+- 68 files · ~337,578 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -224,11 +224,9 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `no_color()` connect `Community 1` to `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 9`, `Community 10`, `Community 11`, `Community 20`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
 - **Why does `format_simple()` connect `Community 1` to `Community 4`, `Community 6`, `Community 7`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
-- **Why does `degradation_str()` connect `Community 7` to `Community 1`, `Community 6`?**
-  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
 - **Are the 43 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Args` has 43 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 35 inferred relationships involving `no_color()` (e.g. with `print_error()` and `print_suggestion()`) actually correct?**
@@ -237,3 +235,5 @@ _Questions this graph is uniquely positioned to answer:_
   _56 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.02 - nodes in this community are weakly interconnected._
+- **Should `Community 1` be split into smaller, more focused modules?**
+  _Cohesion score 0.03 - nodes in this community are weakly interconnected._
