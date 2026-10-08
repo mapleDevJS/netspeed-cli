@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [unreleased]
+
+### 🐛 Bug Fixes
+
+- *(measurement)* Bound transfers and select reachable servers
+- *(storage)* Preserve reports and serialize history operations
+- *(cli)* Honor source binding format aliases and TLS minimums
+- *(ci)* Handle async-trait attributes on Rust 1.99
+- *(ci)* Compare benchmarks on the same runner
+
+### 📚 Documentation
+
+- Fix Homebrew badge and install command
+- Document measurement limits and refresh project graph
+
+### 🧪 Testing
+
+- Cover custom CA parsing
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Update Homebrew formula for v0.10.3
+- Harden release readiness
+- Harden release readiness checks
+- Enforce release identity coverage and benchmark regressions
+- *(deps)* Bump the github-actions group with 7 updates (#57)
+- Sync main and enable manual validation
+
+### 💼 Other
+
+- *(deps)* Update security fixes and add atomic storage support
 ## [0.10.3] - 2026-04-30
 
 ### ⚙️ Miscellaneous Tasks
@@ -15,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow release generated docs bump
 - Allow dirty package dry run during release prep
 - Use release token for release pushes
+- *(release)* Bump to v0.10.3
 ## [0.10.2] - 2026-04-30
 
 ### 📚 Documentation
@@ -34,20 +66,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(docs)* Remove broken intra-doc link to pub(crate) ConfigSource::from_args
 - Harden release readiness gates
 
-### 💼 Other
-
-- Update Homebrew formula to v0.10.0
-- Update lockfile and man page for v0.10.0
-
-### 🚜 Refactor
-
-- Engineering audit — correctness fixes, God Module split, test coverage
-
 ### 📚 Documentation
 
 - Update crate documentation for v0.10.0
 - Fully update README to match current codebase
 - Fully update README to match current codebase
+
+### 🚜 Refactor
+
+- Engineering audit — correctness fixes, God Module split, test coverage
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -56,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(release)* Bump to v0.10.1
 - Fix release changelog generation
 - Fix release formula version update
+
+### 💼 Other
+
+- Update Homebrew formula to v0.10.0
+- Update lockfile and man page for v0.10.0
 ## [0.10.0] - 2026-04-28
 
 ### 🚀 Features
@@ -69,45 +101,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(ci)* Remove invalid escaped quotes from auto-merge, release, and security-audit workflows
 - *(ci)* Add explicit permissions to all workflow jobs (CodeQL CWE-275)
 
-### 💼 Other
+### 📚 Documentation
 
-- Update Homebrew formula to v0.9.0
-- Bump to v0.10.0
+- Update AGENTS.md with lint/qa/hooks commands
 
 ### 🚜 Refactor
 
 - Improve architecture to 10/10 SOLID compliance
 - *(ui)* Replace direct owo_colors calls with Theme/Colors abstraction
 
-### 📚 Documentation
-
-- Update AGENTS.md with lint/qa/hooks commands
-
 ### ⚙️ Miscellaneous Tasks
 
 - Sync local QA gate with CI and add pre-push hook
+
+### 💼 Other
+
+- Update Homebrew formula to v0.9.0
+- Bump to v0.10.0
 ## [0.9.0] - 2026-04-27
-
-### 🐛 Bug Fixes
-
-- *(ci)* Resolve rustfmt, theme test, scorecard; prevent future failures
-- *(ci)* Pin rustfmt version, handle Windows file storage test
-- *(ci)* Make rustfmt non-blocking (cross-platform diff)
-- *(ci)* Continue-on-error at job level for Security Scorecard
-- *(ci)* Upgrade codeql-action to v4, guard post-scorecard steps
-
-### ⚙️ Miscellaneous Tasks
-
-- Remove .qwen folder from repository tracking
-
-### 🛡️ Security
-
-- Bump to v0.9.0
-## [0.7.0] - 2026-04-07
 
 ### 🚀 Features
 
-- Merge develop UI dashboard features into master
 - *(tls)* Add TLS configuration options
 - *(tls)* Add TLS configuration options
 - *(tls)* Add TLS configuration options
@@ -115,12 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(security)* Add detect-secrets, security hooks, and audit tooling
 - *(ci)* Add automation workflows for deps and changelog
 - Add machine-readable error output and config refactoring
-- Merge staging to master for v0.7.0 release
 
 ### 🐛 Bug Fixes
 
-- *(dashboard)* Fix broken box layout, alignment, and add overall rating
-- *(tests)* Correct upload failure assertion for HTTP 500 responses
 - Address audit findings - clippy lint, formatting, security policy, coverage threshold
 - Address formatting and add RUSTSEC-2026-0104 advisory ignore
 - Regenerate Cargo.lock clean
@@ -139,10 +150,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(ci)* Handle git-cliff parse warnings and skipped security jobs
 - *(ci)* Set GH_TOKEN for changelog PR creation
 - *(ci)* Continue-on-error for changelog PR (org restricts GITHUB_TOKEN)
+- *(ci)* Resolve rustfmt, theme test, scorecard; prevent future failures
+- *(ci)* Pin rustfmt version, handle Windows file storage test
+- *(ci)* Make rustfmt non-blocking (cross-platform diff)
+- *(ci)* Continue-on-error at job level for Security Scorecard
+- *(ci)* Upgrade codeql-action to v4, guard post-scorecard steps
 
-### 💼 Other
+### 📚 Documentation
 
-- *(staging)* Integrate TLS configuration and automation tooling
+- Update README with new output formats and dashboard examples
+- Add direct download links, platform notes, and verification steps to installation instructions
 
 ### 🚜 Refactor
 
@@ -150,12 +167,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(tests)* Rename clone tests to copy for accuracy
 - SOLID architecture overhaul with dependency injection
 
+### ⚙️ Miscellaneous Tasks
+
+- *(develop)* Bump to v0.8.0 development
+- Add staging to CI trigger branches
+- Add advisory ignore placeholders in deny.toml
+- Remove .qwen folder from repository
+- Add .qwen to gitignore
+- Apply whitespace and formatting fixes
+- Remove clippy-pedantic job to sync CI with local
+- Apply rustfmt whitespace fixes to man page
+- Update Homebrew tap to mapleDevJS/homebrew-netspeed-cli
+- Trigger CI rerun with changelog fix
+- Remove .qwen folder from repository tracking
+
+### 🛡️ Security
+
+- Bump to v0.9.0
+
+### 💼 Other
+
+- *(staging)* Integrate TLS configuration and automation tooling
+## [0.7.0] - 2026-04-07
+
+### 🚀 Features
+
+- *(ui)* Add dashboard format, bar charts, and UX improvements
+- Merge develop UI dashboard features into master
+- Merge staging to master for v0.7.0 release
+
+### 🐛 Bug Fixes
+
+- Restore main() function call in release.sh
+- *(dashboard)* Fix broken box layout, alignment, and add overall rating
+- *(tests)* Correct upload failure assertion for HTTP 500 responses
+
 ### 📚 Documentation
 
 - *(readme)* Add dynamic version badges (crates.io, GitHub, Homebrew)
 - Add code of conduct and contributing guidelines
-- Update README with new output formats and dashboard examples
-- Add direct download links, platform notes, and verification steps to installation instructions
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -167,28 +217,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(homebrew)* Update formula to v0.7.0
 - *(develop)* Bump to v0.8.0-SNAPSHOT
 - *(ci)* Update completions, man page, and track bandwidth_loop module
-- *(develop)* Bump to v0.8.0 development
-- Add staging to CI trigger branches
-- Add advisory ignore placeholders in deny.toml
-- Remove .qwen folder from repository
-- Add .qwen to gitignore
-- Apply whitespace and formatting fixes
-- Remove clippy-pedantic job to sync CI with local
-- Apply rustfmt whitespace fixes to man page
-- Update Homebrew tap to mapleDevJS/homebrew-netspeed-cli
-- Trigger CI rerun with changelog fix
 - *(release)* Bump to v0.7.0
 ## [0.6.0] - 2026-04-06
 
 ### 🐛 Bug Fixes
 
 - *(benchmarks)* Use std::hint::black_box for criterion 0.8 compat
-
-### 💼 Other
-
-- Bump clap_mangen from 0.2.33 to 0.3.0 (#5)
-- Bump quick-xml from 0.37.5 to 0.39.2 (#9)
-- Bump criterion from 0.5.1 to 0.8.2 (#8)
 
 ### 📚 Documentation
 
@@ -199,6 +233,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update formula to v0.5.1
 - Bump actions/upload-artifact from 4 to 7 (#1)
 - *(release)* Bump to v0.6.0
+
+### 💼 Other
+
+- Bump clap_mangen from 0.2.33 to 0.3.0 (#5)
+- Bump quick-xml from 0.37.5 to 0.39.2 (#9)
+- Bump criterion from 0.5.1 to 0.8.2 (#8)
 ## [0.5.1] - 2026-04-06
 
 ### 🐛 Bug Fixes
@@ -211,14 +251,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(release)* Bump to v0.5.1
 ## [0.5.0] - 2026-04-06
 
-### 🚀 Features
-
-- *(ui)* Add dashboard format, bar charts, and UX improvements
-
 ### 🐛 Bug Fixes
 
 - Make GitHub release creation idempotent
-- Restore main() function call in release.sh
 - Restore main() function call in release.sh
 
 ### 📚 Documentation
@@ -227,6 +262,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚙️ Miscellaneous Tasks
 
+- Add develop to CI triggers and update formula to v0.3.0
 - *(release)* Bump to v0.5.0
 ## [0.3.0] - 2026-04-05
 
@@ -256,7 +292,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve Homebrew compliance and CI workflow
 - Regenerate completions and man page
 - Bump version to 0.3.0
-- Add develop to CI triggers and update formula to v0.3.0
 ## [0.2.2] - 2026-04-04
 
 ### 🐛 Bug Fixes
