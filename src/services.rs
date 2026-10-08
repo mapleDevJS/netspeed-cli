@@ -24,8 +24,17 @@ pub trait ServerPinger: Send + Sync {
     async fn ping_server(&self, server: &Server) -> Result<(f64, f64, f64, Vec<f64>), Error>;
 }
 
+#[async_trait]
 pub trait ServerSelector: Send + Sync {
     fn select_best(&self, servers: &[Server]) -> Result<Server, Error>;
+
+    async fn select_reachable(
+        &self,
+        servers: &[Server],
+        _location_known: bool,
+    ) -> Result<Server, Error> {
+        self.select_best(servers)
+    }
 }
 
 pub trait ServerService: ServerFetcher + ServerPinger + ServerSelector + Send + Sync {}
@@ -82,7 +91,15 @@ impl ServerPinger for DefaultServerService {
     }
 }
 
+#[async_trait]
 impl ServerSelector for DefaultServerService {
+    async fn select_reachable(
+        &self,
+        servers: &[Server],
+        location_known: bool,
+    ) -> Result<Server, Error> {
+        crate::servers::select_reachable_server(&self.client, servers, location_known).await
+    }
     fn select_best(&self, servers: &[Server]) -> Result<Server, Error> {
         crate::servers::select_best_server(servers)
     }

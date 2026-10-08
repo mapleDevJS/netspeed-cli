@@ -11,7 +11,6 @@ use crate::error::Error;
 use crate::services::Services;
 use crate::theme::Colors;
 use futures::future::BoxFuture;
-use std::sync::Arc;
 
 use crate::orchestrator::Orchestrator;
 use crate::task_runner::TestRunResult;
@@ -36,6 +35,7 @@ pub struct PhaseContext {
     upload_result: Option<TestRunResult>,
     list_printed: bool,
     elapsed: Option<std::time::Duration>,
+    started: std::time::Instant,
     services: std::sync::Arc<dyn Services>,
 }
 
@@ -51,6 +51,7 @@ impl PhaseContext {
             upload_result: None,
             list_printed: false,
             elapsed: None,
+            started: std::time::Instant::now(),
             services,
         }
     }
@@ -395,7 +396,12 @@ pub(crate) fn run_server_discovery<'a>(
             ));
         }
 
-        let server = match ctx.services().server_service().select_best(&servers) {
+        let server = match ctx
+            .services()
+            .server_service()
+            .select_reachable(&servers, ctx.client_location().is_some())
+            .await
+        {
             Ok(s) => s,
             Err(e) => return PhaseOutcome::PhaseError(e),
         };
@@ -514,7 +520,7 @@ pub(crate) fn run_download<'a>(
     let single = orch.config().single();
     let is_verbose = orch.is_verbose();
     // Only show spinner in non-verbose mode (verbose mode has progress bar which is better)
-    let spinner = if !is_verbose {
+    let spinner = if !is_verbose && !orch.config().quiet() && !orch.config().no_download() {
         Some(crate::progress::create_spinner("Testing download..."))
     } else {
         None
@@ -535,17 +541,17 @@ pub(crate) fn run_download<'a>(
         };
 
         let client = orch.http_client();
-        let progress = if is_verbose {
-            Arc::new(crate::progress::Tracker::new_animated("Download"))
-        } else {
-            Arc::new(crate::progress::Tracker::with_target(
-                "Download",
-                indicatif::ProgressDrawTarget::hidden(),
-            ))
-        };
-
-        match crate::download::run(client, &server, single, progress).await {
-            Ok((avg, peak, total_bytes, samples)) => {
+        match crate::task_runner::run_bandwidth_test(
+            client.clone(),
+            &server,
+            "Download",
+            is_verbose,
+            |progress| crate::download::run(client, &server, single, progress),
+        )
+        .await
+        {
+            Ok(result) => {
+                let avg = result.avg_bps;
                 if let Some(ref pb) = spinner {
                     let theme = orch.config().theme();
                     let msg = if crate::terminal::no_color() {
@@ -558,14 +564,7 @@ pub(crate) fn run_download<'a>(
                     };
                     crate::progress::finish_ok(pb, &msg, theme);
                 }
-                ctx.set_download_result(crate::task_runner::TestRunResult {
-                    avg_bps: avg,
-                    peak_bps: peak,
-                    total_bytes,
-                    duration_secs: 0.0,
-                    speed_samples: samples,
-                    latency_under_load: None,
-                });
+                ctx.set_download_result(result);
                 // Put server back for upload phase
                 ctx.set_server(server);
                 PhaseOutcome::PhaseCompleted
@@ -582,7 +581,7 @@ pub(crate) fn run_upload<'a>(
     let single = orch.config().single();
     let is_verbose = orch.is_verbose();
     // Only show spinner in non-verbose mode (verbose mode has progress bar which is better)
-    let spinner = if !is_verbose {
+    let spinner = if !is_verbose && !orch.config().quiet() && !orch.config().no_upload() {
         Some(crate::progress::create_spinner("Testing upload..."))
     } else {
         None
@@ -603,17 +602,17 @@ pub(crate) fn run_upload<'a>(
         };
 
         let client = orch.http_client();
-        let progress = if is_verbose {
-            Arc::new(crate::progress::Tracker::new_animated("Upload"))
-        } else {
-            Arc::new(crate::progress::Tracker::with_target(
-                "Upload",
-                indicatif::ProgressDrawTarget::hidden(),
-            ))
-        };
-
-        match crate::upload::run(client, &server, single, progress).await {
-            Ok((avg, peak, total_bytes, samples)) => {
+        match crate::task_runner::run_bandwidth_test(
+            client.clone(),
+            &server,
+            "Upload",
+            is_verbose,
+            |progress| crate::upload::run(client, &server, single, progress),
+        )
+        .await
+        {
+            Ok(result) => {
+                let avg = result.avg_bps;
                 if let Some(ref pb) = spinner {
                     let theme = orch.config().theme();
                     let msg = if crate::terminal::no_color() {
@@ -626,14 +625,7 @@ pub(crate) fn run_upload<'a>(
                     };
                     crate::progress::finish_ok(pb, &msg, theme);
                 }
-                ctx.set_upload_result(crate::task_runner::TestRunResult {
-                    avg_bps: avg,
-                    peak_bps: peak,
-                    total_bytes,
-                    duration_secs: 0.0,
-                    speed_samples: samples,
-                    latency_under_load: None,
-                });
+                ctx.set_upload_result(result);
                 // Put server back for result phase
                 ctx.set_server(server);
                 PhaseOutcome::PhaseCompleted
@@ -642,8 +634,6 @@ pub(crate) fn run_upload<'a>(
         }
     })
 }
-
-// Bandwidth and result phases use async task_runner - handled in legacy for now
 
 pub(crate) fn run_result<'a>(
     orch: &'a Orchestrator,
@@ -708,19 +698,17 @@ pub(crate) fn run_result<'a>(
             },
         };
 
+        let elapsed = ctx.started.elapsed();
+        ctx.set_elapsed(elapsed);
+        // Delegate to orchestrator for output
+        let output = orch.output_results(&mut result, &dl_result, &ul_result, elapsed);
         if config.should_save_history() {
             if let Err(e) = orch.saver().save(&result) {
                 eprintln!("Warning: Failed to save test result: {e}");
             }
         }
 
-        // Delegate to orchestrator for output
-        match orch.output_results(
-            &mut result,
-            &dl_result,
-            &ul_result,
-            std::time::Duration::from_secs(0),
-        ) {
+        match output {
             Ok(()) => PhaseOutcome::PhaseCompleted,
             Err(e) => PhaseOutcome::PhaseError(e),
         }
@@ -752,6 +740,158 @@ pub async fn run_all_phases(orch: &Orchestrator) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    struct LocalDiscovery {
+        server: Server,
+        client: reqwest::Client,
+    }
+    #[async_trait::async_trait]
+    impl crate::services::ServerFetcher for LocalDiscovery {
+        async fn fetch_servers(
+            &self,
+        ) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
+            Ok((vec![self.server.clone()], None))
+        }
+    }
+    #[async_trait::async_trait]
+    impl crate::services::ServerPinger for LocalDiscovery {
+        async fn ping_server(&self, server: &Server) -> Result<(f64, f64, f64, Vec<f64>), Error> {
+            crate::servers::ping_test(&self.client, server).await
+        }
+    }
+    impl crate::services::ServerSelector for LocalDiscovery {
+        fn select_best(&self, servers: &[Server]) -> Result<Server, Error> {
+            crate::servers::select_best_server(servers)
+        }
+    }
+    impl crate::services::ServerService for LocalDiscovery {}
+    struct LocalIp;
+    #[async_trait::async_trait]
+    impl crate::services::IpDiscoverer for LocalIp {
+        async fn discover_ip(&self) -> Result<String, Error> {
+            Ok("127.0.0.1".into())
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local socket binding"]
+    async fn socket_regression_production_orchestration() {
+        use crate::storage::LoadHistory;
+        use wiremock::matchers::{method, path_regex};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path_regex(".*/latency.txt$"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path_regex(".*random.*"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(vec![0; 4096])
+                    .set_delay(std::time::Duration::from_millis(75)),
+            )
+            .mount(&mock)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("OK")
+                    .set_delay(std::time::Duration::from_millis(210)),
+            )
+            .mount(&mock)
+            .await;
+        let server = Server {
+            id: "1".into(),
+            url: format!("{}/upload.php", mock.uri()),
+            name: "Local".into(),
+            sponsor: "Test".into(),
+            country: "CA".into(),
+            lat: 0.0,
+            lon: 0.0,
+            distance: 0.0,
+        };
+        let config = crate::config::Config::from_source(&crate::config::ConfigSource {
+            output: crate::config::OutputSource {
+                quiet: Some(true),
+                format: Some(crate::config::Format::Compact),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let storage = Arc::new(crate::storage::MockStorage::new());
+        let orch = Orchestrator::from_config_with_storage(
+            config,
+            crate::orchestrator::EarlyExitFlags {
+                show_config_path: false,
+                generate_completion: None,
+                history: false,
+                dry_run: false,
+            },
+            crate::orchestrator::StorageBuilder::new()
+                .with_saver_arc(storage.clone())
+                .with_history_arc(storage.clone()),
+        )
+        .unwrap();
+        let client = orch.http_client().clone();
+        let orch = orch.with_services(
+            crate::services::ServiceContainer::new(client.clone())
+                .with_server(LocalDiscovery {
+                    server: server.clone(),
+                    client,
+                })
+                .with_ip(LocalIp),
+        );
+        // Exercise the exact default runner used by main, including persistence/output.
+        orch.run().await.unwrap();
+        let saved = storage.load_recent(1).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert!(saved[0].latency_download.is_some());
+        assert!(saved[0].latency_upload.is_some());
+        assert!(saved[0].overall_grade.is_some());
+        assert!(saved[0].download.unwrap() > 0.0);
+        assert!(saved[0].upload.unwrap() > 0.0);
+        let json: serde_json::Value = serde_json::to_value(&saved[0]).unwrap();
+        assert!(!json["latency_download"].is_null());
+        // Verify phase timings survive into the formatter's input as well.
+        let mut ctx = PhaseContext::new(orch.services_arc()).with_server(server);
+        assert!(matches!(
+            run_download(&orch, &mut ctx).await,
+            PhaseOutcome::PhaseCompleted
+        ));
+        let dl = ctx.download_result().unwrap().clone();
+        assert!(dl.duration_secs > 0.0);
+        assert!(matches!(
+            run_upload(&orch, &mut ctx).await,
+            PhaseOutcome::PhaseCompleted
+        ));
+        let ul = ctx.upload_result().unwrap().clone();
+        assert!(ul.duration_secs > 0.0);
+        match crate::output_strategy::resolve_output_format(
+            orch.config(),
+            &dl,
+            &ul,
+            ctx.started.elapsed(),
+        ) {
+            crate::formatter::OutputFormat::Compact {
+                dl_duration,
+                ul_duration,
+                elapsed,
+                ..
+            } => {
+                assert!(dl_duration > 0.0 && ul_duration > 0.0);
+                assert!(elapsed.as_secs_f64() >= dl_duration + ul_duration);
+            }
+            _ => panic!("expected compact formatter"),
+        }
+        assert!(matches!(
+            run_result(&orch, &mut ctx).await,
+            PhaseOutcome::PhaseCompleted
+        ));
+        assert!(ctx.elapsed().unwrap().as_secs_f64() >= dl.duration_secs);
+    }
 
     fn make_test_services() -> std::sync::Arc<dyn Services> {
         let client = reqwest::Client::new();

@@ -104,7 +104,9 @@ pub fn determine_stream_count(single: bool) -> usize {
 /// ```
 #[must_use]
 pub fn format_distance(km: f64) -> String {
-    if km < 100.0 {
+    if !km.is_finite() || km < 0.0 {
+        "unknown".to_string()
+    } else if km < 100.0 {
         format!("{km:.1} km")
     } else {
         format!("{km:.0} km")

@@ -15,6 +15,7 @@ use crate::test_config::TestConfig;
 use crate::types::Server;
 use reqwest::Client;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Extract base URL from server URL (strip /upload.php suffix)
 #[must_use]
@@ -46,49 +47,74 @@ pub async fn run(
     single: bool,
     progress: Arc<Tracker>,
 ) -> Result<(f64, f64, u64, Vec<f64>), Error> {
-    let config = TestConfig::default();
-    let stream_count = TestConfig::stream_count_for(single);
+    run_with_config(client, server, single, progress, &DownloadConfig::default()).await
+}
 
+/// Phase-wide download budgets across all streams. Warm-up is not measured.
+#[derive(Debug, Clone)]
+pub struct DownloadConfig {
+    pub warmup: Duration,
+    pub duration: Duration,
+    pub warmup_bytes: u64,
+    pub measurement_bytes: u64,
+}
+
+impl Default for DownloadConfig {
+    fn default() -> Self {
+        Self {
+            warmup: Duration::from_secs(1),
+            duration: Duration::from_secs(5),
+            warmup_bytes: 16 * 1024 * 1024,
+            measurement_bytes: 256 * 1024 * 1024,
+        }
+    }
+}
+
+/// Run download with explicit phase-wide time and traffic limits.
+///
+/// # Errors
+/// Returns a download error for invalid limits, failed requests, or no data.
+pub async fn run_with_config(
+    client: &Client,
+    server: &Server,
+    single: bool,
+    progress: Arc<Tracker>,
+    config: &DownloadConfig,
+) -> Result<(f64, f64, u64, Vec<f64>), Error> {
+    let streams = TestConfig::stream_count_for(single);
+    if config.duration.is_zero() || config.measurement_bytes < streams as u64 {
+        return Err(Error::DownloadFailure(
+            "invalid download measurement limits".into(),
+        ));
+    }
+    let warmup_deadline = tokio::time::Instant::now() + config.warmup;
+    futures::future::try_join_all((0..streams).map(|i| {
+        download_stream(
+            client,
+            &server.url,
+            i,
+            warmup_deadline,
+            config.warmup_bytes / streams as u64,
+            None,
+        )
+    }))
+    .await?;
+    let deadline = tokio::time::Instant::now() + config.duration;
     let result = run_concurrent_streams(
-        config.estimated_download_bytes,
-        stream_count,
+        config.measurement_bytes,
+        streams,
         progress,
         "download",
-        |_, state, sample_interval| {
+        |i, state, interval| {
             let client = client.clone();
-            let server_url = Arc::new(server.url.clone());
+            let url = server.url.clone();
+            let budget = config.measurement_bytes / streams as u64;
             tokio::spawn(async move {
-                for j in 0..config.download_rounds {
-                    let test_url = build_test_url(&server_url, j);
-
-                    let response = client
-                        .get(&test_url)
-                        .send()
-                        .await
-                        .map_err(Error::DownloadTest)?;
-
-                    if !response.status().is_success() {
-                        return Err(Error::DownloadFailure(format!(
-                            "server returned {} for {test_url}",
-                            response.status()
-                        )));
-                    }
-
-                    let mut stream = response.bytes_stream();
-                    while let Some(item) = stream.next().await {
-                        let chunk = item.map_err(Error::DownloadTest)?;
-                        let len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
-                        if len > 0 {
-                            state.record_bytes(len, sample_interval);
-                        }
-                    }
-                }
-                Ok(())
+                download_stream(&client, &url, i, deadline, budget, Some((state, interval))).await
             })
         },
     )
     .await?;
-
     Ok((
         result.avg_bps,
         result.peak_bps,
@@ -97,12 +123,212 @@ pub async fn run(
     ))
 }
 
+async fn download_stream(
+    client: &Client,
+    url: &str,
+    mut index: usize,
+    deadline: tokio::time::Instant,
+    budget: u64,
+    recording: Option<(Arc<crate::bandwidth_loop::LoopState>, u64)>,
+) -> Result<(), Error> {
+    let mut received = 0;
+    while received < budget && tokio::time::Instant::now() < deadline {
+        let request = async {
+            let response = client
+                .get(build_test_url(url, index))
+                .send()
+                .await
+                .map_err(Error::DownloadTest)?
+                .error_for_status()
+                .map_err(Error::DownloadTest)?;
+            let mut stream = response.bytes_stream();
+            let before = received;
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(Error::DownloadTest)?;
+                let counted = (chunk.len() as u64).min(budget - received);
+                received += counted;
+                if let Some((state, interval)) = &recording {
+                    state.record_bytes(counted, *interval);
+                }
+                if received == budget {
+                    break;
+                }
+            }
+            if received == before {
+                return Err(Error::DownloadFailure("empty download response".into()));
+            }
+            Ok(())
+        };
+        match tokio::time::timeout_at(deadline, request).await {
+            Ok(result) => result?,
+            Err(_) => break,
+        }
+        index = (index + 1) % 4;
+    }
+    if recording.is_some() && received == 0 {
+        return Err(Error::DownloadFailure(
+            "no download data received before the deadline".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::common;
     use crate::test_config::TestConfig;
 
     use super::*;
+
+    fn local_server(uri: &str) -> Server {
+        Server {
+            id: "1".into(),
+            url: format!("{uri}/upload.php"),
+            name: "local".into(),
+            sponsor: "test".into(),
+            country: "CA".into(),
+            lat: 0.0,
+            lon: 0.0,
+            distance: 0.0,
+        }
+    }
+
+    fn hidden_tracker() -> Arc<Tracker> {
+        Arc::new(Tracker::with_target(
+            "download",
+            indicatif::ProgressDrawTarget::hidden(),
+        ))
+    }
+
+    #[tokio::test]
+    async fn invalid_download_limits_fail_without_io() {
+        let config = DownloadConfig {
+            duration: Duration::ZERO,
+            ..DownloadConfig::default()
+        };
+        assert!(matches!(
+            run_with_config(
+                &Client::new(),
+                &local_server("http://invalid"),
+                true,
+                hidden_tracker(),
+                &config
+            )
+            .await,
+            Err(Error::DownloadFailure(_))
+        ));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local socket binding"]
+    async fn socket_regression_download_caps_exclude_warmup_and_span_streams() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0; 4096]))
+            .mount(&mock)
+            .await;
+        let config = DownloadConfig {
+            warmup: Duration::from_secs(1),
+            duration: Duration::from_secs(1),
+            warmup_bytes: 1024,
+            measurement_bytes: 4096,
+        };
+        let (_, _, measured, _) = run_with_config(
+            &Client::new(),
+            &local_server(&mock.uri()),
+            true,
+            hidden_tracker(),
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(measured, 4096);
+        assert_eq!(mock.received_requests().await.unwrap().len(), 2);
+        let config = DownloadConfig {
+            warmup: Duration::ZERO,
+            measurement_bytes: 10_003,
+            ..config
+        };
+        let (_, _, measured, _) = run_with_config(
+            &Client::new(),
+            &local_server(&mock.uri()),
+            false,
+            hidden_tracker(),
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(measured, 10_000);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local socket binding"]
+    async fn socket_regression_download_phase_deadline_and_empty_responses() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(vec![0; 1024])
+                    .set_delay(Duration::from_millis(30)),
+            )
+            .mount(&mock)
+            .await;
+        let config = DownloadConfig {
+            warmup: Duration::ZERO,
+            duration: Duration::from_millis(100),
+            warmup_bytes: 0,
+            measurement_bytes: 1_000_000,
+        };
+        let started = std::time::Instant::now();
+        let (_, _, measured, samples) = run_with_config(
+            &Client::new(),
+            &local_server(&mock.uri()),
+            true,
+            hidden_tracker(),
+            &config,
+        )
+        .await
+        .unwrap();
+        assert!(measured > 0 && measured < config.measurement_bytes);
+        assert!(!samples.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        mock.reset().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(3)))
+            .mount(&mock)
+            .await;
+        assert!(matches!(
+            run_with_config(
+                &Client::new(),
+                &local_server(&mock.uri()),
+                true,
+                hidden_tracker(),
+                &config
+            )
+            .await,
+            Err(Error::DownloadFailure(_))
+        ));
+        mock.reset().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock)
+            .await;
+        assert!(matches!(
+            run_with_config(
+                &Client::new(),
+                &local_server(&mock.uri()),
+                true,
+                hidden_tracker(),
+                &config
+            )
+            .await,
+            Err(Error::DownloadFailure(_))
+        ));
+    }
 
     #[test]
     fn test_download_bandwidth_calculation() {

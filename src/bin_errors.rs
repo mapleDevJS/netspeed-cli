@@ -62,7 +62,8 @@ pub fn is_list_sentinel(e: &Error) -> bool {
 pub fn is_network_error(e: &Error) -> bool {
     matches!(
         e,
-        Error::NetworkError(_)
+        Error::NoReachableServers(_)
+            | Error::NetworkError(_)
             | Error::ServerListFetch(_)
             | Error::DownloadTest(_)
             | Error::DownloadFailure(_)
@@ -138,6 +139,7 @@ pub fn render_machine_error(e: &Error, exit_code: i32, format: OutputFormatType)
 /// Map error to machine-readable code and category.
 pub fn machine_error_identity(e: &Error) -> (&'static str, &'static str) {
     match e {
+        Error::NoReachableServers(_) => ("no_reachable_servers", "network"),
         Error::NetworkError(_) => ("network_error", "network"),
         Error::ServerListFetch(_) => ("server_list_fetch_failed", "network"),
         Error::DownloadTest(_) | Error::DownloadFailure(_) => ("download_failed", "network"),
@@ -175,6 +177,9 @@ pub fn suggestion_for_error(e: &Error) -> &'static str {
         Error::UploadTest(_) | Error::UploadFailure(_) => {
             "Tip: Upload may be blocked by a firewall or proxy.\n      Try with --no-upload to skip upload testing."
         }
+        Error::NoReachableServers(_) => {
+            "Tip: Check connectivity or try another server with --server."
+        }
         Error::ServerNotFound(_) => "Tip: Use --list to see available servers.",
         Error::IoError(_) => "Tip: Check file permissions and disk space.",
         Error::ParseJson(_) | Error::ParseXml(_) | Error::DeserializeXml(_) => {
@@ -202,6 +207,18 @@ mod tests {
     use super::*;
     use crate::cli::OutputFormatType;
     use clap::Parser;
+
+    #[test]
+    fn unreachable_servers_have_network_exit_code() {
+        let error = Error::NoReachableServers("offline".into());
+        assert!(is_network_error(&error));
+        assert!(!is_config_error(&error));
+        assert_eq!(
+            machine_error_identity(&error),
+            ("no_reachable_servers", "network")
+        );
+        assert_eq!(select_exit_code(&error), 69);
+    }
 
     #[test]
     fn test_exit_codes_values() {

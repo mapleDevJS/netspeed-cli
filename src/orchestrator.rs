@@ -194,6 +194,12 @@ impl Orchestrator {
         self.services.clone()
     }
 
+    /// Replace discovery services, for embedded use or local integration tests.
+    pub fn with_services(mut self, services: impl crate::services::Services + 'static) -> Self {
+        self.services = std::sync::Arc::new(services);
+        self
+    }
+
     /// Run the full speed test workflow.
     pub async fn run(&self) -> Result<(), Error> {
         self.phase_runner.run_all(self).await
