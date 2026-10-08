@@ -616,7 +616,17 @@ impl Config {
     /// The output format (supersedes legacy --json/--csv/--simple).
     #[must_use]
     pub fn format(&self) -> Option<Format> {
-        self.output.format
+        self.output.format.or({
+            if self.output.json {
+                Some(Format::Json)
+            } else if self.output.csv {
+                Some(Format::Csv)
+            } else if self.output.simple {
+                Some(Format::Simple)
+            } else {
+                None
+            }
+        })
     }
 
     // ========================================================================

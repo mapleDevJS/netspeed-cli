@@ -1,0 +1,1 @@
+TLS certificate and private key are disposable localhost test fixtures, generated for in-memory rustls negotiation tests. They are not production credentials. Regenerate together with openssl req -x509, a localhost SAN, and CA:FALSE before the certificate expires.

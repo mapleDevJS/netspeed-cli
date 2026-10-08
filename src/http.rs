@@ -134,10 +134,10 @@ pub fn create_client(settings: &Settings) -> Result<Client, Error> {
         .user_agent(&settings.user_agent);
 
     if let Some(ref source_ip) = settings.source_ip {
-        let addr: std::net::SocketAddr = source_ip
+        let addr: std::net::IpAddr = source_ip
             .parse()
             .map_err(|e| Error::with_source("Invalid source IP", e))?;
-        builder = builder.local_address(addr.ip());
+        builder = builder.local_address(addr);
     }
 
     // Apply TLS configuration if any options are set
@@ -158,7 +158,7 @@ pub fn create_client(settings: &Settings) -> Result<Client, Error> {
 fn build_tls_config(tls: &TlsConfig) -> Result<ClientConfig, Error> {
     // Determine protocol versions based on min_tls_version setting
     let versions: &[&rustls::SupportedProtocolVersion] = match tls.min_tls_version.as_deref() {
-        Some("1.2") => &[&rustls::version::TLS12],
+        Some("1.2") => &[&rustls::version::TLS13, &rustls::version::TLS12],
         Some("1.3") => &[&rustls::version::TLS13],
         Some(v) => {
             eprintln!("Warning: Unknown TLS version '{}', using defaults", v);
@@ -473,6 +473,61 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
     // ==================== TlsConfig Builder Method Tests ====================
 
     #[test]
+    fn minimum_tls_12_negotiates_both_versions() {
+        use rustls::pki_types::PrivateKeyDer;
+        for version in [&rustls::version::TLS12, &rustls::version::TLS13] {
+            let cert_file = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(
+                cert_file.path(),
+                include_bytes!("../tests/fixtures/tls-cert.pem"),
+            )
+            .unwrap();
+            let client_config = build_tls_config(
+                &TlsConfig::default()
+                    .with_min_tls_version("1.2")
+                    .with_ca_cert(cert_file.path().into()),
+            )
+            .unwrap();
+            let certs =
+                CertificateDer::pem_slice_iter(include_bytes!("../tests/fixtures/tls-cert.pem"))
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+            let key =
+                PrivateKeyDer::from_pem_slice(include_bytes!("../tests/fixtures/tls-key.pem"))
+                    .unwrap();
+            let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::aws_lc_rs::default_provider(),
+            ))
+            .with_protocol_versions(&[version])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap();
+            let mut client = rustls::ClientConnection::new(
+                Arc::new(client_config),
+                ServerName::try_from("localhost").unwrap(),
+            )
+            .unwrap();
+            let mut server = rustls::ServerConnection::new(Arc::new(server_config)).unwrap();
+            for _ in 0..10 {
+                let mut wire = Vec::new();
+                client.write_tls(&mut wire).unwrap();
+                server.read_tls(&mut wire.as_slice()).unwrap();
+                server.process_new_packets().unwrap();
+                wire.clear();
+                server.write_tls(&mut wire).unwrap();
+                client.read_tls(&mut wire.as_slice()).unwrap();
+                client.process_new_packets().unwrap();
+                if !client.is_handshaking() && !server.is_handshaking() {
+                    break;
+                }
+            }
+            assert!(!client.is_handshaking());
+            assert_eq!(client.protocol_version(), Some(version.version));
+        }
+    }
+
+    #[test]
     fn test_tls_config_with_ca_cert() {
         let config = TlsConfig::default();
         assert!(config.ca_cert_path.is_none());
@@ -715,12 +770,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
             ..Default::default()
         };
         let result = create_client(&settings);
-        // IPv4 source IP should work
-        match result {
-            Ok(_) => {}
-            Err(Error::Context { .. }) => {} // Invalid IP format returns Context
-            Err(e) => panic!("Unexpected error type for valid IPv4: {e:?}"),
-        }
+        assert!(result.is_ok(), "valid IPv4 must build a client: {result:?}");
     }
 
     #[test]
@@ -730,11 +780,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
             ..Default::default()
         };
         let result = create_client(&settings);
-        match result {
-            Ok(_) => {}
-            Err(Error::NetworkError(_) | Error::Context { .. }) => {} // Network errors acceptable
-            Err(e) => panic!("Unexpected error type: {e:?}"),
-        }
+        assert!(result.is_ok(), "valid IPv6 must build a client: {result:?}");
     }
 
     #[test]
@@ -1257,10 +1303,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
         let config = crate::config::Config::from_source(&source);
         let settings = Settings::from(&config);
         let result = create_client(&settings);
-        match result {
-            Ok(_) | Err(Error::NetworkError(_) | Error::Context { .. }) => {}
-            Err(e) => panic!("Unexpected error type: {e:?}"),
-        }
+        assert!(result.is_ok(), "valid configured source IP: {result:?}");
     }
 
     #[test]
