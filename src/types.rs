@@ -59,7 +59,7 @@ pub struct Server {
     pub distance: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestResult {
     pub status: String,
     pub version: String, // CLI version for API compatibility
@@ -369,17 +369,38 @@ impl StatsService for DefaultStats {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+fn deserialize_distance<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<f64, D::Error> {
+    Ok(Option::<f64>::deserialize(deserializer)?.unwrap_or(f64::INFINITY))
+}
+
+fn serialize_distance<S: serde::Serializer>(
+    distance: &f64,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    if distance.is_finite() && *distance >= 0.0 {
+        serializer.serialize_f64(*distance)
+    } else {
+        serializer.serialize_none()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
     pub id: String,
     pub name: String,
     pub sponsor: String,
     pub country: String,
+    #[serde(
+        serialize_with = "serialize_distance",
+        deserialize_with = "deserialize_distance"
+    )]
     pub distance: f64,
 }
 
 /// Client geographic location derived from speedtest.net config API.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClientLocation {
     pub lat: f64,
     pub lon: f64,
@@ -395,6 +416,7 @@ pub struct CsvOutput {
     pub sponsor: String,
     pub server_name: String,
     pub timestamp: String,
+    #[serde(serialize_with = "serialize_distance")]
     pub distance: f64,
     pub ping: f64,
     pub jitter: f64,
@@ -410,6 +432,23 @@ pub struct CsvOutput {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_distance_serializes_as_missing_in_json_and_csv() {
+        let server = ServerInfo {
+            id: "1".into(),
+            name: "test".into(),
+            sponsor: "test".into(),
+            country: "US".into(),
+            distance: f64::INFINITY,
+        };
+        assert!(serde_json::to_value(&server).unwrap()["distance"].is_null());
+        let mut csv = csv::Writer::from_writer(Vec::new());
+        csv.serialize(&server).unwrap();
+        let data = String::from_utf8(csv.into_inner().unwrap()).unwrap();
+        assert!(data.contains("1,test,test,US,\n"));
+        assert_eq!(crate::common::format_distance(server.distance), "unknown");
+    }
 
     #[test]
     fn test_server_serialization() {
