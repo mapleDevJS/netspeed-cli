@@ -16,6 +16,7 @@ test-release:
 
 # Run the socket-binding integration suite explicitly
 test-socket:
+	cargo test --lib socket_regression -- --ignored
 	cargo test --test mock_network_test -- --ignored --nocapture
 	cargo test --test integration_upload_fetch_test -- --ignored --nocapture
 	cargo test --test e2e_test -- --ignored --nocapture
@@ -54,6 +55,8 @@ qa:
 	cargo test --test mock_network_test -- --ignored --nocapture
 	cargo test --test integration_upload_fetch_test -- --ignored --nocapture
 	cargo test --test e2e_test -- --ignored --nocapture
+	cargo test --lib socket_regression -- --ignored
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 	cargo package --locked
 	cargo deny check
 
@@ -171,13 +174,14 @@ bench-check:
 bench-report:
 	cargo bench
 
-# Run benchmarks with regression detection (compare against baseline)
+# Save a named Criterion baseline locally
+bench-baseline:
+	cargo bench --locked --bench core_benchmarks -- --save-baseline main --noplot
+
+# Fail on significant regressions against a local named baseline
 bench-regression:
-	@echo \"Running benchmarks and checking for regressions...\"
-	@if [ ! -f benches/baseline.txt ]; then echo \"No baseline found. Run 'just bench-report' first to create one.\"; exit 1; fi
-	cargo bench 2>&1 | tee /tmp/bench_output.txt
-	(cargo benchcmp benches/baseline.txt /tmp/bench_output.txt 2>&1 || { echo \"Benchmark regression detected!\"; exit 1; })
-	@echo \"All benchmarks passed comparison.\"
+	cargo bench --locked --bench core_benchmarks -- --noplot
+	python3 scripts/check-benchmarks.py target/criterion target/criterion --baseline-name main
 
 # Generate changelog from conventional commits (requires git-cliff)
 changelog:

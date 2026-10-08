@@ -35,7 +35,11 @@ async fn create_mock_speedtest_server() -> MockServer {
     // Upload endpoint
     Mock::given(method("POST"))
         .and(path_regex(".*/upload\\.php$"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("OK")
+                .set_delay(std::time::Duration::from_millis(200)),
+        )
         .mount(&mock)
         .await;
 

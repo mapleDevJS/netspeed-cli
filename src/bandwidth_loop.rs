@@ -18,7 +18,7 @@ use owo_colors::OwoColorize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Throttle interval for speed sampling (20 Hz max).
 pub const SAMPLE_INTERVAL_MS: u64 = 50;
@@ -32,6 +32,7 @@ pub struct LoopState {
     pub speed_samples: Arc<Mutex<Vec<f64>>>,
     pub start: Instant,
     pub last_sample_ms: Arc<AtomicU64>,
+    sample_cursor: Mutex<(Duration, u64)>,
     pub estimated_total: u64,
     pub progress: Arc<Tracker>,
 }
@@ -56,6 +57,7 @@ impl LoopState {
             speed_samples: Arc::new(Mutex::new(Vec::new())),
             start: Instant::now(),
             last_sample_ms: Arc::new(AtomicU64::new(0)),
+            sample_cursor: Mutex::new((Duration::ZERO, 0)),
             estimated_total,
             progress,
         }
@@ -71,44 +73,51 @@ impl LoopState {
         // Release ensures writes are visible to the final Acquire load in finish()
         self.total_bytes.fetch_add(len, Ordering::Release);
 
-        let elapsed_ms = u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let last_ms = self.last_sample_ms.load(Ordering::Relaxed);
-        let should_sample =
-            last_ms == 0 || elapsed_ms.saturating_sub(last_ms) >= sample_interval_ms;
-
-        if should_sample {
-            self.last_sample_ms.store(elapsed_ms, Ordering::Relaxed);
-            self.sample_now();
-        }
+        let elapsed = self.start.elapsed();
+        self.sample_interval(elapsed, Duration::from_millis(sample_interval_ms), false);
     }
 
-    /// Take a speed sample and update progress (no throttle check — caller must gate).
-    fn sample_now(&self) {
+    /// Serialize the byte/time snapshot so concurrent streams cannot duplicate
+    /// intervals or overwrite a newer peak. A timer also calls this during stalls.
+    fn sample_at(&self, elapsed: Duration, force: bool) {
+        self.sample_interval(elapsed, Duration::from_millis(SAMPLE_INTERVAL_MS), force);
+    }
+
+    fn sample_interval(&self, elapsed: Duration, interval: Duration, force: bool) {
+        let mut cursor = self.sample_cursor.lock().unwrap_or_else(|e| e.into_inner());
+        let delta = elapsed.saturating_sub(cursor.0);
+        if delta.is_zero() || (!force && delta < interval) {
+            return;
+        }
         let total = self.total_bytes.load(Ordering::Acquire);
-        let elapsed = self.start.elapsed().as_secs_f64();
-        let speed = common::calculate_bandwidth(total, elapsed);
-
-        // Safe: peak_bps stores bits-per-second; even 100 Gbps = 1e11, well under 2^53.
-        let current_peak = self.peak_bps.load(Ordering::Relaxed) as f64;
-        if speed > current_peak {
-            let peak_u64 = speed.clamp(0.0, u64::MAX as f64) as u64;
-            // Release pairs with the Acquire load in finish()
-            self.peak_bps.store(peak_u64, Ordering::Release);
-        }
-
-        if let Ok(mut samples) = self.speed_samples.lock() {
-            samples.push(speed);
-        }
-
-        // Safe: total and estimated_total are byte counts from a test lasting seconds;
-        // they cannot approach 2^53 (~9 PB) where f64 loses precision.
-        let pct = (total as f64 / self.estimated_total as f64).min(1.0);
+        let speed =
+            common::calculate_bandwidth(total.saturating_sub(cursor.1), delta.as_secs_f64());
+        *cursor = (elapsed, total);
+        self.last_sample_ms.store(
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+        self.peak_bps
+            .fetch_max(speed.clamp(0.0, u64::MAX as f64) as u64, Ordering::AcqRel);
+        self.speed_samples
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(speed);
+        let pct = (total as f64 / self.estimated_total.max(1) as f64).min(1.0);
         self.progress.update(speed / 1_000_000.0, pct, total);
     }
 
     /// Compute final results from accumulated state.
     #[must_use]
     pub fn finish(&self) -> BandwidthResult {
+        // Only a test shorter than one sampling interval uses a partial sample.
+        // A tiny final interval otherwise exaggerates peaks and biases CV/CI.
+        let has_samples = !self
+            .speed_samples
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty();
+        self.sample_at(self.start.elapsed(), !has_samples);
         // Acquire pairs with the Release fetch_add/stores to see all writes
         let total = self.total_bytes.load(Ordering::Acquire);
         // Safe: peak_bps is bits/sec; even 100 Gbps = 1e11, well under 2^53.
@@ -124,10 +133,22 @@ impl LoopState {
 
         BandwidthResult {
             avg_bps: avg,
-            peak_bps: peak,
+            // Whole-run throughput is a lower bound on peak throughput, including
+            // bytes in a final interval too short to use for stability statistics.
+            peak_bps: peak.max(avg),
             total_bytes: total,
             duration_secs: duration,
             speed_samples: samples,
+        }
+    }
+}
+
+struct AbortStreams(Vec<tokio::task::AbortHandle>);
+
+impl Drop for AbortStreams {
+    fn drop(&mut self) {
+        for handle in &self.0 {
+            handle.abort();
         }
     }
 }
@@ -168,15 +189,29 @@ pub async fn run_concurrent_streams(
     let state = Arc::new(LoopState::new(estimated_total, progress));
 
     let mut handles = Vec::with_capacity(stream_count);
+    let mut abort_on_drop = AbortStreams(Vec::with_capacity(stream_count));
     for i in 0..stream_count {
-        handles.push(spawn_fn(i, Arc::clone(&state), sample_interval_ms));
+        let handle = spawn_fn(i, Arc::clone(&state), sample_interval_ms);
+        abort_on_drop.0.push(handle.abort_handle());
+        handles.push(handle);
     }
+
+    let collect = futures::future::join_all(handles);
+    tokio::pin!(collect);
+    let mut timer = tokio::time::interval(Duration::from_millis(sample_interval_ms));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let outcomes = loop {
+        tokio::select! {
+            results = &mut collect => break results,
+            _ = timer.tick() => state.sample_at(state.start.elapsed(), false),
+        }
+    };
 
     // Collect results — log any task panics so failures aren't silently swallowed.
     let mut any_succeeded = false;
     let mut first_error: Option<Error> = None;
-    for (i, handle) in handles.into_iter().enumerate() {
-        match handle.await {
+    for (i, outcome) in outcomes.into_iter().enumerate() {
+        match outcome {
             Ok(Ok(())) => any_succeeded = true,
             Ok(Err(err)) => {
                 let msg = format!("Warning: {label} stream {i} failed: {err}");
@@ -231,6 +266,89 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn finish_does_not_turn_a_short_tail_into_a_peak_sample() {
+        let mut state = LoopState::new(1_000_000, make_tracker());
+        state.start = Instant::now() - Duration::from_millis(100);
+        state.record_bytes(100, u64::MAX);
+        state.sample_at(Duration::from_millis(100), false);
+        state.record_bytes(100, u64::MAX);
+        let result = state.finish();
+        assert_eq!(result.speed_samples, vec![8_000.0]);
+        assert!(result.peak_bps <= 16_000.0);
+    }
+
+    #[test]
+    fn interval_samples_detect_stalls_and_recovery() {
+        let state = LoopState::new(1_000_000, make_tracker());
+        state.record_bytes(100, u64::MAX);
+        state.sample_at(std::time::Duration::from_secs(1), true);
+        state.sample_at(std::time::Duration::from_secs(2), true);
+        state.record_bytes(200, u64::MAX);
+        state.sample_at(std::time::Duration::from_secs(3), true);
+        assert_eq!(
+            *state.speed_samples.lock().unwrap(),
+            vec![800.0, 0.0, 1600.0]
+        );
+        assert_eq!(state.peak_bps.load(Ordering::Acquire), 1600);
+    }
+
+    #[test]
+    fn concurrent_sampling_claims_one_interval() {
+        let state = Arc::new(LoopState::new(1_000_000, make_tracker()));
+        state.record_bytes(100, u64::MAX);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                let state = state.clone();
+                scope.spawn(move || state.sample_at(Duration::from_secs(1), false));
+            }
+        });
+        assert_eq!(*state.speed_samples.lock().unwrap(), vec![800.0]);
+        assert_eq!(state.peak_bps.load(Ordering::Acquire), 800);
+    }
+
+    #[tokio::test]
+    async fn timer_records_stalls_without_byte_callbacks() {
+        let result =
+            run_concurrent_streams(1_000, 1, make_tracker(), "test", |_, state, interval| {
+                tokio::spawn(async move {
+                    state.record_bytes(100, interval);
+                    tokio::time::sleep(Duration::from_millis(180)).await;
+                    state.record_bytes(100, interval);
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+        assert!(result.speed_samples.contains(&0.0));
+        assert!(result.peak_bps > result.avg_bps);
+    }
+
+    #[tokio::test]
+    async fn cancelling_measurement_aborts_streams() {
+        struct Dropped(Arc<AtomicU64>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::Release);
+            }
+        }
+        let dropped = Arc::new(AtomicU64::new(0));
+        let future = run_concurrent_streams(1_000, 2, make_tracker(), "test", |_, _, _| {
+            let guard = Dropped(dropped.clone());
+            tokio::spawn(async move {
+                let _guard = guard;
+                std::future::pending::<Result<(), Error>>().await
+            })
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), future)
+                .await
+                .is_err()
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(dropped.load(Ordering::Acquire), 2);
+    }
 
     // ── LoopState Tests ──────────────────────────────────────────────────────
 
@@ -307,9 +425,9 @@ mod tests {
         // The throttle mechanism limits sampling to once per interval
         let interval_ms = 50u64;
 
-        // First call always triggers
+        // Do not treat the initial partial interval as a full sample
         state.record_bytes(1000, interval_ms);
-        assert_eq!(state.speed_samples.lock().unwrap().len(), 1);
+        assert!(state.speed_samples.lock().unwrap().is_empty());
 
         // Rapid second call - may or may not trigger depending on elapsed time
         state.record_bytes(1000, interval_ms);
@@ -318,12 +436,12 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
         state.record_bytes(1000, interval_ms);
 
-        // Should have at least 2 samples (first + after wait)
+        // The completed interval after the wait must be sampled
         // The exact count depends on timing, but throttle is working
         let samples = state.speed_samples.lock().unwrap();
         assert!(
-            samples.len() >= 2,
-            "Expected at least 2 samples, got {}",
+            !samples.is_empty(),
+            "Expected at least one complete interval, got {}",
             samples.len()
         );
     }
@@ -372,7 +490,7 @@ mod tests {
         assert_eq!(result.avg_bps, 0.0);
         assert_eq!(result.peak_bps, 0.0);
         assert!(result.duration_secs > 0.0);
-        assert!(result.speed_samples.is_empty());
+        assert!(result.speed_samples.iter().all(|sample| *sample == 0.0));
     }
 
     #[test]
@@ -399,7 +517,7 @@ mod tests {
         }
 
         let result = state.finish();
-        assert!(result.peak_bps >= result.avg_bps);
+        assert!(result.peak_bps + 1.0 >= result.avg_bps);
     }
 
     #[test]

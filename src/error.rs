@@ -70,6 +70,10 @@ pub enum Error {
     #[error("Server not found: {0}")]
     ServerNotFound(String),
 
+    /// No candidate responded to a latency probe.
+    #[error("No reachable servers: {0}")]
+    NoReachableServers(String),
+
     /// I/O errors from file operations
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
@@ -108,6 +112,7 @@ impl Error {
     #[must_use]
     pub fn category(&self) -> ErrorCategory {
         match self {
+            Error::NoReachableServers(_) => ErrorCategory::Network,
             Error::NetworkError(_) => ErrorCategory::Network,
             Error::ServerListFetch(_) => ErrorCategory::Network,
             Error::DownloadTest(_) => ErrorCategory::Network,

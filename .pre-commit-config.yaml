@@ -16,6 +16,8 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: detect-private-key
+        # Public, disposable localhost key used only by rustls negotiation tests.
+        exclude: ^tests/fixtures/tls-key\.pem$
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: check-added-large-files
@@ -28,7 +30,8 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
-        exclude: ^\\.github/|deny\\.toml|fuzz/
+        # Keep the intentional test key exception limited to this exact fixture.
+        exclude: ^(\.github/|deny\.toml$|fuzz/|tests/fixtures/tls-key\.pem$)
         fail_on_never: false
 
   # Commit message linting (conventional commits)
@@ -43,13 +46,13 @@ repos:
   # CI-quality gate (fmt + clippy + doc + tests) - matches GitHub CI
   - repo: local
     hooks:
-       - id: just-qa
-         name: just qa (CI gate)
-         entry: just qa
-         language: system
-         pass_filenames: false
-         pass_env: [CARGO_TERM_COLOR]
-         stages: [pre-push]
+      - id: just-qa
+        name: just qa (CI gate)
+        entry: just qa
+        language: system
+        pass_filenames: false
+        pass_env: [CARGO_TERM_COLOR]
+        stages: [pre-push]
       - id: generate-completions
         name: Generate completions & man page
         entry: bash -c 'git diff --quiet src/cli.rs Cargo.toml build.rs 2>/dev/null || (cargo build && git add completions/ netspeed-cli.1)'

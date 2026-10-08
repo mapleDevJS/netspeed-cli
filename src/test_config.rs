@@ -19,11 +19,8 @@
 /// are concentrated here so they can be tuned in one place.
 #[derive(Debug, Clone)]
 pub struct TestConfig {
-    /// Number of download rounds per stream (each round fetches a different test file).
+    /// Legacy fixed-file round count; the bounded runner uses DownloadConfig.
     pub download_rounds: usize,
-
-    /// Number of upload rounds per stream (each round uploads a chunk of test data).
-    pub upload_rounds: usize,
 
     /// Number of concurrent streams in multi-stream mode.
     pub stream_count: usize,
@@ -37,11 +34,8 @@ pub struct TestConfig {
     /// Payload size for each upload chunk in bytes.
     pub upload_payload_bytes: usize,
 
-    /// Estimated total download bytes for progress bar initialization.
+    /// Legacy progress estimate; the bounded runner uses its measurement budget.
     pub estimated_download_bytes: u64,
-
-    /// Estimated total upload bytes for progress bar initialization.
-    pub estimated_upload_bytes: u64,
 
     /// How often to poll latency under load (milliseconds).
     pub latency_poll_interval_ms: u64,
@@ -61,7 +55,6 @@ impl Default for TestConfig {
         Self {
             // Test rounds per stream
             download_rounds: 4,
-            upload_rounds: 4,
 
             // Concurrency
             stream_count: 4,
@@ -77,7 +70,6 @@ impl Default for TestConfig {
 
             // Progress bar estimates
             estimated_download_bytes: 15_000_000, // 15 MB
-            estimated_upload_bytes: 4_000_000,    // 4 MB
 
             // Latency under load polling
             latency_poll_interval_ms: 100,
@@ -124,13 +116,11 @@ mod tests {
     fn test_default_values() {
         let config = TestConfig::default();
         assert_eq!(config.download_rounds, 4);
-        assert_eq!(config.upload_rounds, 4);
         assert_eq!(config.stream_count, 4);
         assert_eq!(config.sample_interval_ms, 50);
         assert_eq!(config.ping_attempts, 8);
         assert_eq!(config.upload_payload_bytes, 200_000);
         assert_eq!(config.estimated_download_bytes, 15_000_000);
-        assert_eq!(config.estimated_upload_bytes, 4_000_000);
         assert_eq!(config.http_retry_attempts, 3);
     }
 

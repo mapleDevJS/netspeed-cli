@@ -9,7 +9,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: \"09:00\"
+      time: "09:00"
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
@@ -22,8 +22,8 @@ updates:
           - patch
     # Ignore major version bumps - require manual review
     ignore:
-      - dependency-name: \"*\"
-        update-types: [\"version-update:semver-major\"]
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     # Auto-merge non-breaking updates after CI passes
     rebase-strategy: auto
 
@@ -33,7 +33,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: \"09:00\"
+      time: "09:00"
     open-pull-requests-limit: 3
     commit-message:
       prefix: ci
@@ -42,7 +42,7 @@ updates:
       # Group all Actions updates together
       github-actions:
         patterns:
-          - \"*\"
+          - "*"
     # Auto-merge Action updates after CI passes
     rebase-strategy: auto
 

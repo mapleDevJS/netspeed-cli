@@ -50,18 +50,16 @@ impl<T: SaveResult + LoadHistory> HistoryStorage for T {
 /// File-based storage implementation using history module.
 pub struct FileStorage {
     // implements both SaveResult/LoadHistory and ResultSink
-    _path: std::path::PathBuf,
+    path: Option<std::path::PathBuf>,
 }
 
 impl FileStorage {
     pub fn new() -> Self {
-        Self {
-            _path: std::path::PathBuf::new(),
-        }
+        Self { path: None }
     }
 
     pub fn with_path(path: std::path::PathBuf) -> Self {
-        Self { _path: path }
+        Self { path: Some(path) }
     }
 }
 
@@ -73,51 +71,71 @@ impl Default for FileStorage {
 
 impl SaveResult for FileStorage {
     fn save(&self, result: &TestResult) -> Result<(), Error> {
-        crate::history::save_result(result)
+        match &self.path {
+            Some(path) => crate::history::save_result_to_path(result, path),
+            None => crate::history::save_result(result),
+        }
     }
 }
 
 impl LoadHistory for FileStorage {
     fn load_recent(&self, limit: usize) -> Result<Vec<TestResult>, Error> {
-        let entries = crate::history::load()?;
+        let entries = match &self.path {
+            Some(path) => crate::history::load_history_from_path(path)?,
+            None => crate::history::load()?,
+        };
         let converted: Vec<TestResult> = entries
             .into_iter()
             .rev()
             .take(limit)
-            .map(|e| TestResult {
-                timestamp: e.timestamp,
-                server: crate::types::ServerInfo {
-                    id: "0".to_string(),
-                    name: e.server_name,
-                    sponsor: e.sponsor,
-                    country: "".to_string(),
-                    distance: 0.0,
-                },
-                ping: e.ping,
-                jitter: e.jitter,
-                packet_loss: e.packet_loss,
-                download: e.download,
-                download_peak: e.download_peak,
-                upload: e.upload,
-                upload_peak: e.upload_peak,
-                latency_download: e.latency_download,
-                latency_upload: e.latency_upload,
-                client_ip: e.client_ip,
-                ..TestResult::default()
+            .map(|e| {
+                e.report.unwrap_or_else(|| TestResult {
+                    phases: crate::types::TestPhases {
+                        ping: crate::types::PhaseResult::skipped("not recorded in legacy history"),
+                        download: crate::types::PhaseResult::skipped(
+                            "not recorded in legacy history",
+                        ),
+                        upload: crate::types::PhaseResult::skipped(
+                            "not recorded in legacy history",
+                        ),
+                    },
+                    timestamp: e.timestamp,
+                    server: crate::types::ServerInfo {
+                        id: String::new(),
+                        name: e.server_name,
+                        sponsor: e.sponsor,
+                        country: "".to_string(),
+                        distance: f64::INFINITY,
+                    },
+                    ping: e.ping,
+                    jitter: e.jitter,
+                    packet_loss: e.packet_loss,
+                    download: e.download,
+                    download_peak: e.download_peak,
+                    upload: e.upload,
+                    upload_peak: e.upload_peak,
+                    latency_download: e.latency_download,
+                    latency_upload: e.latency_upload,
+                    client_ip: e.client_ip,
+                    ..TestResult::default()
+                })
             })
             .collect();
         Ok(converted)
     }
 
     fn clear(&self) -> Result<(), Error> {
-        Ok(())
+        match &self.path {
+            Some(path) => crate::history::clear_history_from_path(path),
+            None => crate::history::clear(),
+        }
     }
 }
 
 impl ResultSink for FileStorage {
     fn write_report(&self, report: &crate::domain::reporting::Report) -> Result<(), Error> {
         // Reuse the history module which already knows how to serialize a Report.
-        crate::history::save_report(report)
+        SaveResult::save(self, report)
     }
 }
 
@@ -179,6 +197,86 @@ impl LoadHistory for MockStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_history_paths_are_isolated_and_clear_removes_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/history.json");
+        let storage = FileStorage::with_path(path.clone());
+        let other = FileStorage::with_path(dir.path().join("other.json"));
+        SaveResult::save(&storage, &make_test_result("first")).unwrap();
+        ResultSink::write_report(&storage, &make_test_result("second")).unwrap();
+        assert!(path.exists());
+        assert!(path.with_extension("json.bak").exists());
+        assert_eq!(LoadHistory::load_recent(&storage, 1).unwrap().len(), 1);
+        assert!(LoadHistory::load_recent(&other, 10).unwrap().is_empty());
+        std::fs::write(path.with_extension("json.corrupt"), "corrupt").unwrap();
+        LoadHistory::clear(&storage).unwrap();
+        assert!(!path.with_extension("json.corrupt").exists());
+        assert!(!path.exists());
+        assert!(!path.with_extension("json.bak").exists());
+        assert!(LoadHistory::load_recent(&storage, 10).unwrap().is_empty());
+        LoadHistory::clear(&storage).unwrap();
+        SaveResult::save(&storage, &make_test_result("after-clear")).unwrap();
+        assert_eq!(LoadHistory::load_recent(&storage, 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn history_round_trips_complete_reports_and_reads_legacy_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+        let storage = FileStorage::with_path(path.clone());
+        let mut result = make_test_result("42");
+        result.server.distance = f64::INFINITY;
+        result.download_samples = Some(vec![1.0, 2.0, 3.0]);
+        result.download_cv = Some(0.25);
+        result.download_ci_95 = Some((1.0, 2.0));
+        result.client_location = Some(crate::types::ClientLocation {
+            lat: 45.0,
+            lon: -79.0,
+            city: Some("Toronto".into()),
+            country: Some("CA".into()),
+        });
+        result.overall_grade = Some("A".into());
+        result.test_id = Some("test-id".into());
+        result.phases.upload = crate::types::PhaseResult::skipped("disabled by user");
+        SaveResult::save(&storage, &result).unwrap();
+        let loaded = LoadHistory::load_recent(&storage, 1).unwrap().remove(0);
+        assert_eq!(
+            serde_json::to_value(&loaded).unwrap(),
+            serde_json::to_value(&result).unwrap()
+        );
+        let mut legacy = serde_json::to_value(crate::history::Entry::from(&result)).unwrap();
+        legacy.as_object_mut().unwrap().remove("report");
+        legacy.as_object_mut().unwrap().remove("schema_version");
+        std::fs::write(&path, serde_json::to_vec(&vec![legacy]).unwrap()).unwrap();
+        let loaded = LoadHistory::load_recent(&storage, 1).unwrap().remove(0);
+        assert_eq!(loaded.download, result.download);
+        assert!(loaded.server.id.is_empty());
+        assert!(loaded.server.distance.is_infinite());
+        SaveResult::save(&storage, &result).unwrap();
+        assert_eq!(LoadHistory::load_recent(&storage, 10).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn unsupported_history_schema_is_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+        let storage = FileStorage::with_path(path.clone());
+        let report = make_test_result("1");
+        SaveResult::save(&storage, &report).unwrap();
+        SaveResult::save(&storage, &report).unwrap();
+        assert!(path.with_extension("json.bak").exists());
+        let mut entries: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        entries[0]["schema_version"] = serde_json::json!(2);
+        entries[0]["report"] = serde_json::json!("future report format");
+        let original = serde_json::to_vec(&entries).unwrap();
+        std::fs::write(&path, &original).unwrap();
+        assert!(LoadHistory::load_recent(&storage, 1).is_err());
+        assert!(SaveResult::save(&storage, &report).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
 
     fn make_test_result(id: &str) -> TestResult {
         TestResult {
@@ -285,14 +383,20 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_history_storage_for_file_storage() {
-        let storage = crate::storage::FileStorage::new();
-        let result = make_test_result("hist");
-        if <dyn SaveResult>::save(&storage, &result).is_err() {
-            return;
-        }
-        if let Ok(loaded) = <dyn HistoryStorage>::load_history(&storage, 1) {
-            assert_eq!(loaded.len(), 1);
-            let _ = <dyn HistoryStorage>::clear_history(&storage);
-        }
+        let dir = tempfile::tempdir().unwrap();
+        let storage = FileStorage::with_path(dir.path().join("history.json"));
+        <dyn SaveResult>::save(&storage, &make_test_result("hist")).unwrap();
+        assert_eq!(
+            <dyn HistoryStorage>::load_history(&storage, 1)
+                .unwrap()
+                .len(),
+            1
+        );
+        <dyn HistoryStorage>::clear_history(&storage).unwrap();
+        assert!(
+            <dyn HistoryStorage>::load_history(&storage, 1)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

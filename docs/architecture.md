@@ -37,6 +37,16 @@ netspeed-cli follows a **modular layered architecture** with clear separation be
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Server selection and history storage
+
+Production discovery uses the asynchronous `ServerSelector::select_reachable` service method. The default service probes at most 20 distinct server URLs with five concurrent requests, a two-second budget per candidate, and a shared four-second deadline. Two successful, bounded latency responses are required per candidate. Geographic distance narrows the shortlist when valid client coordinates are available; otherwise candidates are sampled across the feed. The fastest completed candidate wins. Failed probes are skipped, and an entirely failed shortlist produces a network error.
+
+Unknown distances use an internal infinity sentinel and serialize as JSON `null` or an empty CSV field. Human-readable output displays `unknown`. Metadata requests check HTTP status and reject invalid client coordinates.
+
+History schema version 1 preserves complete reports alongside legacy summary fields. Existing summary-only entries remain readable, with unavailable metadata left unknown. Unsupported schemas fail without overwriting the file.
+
+`FileStorage::with_path` applies to every save, load, report write, and clear operation. Writers and clearing share a stable sibling lock file. Saves use a unique temporary file and atomic replacement; clearing removes primary history, backup, and corrupt recovery copies while retaining the lock file.
+
 ## Design Patterns
 
 ### 1. Strategy Pattern — Output Formatting

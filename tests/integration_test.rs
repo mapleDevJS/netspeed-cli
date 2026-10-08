@@ -1,10 +1,17 @@
 use std::process::Command;
 
+// Execute the built binary; dry-run validates configuration without network I/O.
+fn cli() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_netspeed-cli"));
+    command.arg("--dry-run").env("NO_COLOR", "1");
+    command
+}
+
 /// Test that the CLI help displays correctly
 #[test]
 fn test_cli_help() {
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--help"])
+    let output = cli()
+        .args(["--help"])
         .output()
         .expect("Failed to execute command");
 
@@ -23,8 +30,8 @@ fn test_cli_help() {
 /// Test that version flag works
 #[test]
 fn test_cli_version() {
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--version"])
+    let output = cli()
+        .args(["--version"])
         .output()
         .expect("Failed to execute command");
 
@@ -47,8 +54,8 @@ fn test_cli_version() {
 #[test]
 fn test_shell_completion_bash() {
     // Completions are generated at build time, not runtime
-    let output = Command::new("cargo")
-        .args(["run", "--", "--generate-completion", "bash"])
+    let output = cli()
+        .args(["--generate-completion", "bash"])
         .output()
         .expect("Failed to execute command");
 
@@ -61,8 +68,8 @@ fn test_shell_completion_bash() {
 /// Test shell completion generation for zsh
 #[test]
 fn test_shell_completion_zsh() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--generate-completion", "zsh"])
+    let output = cli()
+        .args(["--generate-completion", "zsh"])
         .output()
         .expect("Failed to execute command");
 
@@ -75,8 +82,8 @@ fn test_shell_completion_zsh() {
 /// Test shell completion generation for fish
 #[test]
 fn test_shell_completion_fish() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--generate-completion", "fish"])
+    let output = cli()
+        .args(["--generate-completion", "fish"])
         .output()
         .expect("Failed to execute command");
 
@@ -89,8 +96,8 @@ fn test_shell_completion_fish() {
 /// Test shell completion generation for powershell
 #[test]
 fn test_shell_completion_powershell() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--generate-completion", "powershell"])
+    let output = cli()
+        .args(["--generate-completion", "powershell"])
         .output()
         .expect("Failed to execute command");
 
@@ -103,8 +110,8 @@ fn test_shell_completion_powershell() {
 /// Test shell completion generation for elvish
 #[test]
 fn test_shell_completion_elvish() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--generate-completion", "elvish"])
+    let output = cli()
+        .args(["--generate-completion", "elvish"])
         .output()
         .expect("Failed to execute command");
 
@@ -117,8 +124,8 @@ fn test_shell_completion_elvish() {
 /// Test invalid CSV delimiter validation
 #[test]
 fn test_invalid_csv_delimiter() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--csv-delimiter", "abc"])
+    let output = cli()
+        .args(["--csv-delimiter", "abc"])
         .output()
         .expect("Failed to execute command");
 
@@ -131,20 +138,14 @@ fn test_invalid_csv_delimiter() {
 #[test]
 fn test_tls_conflict_warning() {
     // Create a dummy certificate file for testing
-    let temp_dir = std::env::temp_dir();
-    let cert_path = temp_dir.join("test_ca_cert.pem");
-    std::fs::write(&cert_path, "dummy cert content").expect("Failed to create temp cert file");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cert_path = temp_dir.path().join("test_ca_cert.pem");
+    std::fs::write(&cert_path, include_bytes!("fixtures/tls-cert.pem"))
+        .expect("Failed to create temp cert file");
 
     // Run with both --ca-cert and --pin-certs
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "--ca-cert",
-            cert_path.to_str().unwrap(),
-            "--pin-certs",
-            "--dry-run",
-        ])
+    let output = cli()
+        .args(["--ca-cert", cert_path.to_str().unwrap(), "--pin-certs"])
         .output()
         .expect("Failed to execute command");
 
@@ -174,8 +175,8 @@ fn test_tls_conflict_warning() {
 fn test_tls_config_cli_parsing() {
     // Test 1: Verify invalid TLS version is rejected at parse time (before HTTP client creation)
     {
-        let output = Command::new("cargo")
-            .args(["run", "--quiet", "--", "--tls-version", "2.0"])
+        let output = cli()
+            .args(["--tls-version", "2.0"])
             .output()
             .expect("Failed to execute command");
 
@@ -192,14 +193,8 @@ fn test_tls_config_cli_parsing() {
 
     // Test 2: Verify nonexistent CA cert path is rejected at parse time
     {
-        let output = Command::new("cargo")
-            .args([
-                "run",
-                "--quiet",
-                "--",
-                "--ca-cert",
-                "/nonexistent/path/to/cert.pem",
-            ])
+        let output = cli()
+            .args(["--ca-cert", "/nonexistent/path/to/cert.pem"])
             .output()
             .expect("Failed to execute command");
 
@@ -216,8 +211,8 @@ fn test_tls_config_cli_parsing() {
 
     // Test 3: Verify directory path is rejected for --ca-cert
     {
-        let output = Command::new("cargo")
-            .args(["run", "--quiet", "--", "--ca-cert", "/tmp"])
+        let output = cli()
+            .args(["--ca-cert", "/tmp"])
             .output()
             .expect("Failed to execute command");
 
@@ -243,8 +238,8 @@ fn test_tls_pin_certs_parsing() {
     // Test: --pin-certs should be a valid argument (parse-time validation only)
     // We use --help to avoid triggering the full execution path
     {
-        let output = Command::new("cargo")
-            .args(["run", "--quiet", "--", "--help"])
+        let output = cli()
+            .args(["--help"])
             .output()
             .expect("Failed to execute command");
 
@@ -260,8 +255,8 @@ fn test_tls_pin_certs_parsing() {
 
     // Test: --tls-version should be a valid argument
     {
-        let output = Command::new("cargo")
-            .args(["run", "--quiet", "--", "--help"])
+        let output = cli()
+            .args(["--help"])
             .output()
             .expect("Failed to execute command");
 
@@ -277,8 +272,8 @@ fn test_tls_pin_certs_parsing() {
 
     // Test: --ca-cert should be a valid argument
     {
-        let output = Command::new("cargo")
-            .args(["run", "--quiet", "--", "--help"])
+        let output = cli()
+            .args(["--help"])
             .output()
             .expect("Failed to execute command");
 
@@ -296,8 +291,8 @@ fn test_tls_pin_certs_parsing() {
 /// Test invalid IP address validation
 #[test]
 fn test_invalid_source_ip() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--source", "999.999.999.999"])
+    let output = cli()
+        .args(["--source", "999.999.999.999"])
         .output()
         .expect("Failed to execute command");
 
@@ -309,8 +304,8 @@ fn test_invalid_source_ip() {
 /// Test invalid timeout validation (zero)
 #[test]
 fn test_zero_timeout() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--timeout", "0"])
+    let output = cli()
+        .args(["--timeout", "0"])
         .output()
         .expect("Failed to execute command");
 
@@ -322,8 +317,8 @@ fn test_zero_timeout() {
 /// Test invalid timeout validation (too large)
 #[test]
 fn test_timeout_too_large() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--timeout", "999"])
+    let output = cli()
+        .args(["--timeout", "999"])
         .output()
         .expect("Failed to execute command");
 
@@ -332,122 +327,151 @@ fn test_timeout_too_large() {
     assert!(stderr.contains("timeout") || stderr.contains("error"));
 }
 
-/// Test that --list flag executes (will fail without network, but validates parsing)
+/// Validate --list without running network discovery.
 #[test]
 fn test_list_flag_parsing() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--list"])
+    let output = cli()
+        .args(["--list"])
         .output()
         .expect("Failed to execute command");
 
-    // This may fail due to network, but parsing should work
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Either succeeds or fails with network error, not parsing error
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
 }
 
 /// Test --json flag parsing
 #[test]
 fn test_json_flag_parsing() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--json"])
+    let output = cli()
+        .args(["--json"])
         .output()
         .expect("Failed to execute command");
 
-    // This may fail due to network, but parsing should work
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
+    assert!(
+        stderr.contains("JSON"),
+        "flag must reach runtime configuration: {stderr}"
+    );
 }
 
 /// Test --csv flag parsing
 #[test]
 fn test_csv_flag_parsing() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--csv"])
+    let output = cli()
+        .args(["--csv"])
         .output()
         .expect("Failed to execute command");
 
-    // This may fail due to network, but parsing should work
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
+    assert!(
+        stderr.contains("CSV"),
+        "flag must reach runtime configuration: {stderr}"
+    );
 }
 
 /// Test --no-download flag parsing
 #[test]
 fn test_no_download_flag_parsing() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--no-download"])
+    let output = cli()
+        .args(["--no-download"])
         .output()
         .expect("Failed to execute command");
 
-    // This may fail due to network, but parsing should work
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
+    assert!(
+        stderr.contains("Download test"),
+        "flag must reach runtime configuration: {stderr}"
+    );
 }
 
 /// Test --no-upload flag parsing
 #[test]
 fn test_no_upload_flag_parsing() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--no-upload"])
+    let output = cli()
+        .args(["--no-upload"])
         .output()
         .expect("Failed to execute command");
 
-    // This may fail due to network, but parsing should work
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
+    assert!(
+        stderr.contains("Upload test"),
+        "flag must reach runtime configuration: {stderr}"
+    );
 }
 
 /// Test --single flag parsing
 #[test]
 fn test_single_flag_parsing() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--single"])
+    let output = cli()
+        .args(["--single"])
         .output()
         .expect("Failed to execute command");
 
-    // This may fail due to network, but parsing should work
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
+    assert!(
+        stderr.contains("Streams"),
+        "flag must reach runtime configuration: {stderr}"
+    );
 }
 
 /// Test multiple server flags
 #[test]
 fn test_multiple_server_flags() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--server", "1234", "--server", "5678"])
+    let output = cli()
+        .args(["--server", "1234", "--server", "5678"])
         .output()
         .expect("Failed to execute command");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
 }
 
 /// Test combined flags
 #[test]
 fn test_combined_flags() {
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "--no-upload",
-            "--json",
-            "--single",
-            "--timeout",
-            "5",
-        ])
+    let output = cli()
+        .args(["--no-upload", "--json", "--single", "--timeout", "5"])
         .output()
         .expect("Failed to execute command");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("error: unexpected argument"));
+    assert!(
+        output.status.success(),
+        "accepted flags must succeed: {stderr}"
+    );
 }
 
 /// Test that error output includes the word "Error:" for user readability
 #[test]
 fn test_error_output_format() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--source", "invalid"])
+    let output = cli()
+        .args(["--source", "invalid"])
         .output()
         .expect("Failed to execute command");
 
@@ -465,28 +489,25 @@ fn test_error_output_format() {
 #[test]
 fn test_exit_code_on_error() {
     // Clap validation errors (like invalid IP) return exit code 64 (USAGE_ERROR)
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--source", "999.999.999.999"])
+    let output = cli()
+        .args(["--source", "999.999.999.999"])
         .output()
         .expect("Failed to execute command");
 
     assert!(!output.status.success());
     let exit_code = output.status.code();
-    assert!(
-        exit_code == Some(1)
-            || exit_code == Some(2)
-            || exit_code == Some(64)
-            || exit_code == Some(69)
-            || exit_code == Some(70),
-        "Expected non-zero exit code (sysexits.h conventions), got {exit_code:?}"
+    assert_eq!(
+        exit_code,
+        Some(64),
+        "invalid arguments must produce a usage error"
     );
 }
 
 /// Test that --version output matches Cargo.toml version
 #[test]
 fn test_version_matches_cargo_toml() {
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--version"])
+    let output = cli()
+        .args(["--version"])
         .output()
         .expect("Failed to execute command");
 
@@ -498,32 +519,23 @@ fn test_version_matches_cargo_toml() {
         "Version should succeed. stderr: {stderr}"
     );
     assert!(
-        combined.contains("netspeed-cli"),
-        "Version output should contain binary name: {combined}"
+        combined.contains(&format!("netspeed-cli {}", env!("CARGO_PKG_VERSION"))),
+        "Version output must match the package: {combined}"
     );
 }
 
-/// Test --history flag with no existing history (should not crash)
+/// Validate --history without reading user history.
 #[test]
-fn test_history_no_data() {
-    // This may or may not produce output depending on whether history file exists,
-    // but it should never panic or crash
-    let output = Command::new("cargo")
-        .args(["run", "--", "--history"])
-        .output()
-        .expect("Failed to execute command");
-
-    // Either success with empty output or error is acceptable
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("panicked"));
-    assert!(!stderr.contains("panic"));
+fn test_history_flag_parsing() {
+    use clap::Parser;
+    let args = netspeed_cli::cli::Args::try_parse_from(["netspeed-cli", "--history"]).unwrap();
+    assert!(args.history);
 }
 
-/// Test that help output contains all documented options
 #[test]
 fn test_help_contains_expected_options() {
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "--help"])
+    let output = cli()
+        .args(["--help"])
         .output()
         .expect("Failed to execute command");
 
@@ -550,4 +562,50 @@ fn test_help_contains_expected_options() {
     assert!(combined.contains("--server"), "Missing --server in help");
     assert!(combined.contains("--history"), "Missing --history in help");
     assert!(combined.contains("--timeout"), "Missing --timeout in help");
+}
+
+#[test]
+fn valid_source_addresses_succeed_without_network() {
+    for address in ["127.0.0.1", "::1"] {
+        let output = cli().args(["--source", address]).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "valid source {address}: {stderr}");
+        assert!(stderr.contains(address));
+    }
+}
+
+#[test]
+fn repeated_server_filters_reach_runtime_configuration() {
+    use clap::Parser;
+    let args = netspeed_cli::cli::Args::try_parse_from([
+        "netspeed-cli",
+        "--server",
+        "1234",
+        "--server",
+        "5678",
+        "--exclude",
+        "9999",
+    ])
+    .unwrap();
+    let config = netspeed_cli::config::Config::from_args(&args);
+    assert_eq!(config.server_ids(), &["1234", "5678"]);
+    assert_eq!(config.exclude_ids(), &["9999"]);
+}
+
+#[test]
+fn legacy_format_aliases_and_explicit_precedence_are_preserved() {
+    use clap::Parser;
+    use netspeed_cli::config::{Config, Format};
+    for (flag, expected) in [
+        ("--json", Format::Json),
+        ("--csv", Format::Csv),
+        ("--simple", Format::Simple),
+    ] {
+        let args = netspeed_cli::cli::Args::try_parse_from(["netspeed-cli", flag]).unwrap();
+        assert_eq!(Config::from_args(&args).format(), Some(expected));
+        let args =
+            netspeed_cli::cli::Args::try_parse_from(["netspeed-cli", flag, "--format", "compact"])
+                .unwrap();
+        assert_eq!(Config::from_args(&args).format(), Some(Format::Compact));
+    }
 }

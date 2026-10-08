@@ -43,3 +43,12 @@ A git pre-push hook is available that runs `just qa` before every push. Install 
 - **Distribution**: Homebrew (macOS/Linux), Cargo
 - **API**: speedtest.net servers
 - **Metrics**: Latency, peak speeds, jitter, connection quality rating
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)

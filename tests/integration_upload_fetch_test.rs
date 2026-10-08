@@ -3,7 +3,7 @@
 use netspeed_cli::config::File;
 use netspeed_cli::progress;
 use netspeed_cli::types::Server;
-use netspeed_cli::upload::{build_upload_url, run};
+use netspeed_cli::upload::{UploadConfig, build_upload_url, run_with_config};
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -41,7 +41,19 @@ async fn test_upload_mocked_success() {
         indicatif::ProgressDrawTarget::hidden(),
     ));
 
-    let result = run(&client, &server, true, progress).await;
+    let result = run_with_config(
+        &client,
+        &server,
+        true,
+        progress,
+        &UploadConfig {
+            warmup: std::time::Duration::ZERO,
+            measurement_bytes: 2_000_000,
+            max_payload: 200_000,
+            ..UploadConfig::default()
+        },
+    )
+    .await;
     assert!(result.is_ok());
     let (avg, peak, total_bytes, samples) = result.unwrap();
     assert!(avg > 0.0);
@@ -79,7 +91,19 @@ async fn test_upload_mocked_all_failures() {
         indicatif::ProgressDrawTarget::hidden(),
     ));
 
-    let result = run(&client, &server, true, progress).await;
+    let result = run_with_config(
+        &client,
+        &server,
+        true,
+        progress,
+        &UploadConfig {
+            warmup: std::time::Duration::ZERO,
+            measurement_bytes: 2_000_000,
+            max_payload: 200_000,
+            ..UploadConfig::default()
+        },
+    )
+    .await;
     assert!(result.is_err());
 }
 
@@ -207,4 +231,162 @@ fn test_config_file_unknown_fields() {
     "#;
     let config: File = toml::from_str(toml).unwrap();
     assert_eq!(config.no_download, Some(true));
+}
+
+#[tokio::test]
+#[ignore = "requires local socket binding"]
+async fn upload_limits_warmup_adaptation_and_deadline() {
+    use std::time::{Duration, Instant};
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock)
+        .await;
+    let server = Server {
+        id: "1".into(),
+        url: format!("{}/upload.php", mock.uri()),
+        name: "Local".into(),
+        sponsor: "Test".into(),
+        country: "CA".into(),
+        lat: 0.0,
+        lon: 0.0,
+        distance: 0.0,
+    };
+    let config = UploadConfig {
+        warmup: Duration::from_secs(1),
+        duration: Duration::from_secs(1),
+        warmup_bytes: 3_000,
+        measurement_bytes: 12_000,
+        initial_payload: 1_000,
+        max_payload: 4_000,
+    };
+    let tracker = || {
+        Arc::new(progress::Tracker::with_target(
+            "Upload",
+            indicatif::ProgressDrawTarget::hidden(),
+        ))
+    };
+    let (_, _, measured, _) = run_with_config(&Client::new(), &server, true, tracker(), &config)
+        .await
+        .unwrap();
+    let requests = mock.received_requests().await.unwrap();
+    let sizes: Vec<_> = requests.iter().map(|r| r.body.len()).collect();
+    assert_eq!(measured, 12_000);
+    assert_eq!(sizes.iter().sum::<usize>(), 15_000);
+    assert_eq!(&sizes[..3], &[1_000, 2_000, 4_000]);
+    mock.reset().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(5)))
+        .mount(&mock)
+        .await;
+    let start = Instant::now();
+    let result = run_with_config(
+        &Client::new(),
+        &server,
+        true,
+        tracker(),
+        &UploadConfig {
+            warmup: Duration::ZERO,
+            duration: Duration::from_millis(100),
+            ..config
+        },
+    )
+    .await;
+    assert!(result.is_err());
+    assert!(start.elapsed() < Duration::from_secs(1));
+}
+
+#[tokio::test]
+#[ignore = "requires local socket binding"]
+async fn latency_monitor_stops_on_failure_and_cancellation() {
+    use std::time::Duration;
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&mock)
+        .await;
+    let server = Server {
+        id: "1".into(),
+        url: format!("{}/upload.php", mock.uri()),
+        name: "Local".into(),
+        sponsor: "Test".into(),
+        country: "CA".into(),
+        lat: 0.0,
+        lon: 0.0,
+        distance: 0.0,
+    };
+    for cancel in [false, true] {
+        mock.reset().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock)
+            .await;
+        let future = netspeed_cli::task_runner::run_bandwidth_test(
+            Client::new(),
+            &server,
+            "test",
+            false,
+            |_| async {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                Err(netspeed_cli::error::Error::UploadFailure("expected".into()))
+            },
+        );
+        if cancel {
+            assert!(
+                tokio::time::timeout(Duration::from_millis(120), future)
+                    .await
+                    .is_err()
+            );
+        } else {
+            assert!(future.await.is_err());
+        }
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let count = mock.received_requests().await.unwrap().len();
+        assert!(count > 0);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(mock.received_requests().await.unwrap().len(), count);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires local socket binding"]
+async fn upload_acknowledgement_size_boundary_is_enforced() {
+    let mock = MockServer::start().await;
+    let server = Server {
+        id: "1".into(),
+        url: format!("{}/upload.php", mock.uri()),
+        name: "local".into(),
+        sponsor: "test".into(),
+        country: "CA".into(),
+        lat: 0.0,
+        lon: 0.0,
+        distance: 0.0,
+    };
+    let config = UploadConfig {
+        warmup: std::time::Duration::ZERO,
+        measurement_bytes: 200_000,
+        ..UploadConfig::default()
+    };
+    for size in [64 * 1024, 64 * 1024 + 1] {
+        mock.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0; size]))
+            .mount(&mock)
+            .await;
+        let tracker = Arc::new(progress::Tracker::with_target(
+            "upload",
+            indicatif::ProgressDrawTarget::hidden(),
+        ));
+        let result = run_with_config(&Client::new(), &server, true, tracker, &config).await;
+        if size == 64 * 1024 {
+            assert_eq!(result.unwrap().2, 200_000);
+        } else {
+            let error = result.unwrap_err();
+            assert!(matches!(
+                error,
+                netspeed_cli::error::Error::UploadFailure(_)
+            ));
+            assert!(error.to_string().contains("acknowledgement exceeds"));
+        }
+    }
 }

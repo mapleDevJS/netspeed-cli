@@ -32,6 +32,10 @@ jobs:
       - name: Install cargo-deny
         uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6 # cargo-deny
 
+      - name: Validate YAML configuration
+        run: |
+          ruby -e 'require "yaml"; Dir[".github/**/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'
+
       - name: Run QA gate
         run: |
           cargo fmt --all -- --check
@@ -39,6 +43,8 @@ jobs:
           cargo test --verbose
           cargo test --doc
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+          cargo test --lib socket_regression -- --ignored
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           cargo test --test mock_network_test -- --ignored --nocapture
           cargo test --test integration_upload_fetch_test -- --ignored --nocapture
           cargo test --test e2e_test -- --ignored --nocapture

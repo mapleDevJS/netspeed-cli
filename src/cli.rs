@@ -216,9 +216,9 @@ pub struct Args {
 
     /// Minimum TLS version to use (1.2 or 1.3)
     ///
-    /// The default allows both TLS 1.2 and 1.3. Use this to restrict
-    /// connections to a specific TLS version for testing or compliance.
-    #[arg(long, value_name = "VERSION", value_parser = validate_tls_version, long_help = "Minimum TLS version to use (1.2 or 1.3).\nThe default allows both TLS 1.2 and 1.3.\nUse this to restrict connections to a specific TLS version.")]
+    /// The default and minimum 1.2 allow both TLS 1.2 and 1.3.
+    /// Minimum 1.3 disables TLS 1.2.
+    #[arg(long, value_name = "VERSION", value_parser = validate_tls_version, long_help = "Minimum TLS version to use (1.2 or 1.3).\nThe default and minimum 1.2 allow both TLS 1.2 and 1.3.\nMinimum 1.3 disables TLS 1.2.")]
     pub tls_version: Option<String>,
 
     /// Restrict TLS connections to speedtest.net and ookla.com domains

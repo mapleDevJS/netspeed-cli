@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master, main, develop, staging]
 
+permissions:
+  contents: read
+
 # Cancel redundant workflow runs on successive pushes to the same PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,10 +25,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Run tests
         run: cargo test --verbose
       - name: Build release
@@ -35,10 +38,12 @@ jobs:
     name: Socket Integration Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - name: Run measurement orchestration regressions
+        run: cargo test --lib socket_regression -- --ignored
       - name: Run mock socket tests
         run: cargo test --test mock_network_test -- --ignored --nocapture
       - name: Run upload integration tests
@@ -50,12 +55,12 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -63,8 +68,8 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt
       - name: Check formatting
@@ -74,10 +79,10 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Check documentation
         env:
           RUSTDOCFLAGS: -D warnings
@@ -89,12 +94,12 @@ jobs:
     name: Security Audit (cargo-deny)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Install cargo-deny
-        uses: taiki-e/install-action@cargo-deny
+        uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6 # cargo-deny
       - name: Run cargo-deny (advisories, licenses, bans, sources)
         run: cargo deny check
 
@@ -102,10 +107,10 @@ jobs:
     name: Package Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Verify crate package
         run: cargo package --locked
 
@@ -113,12 +118,12 @@ jobs:
     name: MSRV Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: 1.86
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Verify build with MSRV
         run: cargo check
 
@@ -126,95 +131,72 @@ jobs:
     name: Benchmark Regression Check
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      actions: read
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0  # Need full history for baseline comparison
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-      - name: Install cargo-benchcmp
-        run: cargo install cargo-benchcmp
-      - name: Run benchmarks
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - name: Test benchmark comparison
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Restore latest successful main baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cargo bench 2>&1 | tee benchmark_results.txt
-      - name: Fetch baseline from main
-        run: |
-          # Try to find baseline from main branch
-          if git show main:benches/baseline.txt &>/dev/null; then
-            echo "Found baseline on main branch"
-            git show main:benches/baseline.txt > benches/baseline.txt
-          else
-            echo "No baseline found on main - this may be the first run"
+          set -euo pipefail
+          runs=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 20 --json databaseId --jq '.[].databaseId')
+          for run in $runs; do
+            if gh run download "$run" --name criterion-baseline --dir benchmark-baseline; then
+              break
+            fi
+          done
+          if [ ! -d benchmark-baseline ]; then
+            echo "::notice::No retained main baseline; this run will bootstrap one on a successful main push."
           fi
+      - name: Run benchmarks
+        run: cargo bench --locked --bench core_benchmarks -- --noplot
       - name: Check for regressions
         run: |
-          # Skip comparison if baseline is placeholder
-          if grep -q "PLACEHOLDER" benches/baseline.txt 2>/dev/null; then
-            echo "Baseline is placeholder. Skipping regression check on first run."
-          elif [ -f benches/baseline.txt ]; then
-            echo "Comparing against baseline..."
-            cargo benchcmp benches/baseline.txt benchmark_results.txt 2>&1 || {
-              echo "Benchmark regression detected!"
-              exit 1
-            }
-          else
-            echo "No baseline to compare against. Skipping regression check."
+          if [ -d benchmark-baseline ]; then
+            python3 scripts/check-benchmarks.py benchmark-baseline target/criterion
           fi
-      - name: Store baseline
+      - name: Store main baseline
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          echo "Updating benchmark baseline on main branch..."
-          mkdir -p benches
-          cp benchmark_results.txt benches/baseline.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add benches/baseline.txt
-          git commit -m "perf: update benchmark baseline" || echo "No changes to commit"
-
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: criterion-baseline
+          path: target/criterion/**/new/estimates.json
+          if-no-files-found: error
+          retention-days: 90
 
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: llvm-tools-preview
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
-      - name: Generate coverage
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info --fail-under-lines=83
+      - name: Collect default test coverage
+        run: cargo llvm-cov --all-features --no-report
+      - name: Collect production measurement coverage
+        run: cargo llvm-cov --all-features --no-report --lib -- socket_regression --ignored
+      - name: Collect socket integration coverage
+        run: cargo llvm-cov --all-features --no-report --test mock_network_test --test integration_upload_fetch_test --test e2e_test -- --ignored
+      - name: Export coverage and enforce threshold
+        run: cargo llvm-cov report --lcov --output-path lcov.info --fail-under-lines=83
       - name: Print coverage summary
-        run: cargo llvm-cov --all-features --summary-only
+        run: cargo llvm-cov report --summary-only
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6
         with:
           files: lcov.info
           verbose: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  brew-audit:
-    name: Homebrew Audit
-    runs-on: macos-latest
-    # Only run when a version tag is pushed (release tarball must exist)
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: actions/checkout@v6
-      - name: Audit formula
-        run: |
-          TAP_DIR="$(brew --repository)/Library/Taps/mapleDevJS/homebrew-netspeed-cli"
-          mkdir -p "$TAP_DIR"
-          cp netspeed-cli.rb "$TAP_DIR/"
-          cd "$TAP_DIR"
-          git init
-          git add netspeed-cli.rb
-          git commit -m "audit"
-          brew install --build-from-source mapleDevJS/homebrew-netspeed-cli/netspeed-cli
-          brew audit --strict --online mapleDevJS/homebrew-netspeed-cli/netspeed-cli

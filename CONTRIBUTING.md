@@ -184,3 +184,15 @@ If you have questions, feel free to:
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
+
+### Benchmark regression checks
+
+Use `just bench-baseline` to save a local Criterion baseline, then `just bench-regression` after making changes. The comparison fails when the current mean's lower confidence bound exceeds the baseline's upper bound by more than 10%; missing benchmarks also fail.
+
+CI restores the latest retained baseline from a successful push to `main` and saves Criterion JSON as a 90-day artifact on main pushes. If no baseline exists or all artifacts have expired, CI explicitly reports a bootstrap run. Benchmark comparisons use the same script locally and in CI.
+
+The release workflow renders the formula for the released tag and runs Homebrew installation and audit after the GitHub release exists. The tap PR depends on that audit passing.
+
+CI coverage includes the default suite and the local socket suites, including production orchestration, before enforcing the 83% line threshold. Coverage collection uses `--no-report` for each suite and a single `cargo llvm-cov report` to merge the results.
+
+Release tags must match the package version (`vX.Y.Z`) and point to a commit on `main`. `scripts/validate-release.py` checks identity before release QA; binary builds and publishing depend on that gate. Test release validation locally with `python3 -m unittest discover -s scripts -p 'test_*.py'`. CLI integration tests execute Cargo’s built binary and use dry-run for configuration checks, without contacting public speedtest services.

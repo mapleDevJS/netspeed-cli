@@ -125,24 +125,20 @@ where
     let ping_url = server.url.clone();
     let samples_clone = Arc::clone(&latency_samples);
     let stop_clone = Arc::clone(&stop_signal);
-    let ping_handle = tokio::spawn(async move {
-        crate::servers::measure_latency_under_load(
-            client.clone(),
-            ping_url,
-            samples_clone,
-            stop_clone,
-        )
-        .await;
-    });
-
-    // Run the actual test
+    // Poll monitoring in this future: errors and cancellation drop the in-flight
+    // request immediately instead of detaching a background task.
+    let monitoring =
+        crate::servers::measure_latency_under_load(client, ping_url, samples_clone, stop_clone);
+    tokio::pin!(monitoring);
     let test_start = std::time::Instant::now();
-    let (avg, peak, total_bytes, speed_samples) = test_fn(progress).await?;
-    let duration = test_start.elapsed().as_secs_f64();
-
-    // Stop latency monitoring
+    let outcome = tokio::select! {
+        biased;
+        _ = &mut monitoring => Err(Error::context("latency monitor stopped unexpectedly")),
+        result = test_fn(progress) => result,
+    };
     stop_signal.store(true, std::sync::atomic::Ordering::Release);
-    let _ = ping_handle.await;
+    let (avg, peak, total_bytes, speed_samples) = outcome?;
+    let duration = test_start.elapsed().as_secs_f64();
 
     // Calculate average latency under load
     let latency_under_load = {

@@ -8,11 +8,13 @@ use crate::endpoints::ServerEndpoints;
 use crate::error::Error;
 use crate::test_config::TestConfig;
 use crate::types::Server;
+use futures::{StreamExt, stream};
 use quick_xml::de::from_str;
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// Root element for the Speedtest.net servers XML response
 /// XML structure: <settings><servers><server .../></servers></settings>
@@ -53,6 +55,7 @@ pub fn calculate_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
     let a = (delta_lat / 2.0).sin().powi(2)
         + lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
+    let a = a.clamp(0.0, 1.0);
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
     EARTH_RADIUS_KM * c
@@ -91,17 +94,32 @@ struct ClientInfo {
 /// Returns [`Error::Context`] if the response cannot be parsed or coordinates
 /// are missing.
 pub async fn fetch_client_location(client: &Client) -> Result<crate::types::ClientLocation, Error> {
+    fetch_client_location_from_url(client, SPEEDTEST_CONFIG_URL).await
+}
+
+fn valid_coordinates(lat: f64, lon: f64) -> bool {
+    lat.is_finite()
+        && lon.is_finite()
+        && (-90.0..=90.0).contains(&lat)
+        && (-180.0..=180.0).contains(&lon)
+}
+
+async fn fetch_client_location_from_url(
+    client: &Client,
+    url: &str,
+) -> Result<crate::types::ClientLocation, Error> {
     let response = client
-        .get(SPEEDTEST_CONFIG_URL)
+        .get(url)
         .send()
         .await?
+        .error_for_status()?
         .text()
         .await?;
 
     let config: ClientConfig = from_str(&response)?;
 
     match (config.client.lat, config.client.lon) {
-        (Some(lat), Some(lon)) => Ok(crate::types::ClientLocation {
+        (Some(lat), Some(lon)) if valid_coordinates(lat, lon) => Ok(crate::types::ClientLocation {
             lat,
             lon,
             city: config.client.city,
@@ -126,25 +144,29 @@ pub async fn fetch_client_location(client: &Client) -> Result<crate::types::Clie
 pub async fn fetch(
     client: &Client,
 ) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
-    let client_location = match fetch_client_location(client).await {
+    fetch_from_urls(client, SPEEDTEST_CONFIG_URL, SPEEDTEST_SERVERS_URL).await
+}
+
+async fn fetch_from_urls(
+    client: &Client,
+    config_url: &str,
+    servers_url: &str,
+) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
+    let client_location = match fetch_client_location_from_url(client, config_url).await {
         Ok(loc) => Some(loc),
         Err(ref e) => {
             eprintln!(
-                "Warning: could not determine client location ({e}), using default (equator)"
+                "Warning: could not determine client location ({e}), using latency-based selection"
             );
             None
         }
     };
 
-    // Use 0,0 as default if location fetch failed
-    let (client_lat, client_lon) = client_location
-        .as_ref()
-        .map_or((0.0, 0.0), |loc| (loc.lat, loc.lon));
-
     let response = client
-        .get(SPEEDTEST_SERVERS_URL)
+        .get(servers_url)
         .send()
         .await?
+        .error_for_status()?
         .text()
         .await?;
 
@@ -152,7 +174,12 @@ pub async fn fetch(
 
     let mut servers = server_config.servers_wrapper.servers;
     for server in &mut servers {
-        server.distance = calculate_distance(client_lat, client_lon, server.lat, server.lon);
+        server.distance = client_location
+            .as_ref()
+            .filter(|_| valid_coordinates(server.lat, server.lon))
+            .map_or(f64::INFINITY, |loc| {
+                calculate_distance(loc.lat, loc.lon, server.lat, server.lon)
+            });
     }
 
     // Sort by distance so closest servers are first
@@ -189,6 +216,122 @@ pub fn select_best_server(servers: &[Server]) -> Result<Server, Error> {
     Ok(best)
 }
 
+// Limit both work and elapsed time. Dropping this future cancels all probes.
+const SELECTION_CANDIDATES: usize = 20;
+const SELECTION_CONCURRENCY: usize = 5;
+
+fn selection_candidates(servers: &[Server], location_known: bool) -> Vec<Server> {
+    let mut unique: Vec<Server> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for server in servers {
+        if seen.insert(server.url.clone()) {
+            unique.push(server.clone());
+        }
+    }
+    if location_known {
+        unique.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+        unique.truncate(SELECTION_CANDIDATES);
+        unique
+    } else if unique.len() > SELECTION_CANDIDATES {
+        // Spread probes across the feed when there is no geographic hint.
+        (0..SELECTION_CANDIDATES)
+            .map(|i| unique[i * (unique.len() - 1) / (SELECTION_CANDIDATES - 1)].clone())
+            .collect()
+    } else {
+        unique
+    }
+}
+
+async fn select_with_probe<F, Fut>(
+    servers: &[Server],
+    location_known: bool,
+    budget: Duration,
+    probe: F,
+) -> Result<Server, Error>
+where
+    F: Fn(Server) -> Fut,
+    Fut: std::future::Future<Output = Result<f64, Error>>,
+{
+    if servers.is_empty() {
+        return Err(Error::ServerNotFound("No servers available".into()));
+    }
+    let candidates = selection_candidates(servers, location_known);
+    let count = candidates.len();
+    let mut pending = stream::iter(candidates)
+        .map(|server| {
+            let future = probe(server.clone());
+            async move { (server, future.await) }
+        })
+        .buffer_unordered(SELECTION_CONCURRENCY);
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut best: Option<(Server, f64)> = None;
+    while let Ok(Some((server, result))) = tokio::time::timeout_at(deadline, pending.next()).await {
+        if let Ok(latency) = result {
+            if latency.is_finite()
+                && latency >= 0.0
+                && best
+                    .as_ref()
+                    .is_none_or(|(_, previous)| latency < *previous)
+            {
+                best = Some((server, latency));
+            }
+        }
+    }
+    best.map(|(server, _)| server).ok_or_else(|| {
+        Error::NoReachableServers(format!(
+            "None of {count} candidates responded within the selection deadline"
+        ))
+    })
+}
+
+/// Choose the lowest-latency healthy server from a bounded shortlist.
+/// Unknown location uses candidates spread across the server feed.
+///
+/// # Errors
+/// Returns [`Error::ServerNotFound`] for an empty list and
+/// [`Error::NoReachableServers`] when all probes fail or time out.
+pub async fn select_reachable_server(
+    client: &Client,
+    servers: &[Server],
+    location_known: bool,
+) -> Result<Server, Error> {
+    select_with_probe(
+        servers,
+        location_known,
+        Duration::from_secs(4),
+        |server| async move {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                let mut total = 0.0;
+                for _ in 0..2 {
+                    let started = std::time::Instant::now();
+                    let mut response = client
+                        .get(ServerEndpoints::from_server_url(&server.url).latency())
+                        .send()
+                        .await?
+                        .error_for_status()?;
+                    let mut size = 0;
+                    while let Some(chunk) = response.chunk().await? {
+                        size += chunk.len();
+                        if size > 1024 {
+                            return Err(Error::NoReachableServers(
+                                "Oversized latency response".into(),
+                            ));
+                        }
+                    }
+                    if size == 0 {
+                        return Err(Error::NoReachableServers("Empty latency response".into()));
+                    }
+                    total += started.elapsed().as_secs_f64() * 1000.0;
+                }
+                Ok(total / 2.0)
+            })
+            .await
+            .map_err(|_| Error::NoReachableServers("Latency probe timed out".into()))?
+        },
+    )
+    .await
+}
+
 /// Run a ping test against the given server, returning (average latency, jitter, `packet_loss`%, `individual_samples`).
 ///
 /// # Errors
@@ -221,10 +364,9 @@ pub async fn ping_test(
 
     // Calculate average latency
     if latencies.is_empty() {
-        return Err(Error::Context {
-            msg: "All ping attempts failed".to_string(),
-            source: None,
-        });
+        return Err(Error::NoReachableServers(
+            "All ping attempts failed".to_string(),
+        ));
     }
 
     // Safe: len() is at most PING_ATTEMPTS (8), well under 2^53.
@@ -281,6 +423,242 @@ pub async fn measure_latency_under_load(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn candidate(id: usize, distance: f64) -> Server {
+        Server {
+            id: id.to_string(),
+            url: format!("http://server{id}/upload.php"),
+            name: "test".into(),
+            sponsor: "test".into(),
+            country: "US".into(),
+            lat: 0.0,
+            lon: 0.0,
+            distance,
+        }
+    }
+
+    #[tokio::test]
+    async fn selection_skips_failed_nearest_and_prefers_measured_latency() {
+        let servers = vec![candidate(0, 1.0), candidate(1, 2.0), candidate(2, 3.0)];
+        let chosen = select_with_probe(
+            &servers,
+            true,
+            Duration::from_secs(1),
+            |server| async move {
+                match server.id.as_str() {
+                    "0" => Err(Error::NoReachableServers("offline".into())),
+                    "1" => Ok(50.0),
+                    _ => Ok(10.0),
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(chosen.id, "2");
+    }
+
+    #[tokio::test]
+    async fn selection_all_failed_is_network_error_and_empty_is_config_error() {
+        let result = select_with_probe(
+            &[candidate(0, 1.0)],
+            true,
+            Duration::from_secs(1),
+            |_| async { Ok(f64::NAN) },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(result, Error::NoReachableServers(_)));
+        assert_eq!(result.category(), crate::error::ErrorCategory::Network);
+        let result = select_with_probe(&[], true, Duration::from_secs(1), |_| async { Ok(1.0) })
+            .await
+            .unwrap_err();
+        assert!(matches!(result, Error::ServerNotFound(_)));
+    }
+
+    #[test]
+    fn shortlist_is_bounded_deduplicated_and_spread_without_location() {
+        let mut servers: Vec<_> = (0..100).map(|i| candidate(i, (100 - i) as f64)).collect();
+        servers.push(servers[0].clone());
+        let nearby = selection_candidates(&servers, true);
+        assert_eq!(nearby.len(), 20);
+        assert_eq!(nearby[0].id, "99");
+        let spread = selection_candidates(&servers, false);
+        assert_eq!(spread.len(), 20);
+        assert_eq!(spread[0].id, "0");
+        assert_eq!(spread[19].id, "99");
+    }
+
+    #[tokio::test]
+    async fn selection_deadline_keeps_completed_result_and_cancels_pending_probes() {
+        use std::sync::atomic::AtomicUsize;
+        struct Guard(Arc<AtomicUsize>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        let active = Arc::new(AtomicUsize::new(0));
+        let max = Arc::new(AtomicUsize::new(0));
+        let servers: Vec<_> = (0..20).map(|i| candidate(i, i as f64)).collect();
+        let chosen = select_with_probe(&servers, true, Duration::from_millis(50), |server| {
+            let active = Arc::clone(&active);
+            let max = Arc::clone(&max);
+            async move {
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                max.fetch_max(current, Ordering::SeqCst);
+                let _guard = Guard(active);
+                if server.id == "0" {
+                    Ok(1.0)
+                } else {
+                    std::future::pending().await
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(chosen.id, "0");
+        assert!(max.load(Ordering::SeqCst) <= SELECTION_CONCURRENCY);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        let failed = select_with_probe(&servers, false, Duration::from_millis(10), |_| {
+            std::future::pending::<Result<f64, Error>>()
+        })
+        .await;
+        assert!(matches!(failed, Err(Error::NoReachableServers(_))));
+    }
+
+    #[test]
+    fn invalid_coordinates_are_rejected() {
+        assert!(valid_coordinates(0.0, 0.0));
+        for (lat, lon) in [
+            (91.0, 0.0),
+            (0.0, 181.0),
+            (f64::NAN, 0.0),
+            (0.0, f64::INFINITY),
+        ] {
+            assert!(!valid_coordinates(lat, lon));
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local socket binding"]
+    async fn socket_regression_discovery_and_reachable_selection() {
+        use crate::services::{DefaultServerService, ServerSelector};
+        use wiremock::matchers::path;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let mock = MockServer::start().await;
+        Mock::given(path("/config"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock)
+            .await;
+        let xml = format!(
+            r#"<settings><servers><server id="1" url="{0}/bad/upload.php" name="bad" sponsor="test" country="US" lat="0" lon="0"/><server id="2" url="{0}/good/upload.php" name="good" sponsor="test" country="US" lat="50" lon="50"/></servers></settings>"#,
+            mock.uri()
+        );
+        Mock::given(path("/servers"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(xml))
+            .mount(&mock)
+            .await;
+        Mock::given(path("/bad/latency.txt"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock)
+            .await;
+        Mock::given(path("/good/latency.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("test=test"))
+            .expect(2)
+            .mount(&mock)
+            .await;
+        let client = Client::new();
+        let (servers, location) = fetch_from_urls(
+            &client,
+            &format!("{}/config", mock.uri()),
+            &format!("{}/servers", mock.uri()),
+        )
+        .await
+        .unwrap();
+        assert!(location.is_none());
+        assert!(
+            servers
+                .iter()
+                .all(|server| server.distance == f64::INFINITY)
+        );
+        let service = DefaultServerService::new(client.clone());
+        let selected = service.select_reachable(&servers, false).await.unwrap();
+        assert_eq!(selected.id, "2");
+        let result = service.select_reachable(&servers[..1], false).await;
+        assert!(matches!(result, Err(Error::NoReachableServers(_))));
+        Mock::given(path("/invalid-config"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(r#"<settings><client lat="100" lon="0"/></settings>"#),
+            )
+            .mount(&mock)
+            .await;
+        assert!(
+            fetch_client_location_from_url(&client, &format!("{}/invalid-config", mock.uri()))
+                .await
+                .is_err()
+        );
+        Mock::given(path("/failed-servers"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock)
+            .await;
+        assert!(matches!(
+            fetch_from_urls(
+                &client,
+                &format!("{}/config", mock.uri()),
+                &format!("{}/failed-servers", mock.uri())
+            )
+            .await,
+            Err(Error::NetworkError(_))
+        ));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local socket binding"]
+    async fn socket_regression_selection_rejects_empty_oversized_and_stalled_responses() {
+        use wiremock::matchers::path;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let mock = MockServer::start().await;
+        for (name, body) in [("empty", String::new()), ("oversized", "x".repeat(1025))] {
+            Mock::given(path(format!("/{name}/latency.txt")))
+                .respond_with(ResponseTemplate::new(200).set_body_string(body))
+                .mount(&mock)
+                .await;
+        }
+        Mock::given(path("/stalled/latency.txt"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("test=test")
+                    .set_delay(Duration::from_secs(3)),
+            )
+            .mount(&mock)
+            .await;
+        let mut servers: Vec<_> = (0..3).map(|i| candidate(i, i as f64)).collect();
+        for (server, name) in servers.iter_mut().zip(["empty", "oversized", "stalled"]) {
+            server.url = format!("{}/{name}/upload.php", mock.uri());
+        }
+        let error = select_reachable_server(&Client::new(), &servers, true)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::NoReachableServers(_)));
+        Mock::given(path("/valid-config"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(r#"<settings><client lat="0" lon="0"/></settings>"#),
+            )
+            .mount(&mock)
+            .await;
+        Mock::given(path("/valid-servers")).respond_with(ResponseTemplate::new(200).set_body_string(format!(r#"<settings><servers><server id="1" url="{}/upload.php" name="test" sponsor="test" country="US" lat="0" lon="1"/></servers></settings>"#, mock.uri()))).mount(&mock).await;
+        let (servers, location) = fetch_from_urls(
+            &Client::new(),
+            &format!("{}/valid-config", mock.uri()),
+            &format!("{}/valid-servers", mock.uri()),
+        )
+        .await
+        .unwrap();
+        assert!(location.is_some());
+        assert!((servers[0].distance - 111.195).abs() < 0.01);
+    }
 
     #[test]
     fn test_select_best_server() {

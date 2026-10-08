@@ -232,7 +232,17 @@ impl ConfigSource {
                 minimal: args.minimal,
                 profile: args.profile.clone(),
                 theme: args.theme.clone(),
-                format: args.format.map(Format::from_cli_type),
+                format: args.format.map(Format::from_cli_type).or({
+                    if args.json == Some(true) {
+                        Some(Format::Json)
+                    } else if args.csv == Some(true) {
+                        Some(Format::Csv)
+                    } else if args.simple == Some(true) {
+                        Some(Format::Simple)
+                    } else {
+                        None
+                    }
+                }),
             },
             test: TestSource {
                 no_download: args.no_download,

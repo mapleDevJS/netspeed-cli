@@ -266,8 +266,8 @@ instead of the system default certificates.
 .TP
 \fB\-\-tls\-version\fR \fI<VERSION>\fR
 Minimum TLS version to use (1.2 or 1.3).
-The default allows both TLS 1.2 and 1.3.
-Use this to restrict connections to a specific TLS version.
+The default and minimum 1.2 allow both TLS 1.2 and 1.3.
+Minimum 1.3 disables TLS 1.2.
 .TP
 \fB\-\-pin\-certs\fR [\fI<PIN_CERTS>\fR]
 Restrict TLS connections to speedtest.net and ookla.com domains.

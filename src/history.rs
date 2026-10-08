@@ -4,13 +4,20 @@ use crate::terminal;
 use crate::theme::{Colors, Theme};
 use crate::types::TestResult;
 use directories::ProjectDirs;
+use fs2::FileExt;
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
+    /// Version 1 stores the complete report alongside legacy summary fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<TestResult>,
     pub timestamp: String,
     pub server_name: String,
     pub sponsor: String,
@@ -29,6 +36,8 @@ pub struct Entry {
 impl From<&TestResult> for Entry {
     fn from(result: &TestResult) -> Self {
         Self {
+            schema_version: Some(1),
+            report: Some(result.clone()),
             timestamp: result.timestamp.clone(),
             server_name: result.server.name.clone(),
             sponsor: result.server.sponsor.clone(),
@@ -66,17 +75,31 @@ fn corrupt_path(path: &Path) -> PathBuf {
 
 fn load_entries(path: &Path) -> Result<Vec<Entry>, Error> {
     let content = fs::read_to_string(path)?;
-    Ok(serde_json::from_str(&content)?)
+    // Check schema before deserializing reports: future report shapes must not
+    // be mistaken for corruption and replaced with an older backup.
+    let entries: Vec<serde_json::Value> = serde_json::from_str(&content)?;
+    if entries.iter().any(|entry| {
+        let version = entry.get("schema_version").filter(|value| !value.is_null());
+        version.is_some_and(|value| value.as_u64() != Some(1))
+            || (version.is_some()
+                && !entry
+                    .get("report")
+                    .is_some_and(serde_json::Value::is_object))
+    }) {
+        return Err(Error::context("unsupported or incomplete history schema"));
+    }
+    Ok(serde_json::from_value(serde_json::Value::Array(entries))?)
 }
 
 /// Internal: load history from a specific path
-fn load_history_from_path(path: &Path) -> Result<Vec<Entry>, Error> {
+pub(crate) fn load_history_from_path(path: &Path) -> Result<Vec<Entry>, Error> {
     if !path.exists() {
         return Ok(Vec::new());
     }
 
     match load_entries(path) {
         Ok(history) => Ok(history),
+        Err(err @ Error::Context { .. }) => Err(err),
         Err(err) => {
             let backup = backup_path(path);
             if backup.exists() {
@@ -97,13 +120,33 @@ fn load_history_from_path(path: &Path) -> Result<Vec<Entry>, Error> {
     }
 }
 
-/// Internal: save result to a specific path
-fn save_result_to_path(result: &TestResult, path: &Path) -> Result<(), Error> {
+/// Acquire the stable lock shared by saving and clearing history.
+fn lock_history_path(path: &Path) -> Result<fs::File, Error> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    // Lock a stable sibling: locking the history inode itself would stop
+    // protecting the next writer after atomic replacement.
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options.open(path.with_extension("json.lock"))?;
+    FileExt::lock_exclusive(&lock)?;
+    Ok(lock)
+}
+
+pub(crate) fn save_result_to_path(result: &TestResult, path: &Path) -> Result<(), Error> {
+    let _lock = lock_history_path(path)?;
     let backup = backup_path(path);
     let mut recovered_from_backup = false;
     let mut history: Vec<Entry> = if path.exists() {
         match load_entries(path) {
             Ok(history) => history,
+            Err(err @ Error::Context { .. }) => return Err(err),
             Err(err) => {
                 if backup.exists() {
                     let backup_history = load_entries(&backup)?;
@@ -135,23 +178,45 @@ fn save_result_to_path(result: &TestResult, path: &Path) -> Result<(), Error> {
 
     let json = serde_json::to_string_pretty(&history)?;
 
-    // Write to a temp file first, then rename for atomicity.
-    // On Unix, restrict permissions to owner-only (0o600).
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, &json)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600)) {
-            eprintln!("Warning: Failed to set permissions on history file: {e}");
-        }
-    }
+    // NamedTempFile uses a unique name and owner-only permissions at creation.
+    // Keep the lock through backup and replacement, covering the whole transaction.
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    temp.write_all(json.as_bytes())?;
+    temp.as_file().sync_all()?;
     if path.exists() && !recovered_from_backup {
         fs::copy(path, &backup)?;
     }
-    fs::rename(&tmp_path, path)?;
+    temp.persist(path).map_err(|e| Error::IoError(e.error))?;
 
     Ok(())
+}
+
+/// Remove history and recovery copies under the same lock used by writers.
+pub(crate) fn clear_history_from_path(path: &Path) -> Result<(), Error> {
+    if path
+        .parent()
+        .is_some_and(|p| !p.as_os_str().is_empty() && !p.exists())
+    {
+        return Ok(());
+    }
+    let _lock = lock_history_path(path)?;
+    for target in [backup_path(path), corrupt_path(path), path.to_path_buf()] {
+        match fs::remove_file(target) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(())
+}
+
+/// Clear saved history and its recovery copies.
+pub fn clear() -> Result<(), Error> {
+    get_history_path().map_or(Ok(()), |path| clear_history_from_path(&path))
 }
 
 /// Save a test result to the history file.
@@ -553,6 +618,35 @@ mod tests {
     use crate::error::Error;
     use crate::types::{PhaseResult, ServerInfo, TestPhases, TestResult};
     use serial_test::serial;
+
+    #[test]
+    fn concurrent_saves_preserve_all_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        std::thread::scope(|scope| {
+            for i in 0..12 {
+                let path = &path;
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    save_result_to_path(&make_test_result(10.0, 5.0, &i.to_string()), path)
+                        .unwrap();
+                });
+            }
+        });
+        let entries = load_history_from_path(&path).unwrap();
+        let ids: std::collections::HashSet<_> = entries.iter().map(|e| &e.timestamp).collect();
+        assert_eq!(ids.len(), 12);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
 
     fn make_test_result(download: f64, upload: f64, timestamp: &str) -> TestResult {
         TestResult {
@@ -998,6 +1092,8 @@ mod tests {
         // Create Entry directly (which is what load_entries returns)
         let entries = vec![
             Entry {
+                schema_version: None,
+                report: None,
                 timestamp: "2026-03-01T00:00:00Z".to_string(),
                 server_name: "Test".to_string(),
                 sponsor: "Test".to_string(),
@@ -1013,6 +1109,8 @@ mod tests {
                 client_ip: None,
             },
             Entry {
+                schema_version: None,
+                report: None,
                 timestamp: "2026-03-02T00:00:00Z".to_string(),
                 server_name: "Test".to_string(),
                 sponsor: "Test".to_string(),
