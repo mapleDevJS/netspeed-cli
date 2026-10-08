@@ -1,4 +1,4 @@
-_netspeed-cli() {
+_netspeed__cli() {
     local i cur prev opts cmd
     COMPREPLY=()
     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
@@ -132,7 +132,7 @@ _netspeed-cli() {
 }
 
 if [[ "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 || "${BASH_VERSINFO[0]}" -gt 4 ]]; then
-    complete -F _netspeed-cli -o nosort -o bashdefault -o default netspeed-cli
+    complete -F _netspeed__cli -o nosort -o bashdefault -o default netspeed-cli
 else
-    complete -F _netspeed-cli -o bashdefault -o default netspeed-cli
+    complete -F _netspeed__cli -o bashdefault -o default netspeed-cli
 fi
