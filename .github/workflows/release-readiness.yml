@@ -59,9 +59,10 @@ jobs:
           cargo package --locked --no-verify
           cargo publish --dry-run --locked
 
-      - name: Render local Homebrew formula
+      # Version PRs have no tag yet; verify the renderer against a released archive.
+      - name: Render latest released Homebrew formula
         run: |
-          VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)"
+          VERSION="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
           scripts/render-homebrew-formula.sh "${VERSION}" /tmp/netspeed-cli.rb
           grep -q "version \"${VERSION}\"" /tmp/netspeed-cli.rb
 
