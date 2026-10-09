@@ -18,9 +18,10 @@ env:
 permissions:
   contents: read
 
-# Serialize preparation/tagging; never cancel a publishing release.
+# Serialize manual preparation separately from each tag publishing run.
+# A new dispatch must not replace a queued tag release.
 concurrency:
-  group: release
+  group: release-${{ github.event_name == 'workflow_dispatch' && 'preparation' || github.ref }}
   cancel-in-progress: false
 
 jobs:
