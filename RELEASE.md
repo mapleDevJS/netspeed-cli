@@ -2,19 +2,22 @@
 
 Releases are built and published from the **`main`** branch. Development flows
 from **`develop`** to `main` by pull request, then the manual GitHub Actions
-release workflow creates the release commit and tag.
+release workflow prepares a version PR. After it merges, rerun the workflow
+to tag the approved commit on `main`. Branch protection stays enabled.
 
 ## Workflow
 
 ```text
-develop --(PR)--> main --(Release workflow)--> GitHub + crates.io + Homebrew PR
+develop --(PR)--> main --(version PR + merge)--> main --(tag)--> publishing
 ```
 
 ## Prerequisites
 
 - `CARGO_REGISTRY_TOKEN` repository secret with crates.io publish access.
 - `RELEASE_TOKEN` repository secret with contents access to create release
-  commits, tags, and GitHub Releases in `mapleDevJS/netspeed-cli`.
+  branches, tags, and GitHub Releases, plus pull request write access in
+  `mapleDevJS/netspeed-cli`. Use a PAT or GitHub App token so branch/tag
+  pushes trigger CI and the tag publishing workflow. No protection bypass is needed.
 - `HOMEBREW_TAP_TOKEN` repository secret with branch and PR access to
   `mapleDevJS/homebrew-netspeed-cli`.
 - `main` contains the changes intended for release.
@@ -57,22 +60,44 @@ The legacy local command is intentionally non-mutating:
 It prints the `gh workflow run` command instead of editing files, committing,
 tagging, or publishing.
 
-### 3. What the Workflow Does
+### 3. Approve the Version PR, Then Tag
+
+The first run opens `release/netspeed-cli-v<version>` against `main` with
+Cargo versions, changelog, completions, and man page updates. It runs the
+release gates and package dry run, then stops without tagging or publishing.
+Review its checks and merge the PR. Reruns preserve an existing preparation
+branch and reuse its open PR.
+
+Run the same command again after the PR merges:
+
+```bash
+gh workflow run release.yml --ref main -f version=<version>
+```
+
+When `main` already has the requested package version, the workflow runs the
+gates again, verifies `main` has not advanced, and tags that exact commit.
+The tag push starts a separate publishing run; the manual run never publishes.
+If `main` advances during validation, rerun the command.
+
+### 4. What the Tag Workflow Does
 
 | Job | Responsibility |
 |---|---|
-| `release-context` | Validates version, updates versioned files, runs release checks, commits, and tags |
+| `release-context` | Validates the tag matches the package version and belongs to `main` |
+| `validate-release` | Runs release gates before any publishing |
 | `build-binaries` | Builds Linux, macOS, and Windows release binaries |
 | `publish-github-release` | Creates the GitHub Release, checksums, SBOM, and uploads assets |
 | `publish-crates-io` | Verifies and publishes the crate to crates.io |
+| `update-local-homebrew-formula` | Opens a PR against `main` for the in-repo formula |
 | `homebrew-tap-pr` | Opens a PR in `mapleDevJS/homebrew-netspeed-cli` with the updated formula |
 
-### 4. Merge the Homebrew Tap PR
+### 5. Merge the Formula PRs
 
-After the release workflow succeeds, review and merge the generated tap PR.
+After the release workflow succeeds, review and merge both generated formula PRs
+(the in-repo formula PR and the Homebrew tap PR).
 This is the step that makes `brew upgrade netspeed-cli` pick up the new version.
 
-### 5. Verify Channel Sync
+### 6. Verify Channel Sync
 
 ```bash
 scripts/check-release-sync.sh
@@ -89,7 +114,8 @@ It checks:
 - Rust formatting, clippy, unit/doc/socket tests, docs, package, and cargo-deny.
 - Generated completions and man page are committed.
 - `cargo publish --dry-run --locked` succeeds.
-- The Homebrew formula can be rendered from the current package version.
+- The Homebrew formula renderer works with the latest released tag archive.
+  Version PRs do not have a tag yet; the new archive is audited after publishing.
 - Scheduled runs detect drift between GitHub, crates.io, and Homebrew.
 
 ## Emergency Hotfix
