@@ -154,7 +154,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
       - uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6 # cargo-deny
       - name: Check tag and package identity
         env:
@@ -218,7 +218,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
 
       - name: Install cross-compilation tools (aarch64 Linux GNU)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -361,7 +361,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
 
       - name: Verify package
         run: |
