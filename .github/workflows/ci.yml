@@ -2,15 +2,12 @@ name: CI
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master, main, develop, staging]
   pull_request:
-    branches: [master, main, develop, staging]
+    branches: [main, develop]
 
 permissions:
   contents: read
 
-# Cancel redundant workflow runs on successive pushes to the same PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,105 +28,53 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --locked --verbose
+      - name: Run socket integration tests
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo test --locked --lib socket_regression -- --ignored
+          cargo test --locked --test mock_network_test --test integration_upload_fetch_test --test e2e_test -- --ignored --nocapture
       - name: Build release
-        run: cargo build --release
+        run: cargo build --locked --release
 
-  socket-integration:
-    name: Socket Integration Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Run measurement orchestration regressions
-        run: cargo test --lib socket_regression -- --ignored
-      - name: Run mock socket tests
-        run: cargo test --test mock_network_test -- --ignored --nocapture
-      - name: Run upload integration tests
-        run: cargo test --test integration_upload_fetch_test -- --ignored --nocapture
-      - name: Run end-to-end socket tests
-        run: cargo test --test e2e_test -- --ignored --nocapture
-
-  clippy:
-    name: Clippy
+  quality:
+    name: Ubuntu Quality Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
-          components: clippy
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-  doc:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Check documentation
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
+      - name: Check formatting and lint
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Check documentation and package
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --workspace
-      - name: Run doctests
-        run: cargo test --doc
-
-  audit:
-    name: Security Audit (cargo-deny)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Install cargo-deny
+        run: |
+          cargo doc --locked --no-deps --workspace
+          cargo package --locked
+      - name: Check crates.io publication package
+        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'main'
+        run: cargo publish --dry-run --locked
+      - name: Check generated docs and release scripts
+        run: |
+          scripts/check-generated-docs.sh
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Check dependencies and licenses
         uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6 # cargo-deny
-      - name: Run cargo-deny (advisories, licenses, bans, sources)
+      - name: Run cargo-deny
         run: cargo deny check
-
-  package:
-    name: Package Validation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Verify crate package
-        run: cargo package --locked
-
-  msrv:
-    name: MSRV Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: 1.86
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Verify build with MSRV
-        run: cargo check
+      - name: Check minimum supported Rust version
+        run: |
+          rustup toolchain install 1.86 --profile minimal
+          cargo +1.86 check --locked
 
   benchmarks:
     name: Benchmark Regression Check
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -140,19 +85,15 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Test benchmark comparison
-        run: python3 -m unittest discover -s scripts -p 'test_*.py'
-      # Historical timings can come from a different CPU. Remeasure the
-      # successful main commit on this runner with the same Rust toolchain.
       - name: Select latest successful main baseline commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          baseline_sha=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+          baseline_sha=$(gh run list --workflow ci.yml --branch main --event workflow_dispatch --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
           echo "BASELINE_SHA=$baseline_sha" >> "$GITHUB_ENV"
           if [ -z "$baseline_sha" ]; then
-            echo "::notice::No successful main baseline; this run will bootstrap one."
+            echo "::notice::No successful manually dispatched main baseline; this run will bootstrap one."
           fi
       - name: Measure baseline on the current runner
         if: env.BASELINE_SHA != ''
@@ -165,21 +106,11 @@ jobs:
         run: cargo +stable bench --locked --bench core_benchmarks -- --noplot
       - name: Check for regressions
         if: env.BASELINE_SHA != ''
-        # These URL helpers run once per request and take tens of nanoseconds;
-        # shared-runner variance can dominate their end-to-end impact. Apply a
-        # 25 ns absolute floor to the remaining microbenchmarks as well.
+        # Preserve the upstream guard against noisy nanosecond-scale URL benchmarks.
         run: python3 scripts/check-benchmarks.py target/benchmark-reference/criterion target/criterion --ignore-prefix url_ --minimum-absolute-delta-ns 25
-      - name: Store main baseline
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: criterion-baseline
-          path: target/criterion/**/new/estimates.json
-          if-no-files-found: error
-          retention-days: 90
-
   coverage:
     name: Code Coverage
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -188,20 +119,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: llvm-tools-preview
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
+      - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
-      - name: Collect default test coverage
-        run: cargo llvm-cov --all-features --no-report
-      - name: Collect production measurement coverage
-        run: cargo llvm-cov --all-features --no-report --lib -- socket_regression --ignored
-      - name: Collect socket integration coverage
-        run: cargo llvm-cov --all-features --no-report --test mock_network_test --test integration_upload_fetch_test --test e2e_test -- --ignored
-      - name: Export coverage and enforce threshold
+        run: cargo install cargo-llvm-cov --locked
+      - name: Collect coverage
+        run: |
+          cargo llvm-cov --all-features --no-report
+          cargo llvm-cov --all-features --no-report --lib -- socket_regression --ignored
+          cargo llvm-cov --all-features --no-report --test mock_network_test --test integration_upload_fetch_test --test e2e_test -- --ignored
+      - name: Enforce coverage threshold
         run: cargo llvm-cov report --lcov --output-path lcov.info --fail-under-lines=83
-      - name: Print coverage summary
-        run: cargo llvm-cov report --summary-only
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v6
         with:
