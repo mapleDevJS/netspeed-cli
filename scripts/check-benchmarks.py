@@ -22,7 +22,13 @@ def estimates(root, name):
     return result
 
 
-def regressions(baseline, current, threshold, ignore_prefixes=()):
+def regressions(
+    baseline,
+    current,
+    threshold,
+    ignore_prefixes=(),
+    minimum_absolute_delta_ns=25.0,
+):
     missing = baseline.keys() - current.keys()
     if missing:
         raise ValueError(f"Missing benchmarks: {', '.join(sorted(missing))}")
@@ -36,7 +42,11 @@ def regressions(baseline, current, threshold, ignore_prefixes=()):
     failures = []
     for name in compared:
         old = baseline[name]
-        if current[name][1] > old[2] * (1 + threshold):
+        exceeds_relative_threshold = current[name][1] > old[2] * (1 + threshold)
+        exceeds_absolute_threshold = (
+            current[name][1] - old[2] > minimum_absolute_delta_ns
+        )
+        if exceeds_relative_threshold and exceeds_absolute_threshold:
             failures.append((name, current[name][0] / old[0] - 1))
     return failures
 
@@ -53,13 +63,30 @@ def main():
         default=[],
         help="exclude benchmarks under this name prefix from the regression gate",
     )
+    parser.add_argument(
+        "--minimum-absolute-delta-ns",
+        type=float,
+        default=25.0,
+        help="minimum CI-bound slowdown in nanoseconds to report as a regression",
+    )
     args = parser.parse_args()
     if not math.isfinite(args.threshold) or args.threshold < 0:
         parser.error("threshold must be finite and nonnegative")
+    if (
+        not math.isfinite(args.minimum_absolute_delta_ns)
+        or args.minimum_absolute_delta_ns < 0
+    ):
+        parser.error("minimum absolute delta must be finite and nonnegative")
     try:
         old = estimates(args.baseline, args.baseline_name)
         new = estimates(args.current, "new")
-        failures = regressions(old, new, args.threshold, args.ignore_prefix)
+        failures = regressions(
+            old,
+            new,
+            args.threshold,
+            args.ignore_prefix,
+            args.minimum_absolute_delta_ns,
+        )
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f"Benchmark comparison failed: {error}\n")
     for name, change in failures:
