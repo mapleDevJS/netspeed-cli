@@ -43,7 +43,8 @@ jobs:
         run: |
           VERSION="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
           scripts/render-homebrew-formula.sh "${VERSION}" /tmp/netspeed-cli.rb
-          grep -q "version \"${VERSION}\"" /tmp/netspeed-cli.rb
+          grep -Fq "refs/tags/v${VERSION}.tar.gz" /tmp/netspeed-cli.rb
+          grep -q '^[[:space:]]*sha256 "[0-9a-f]\{64\}"$' /tmp/netspeed-cli.rb
 
   scheduled-sync:
     name: Weekly Release Channel Drift Check
