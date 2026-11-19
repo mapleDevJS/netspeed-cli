@@ -299,12 +299,13 @@ jobs:
         run: |
           set -euo pipefail
           tap_dir="$(brew --repository)/Library/Taps/mapledevjs/homebrew-netspeed-cli"
-          mkdir -p "$tap_dir"
-          scripts/render-homebrew-formula.sh "$VERSION" "$tap_dir/netspeed-cli.rb"
+          formula_path="${tap_dir}/Formula/netspeed-cli.rb"
+          mkdir -p "$(dirname "${formula_path}")"
+          scripts/render-homebrew-formula.sh "$VERSION" "$formula_path"
           git -C "$tap_dir" init
           git -C "$tap_dir" config user.name "github-actions[bot]"
           git -C "$tap_dir" config user.email "github-actions[bot]@users.noreply.github.com"
-          git -C "$tap_dir" add netspeed-cli.rb
+          git -C "$tap_dir" add Formula/netspeed-cli.rb
           git -C "$tap_dir" commit -m "Audit released formula"
           brew install --build-from-source mapledevjs/netspeed-cli/netspeed-cli
           brew audit --strict --online mapledevjs/netspeed-cli/netspeed-cli
@@ -332,20 +333,22 @@ jobs:
           fi
 
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" homebrew-tap
-          scripts/render-homebrew-formula.sh "${VERSION}" homebrew-tap/netspeed-cli.rb
+          FORMULA_PATH="homebrew-tap/Formula/netspeed-cli.rb"
+          mkdir -p "$(dirname "${FORMULA_PATH}")"
+          scripts/render-homebrew-formula.sh "${VERSION}" "${FORMULA_PATH}"
 
           cd homebrew-tap
           BRANCH="release/netspeed-cli-v${VERSION}"
           git checkout -B "${BRANCH}"
 
-          if git diff --quiet -- netspeed-cli.rb; then
+          if git diff --quiet -- "${FORMULA_PATH#homebrew-tap/}"; then
             echo "Homebrew tap formula is already at v${VERSION}."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add netspeed-cli.rb
+          git add "${FORMULA_PATH#homebrew-tap/}"
           git commit -m "netspeed-cli v${VERSION}"
           git push --force-with-lease origin "${BRANCH}"
 

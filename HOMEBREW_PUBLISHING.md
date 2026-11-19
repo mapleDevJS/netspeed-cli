@@ -82,10 +82,10 @@ If the tap PR was not created:
 VERSION=<version>
 scripts/render-homebrew-formula.sh "$VERSION" /tmp/netspeed-cli.rb
 git clone git@github.com:mapleDevJS/homebrew-netspeed-cli.git /tmp/homebrew-netspeed-cli
-cp /tmp/netspeed-cli.rb /tmp/homebrew-netspeed-cli/netspeed-cli.rb
+cp /tmp/netspeed-cli.rb /tmp/homebrew-netspeed-cli/Formula/netspeed-cli.rb
 cd /tmp/homebrew-netspeed-cli
 git checkout -b "release/netspeed-cli-v${VERSION}"
-git add netspeed-cli.rb
+git add Formula/netspeed-cli.rb
 git commit -m "netspeed-cli v${VERSION}"
 git push origin "release/netspeed-cli-v${VERSION}"
 gh pr create --base main --head "release/netspeed-cli-v${VERSION}" \
