@@ -14,14 +14,51 @@ spec.loader.exec_module(benchmarks)
 
 class BenchmarkTests(unittest.TestCase):
     def test_significant_slowdown_fails(self):
-        self.assertTrue(benchmarks.regressions({"a": (100, 99, 101)}, {"a": (125, 124, 126)}, .1))
+        self.assertTrue(
+            benchmarks.regressions({"a": (100, 99, 101)}, {"a": (125, 124, 126)}, 0.1)
+        )
 
     def test_noise_does_not_fail(self):
-        self.assertFalse(benchmarks.regressions({"a": (100, 80, 120)}, {"a": (125, 100, 150)}, .1))
+        self.assertFalse(
+            benchmarks.regressions({"a": (100, 80, 120)}, {"a": (125, 100, 150)}, 0.1)
+        )
 
     def test_missing_benchmark_fails(self):
         with self.assertRaises(ValueError):
-            benchmarks.regressions({"a": (100, 99, 101)}, {}, .1)
+            benchmarks.regressions({"a": (100, 99, 101)}, {}, 0.1)
+
+    def test_ignored_url_microbenchmarks_do_not_block(self):
+        baseline = {
+            "url/build_test_url/file_2": (50, 49, 51),
+            "core/transfer": (100, 99, 101),
+        }
+        current = {
+            "url/build_test_url/file_2": (75, 74, 76),
+            "core/transfer": (100, 99, 101),
+        }
+        self.assertEqual(benchmarks.regressions(baseline, current, 0.1, ("url/",)), [])
+
+    def test_ignored_prefix_does_not_hide_other_regressions(self):
+        baseline = {
+            "url/build_upload_url": (50, 49, 51),
+            "core/transfer": (100, 99, 101),
+        }
+        current = {
+            "url/build_upload_url": (75, 74, 76),
+            "core/transfer": (130, 129, 131),
+        }
+        failures = benchmarks.regressions(baseline, current, 0.1, ("url/",))
+        self.assertEqual([name for name, _ in failures], ["core/transfer"])
+        self.assertAlmostEqual(failures[0][1], 0.3)
+
+    def test_all_ignored_benchmarks_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "No benchmarks remain"):
+            benchmarks.regressions(
+                {"url/build_upload_url": (50, 49, 51)},
+                {"url/build_upload_url": (75, 74, 76)},
+                0.1,
+                ("url/",),
+            )
 
     def test_cli_reads_criterion_and_returns_nonzero(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -29,12 +66,72 @@ class BenchmarkTests(unittest.TestCase):
             for folder, value in [("baseline", 100), ("current", 130)]:
                 path = root / folder / "group" / "benchmark" / "new" / "estimates.json"
                 path.parent.mkdir(parents=True)
-                path.write_text(json.dumps({"mean": {"point_estimate": value,
-                    "confidence_interval": {"lower_bound": value - 1, "upper_bound": value + 1}}}))
-            result = subprocess.run([sys.executable, str(SCRIPT), str(root / "baseline"),
-                                     str(root / "current")], capture_output=True, text=True)
+                path.write_text(
+                    json.dumps(
+                        {
+                            "mean": {
+                                "point_estimate": value,
+                                "confidence_interval": {
+                                    "lower_bound": value - 1,
+                                    "upper_bound": value + 1,
+                                },
+                            }
+                        }
+                    )
+                )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    str(root / "baseline"),
+                    str(root / "current"),
+                ],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 1)
             self.assertIn("REGRESSION group/benchmark", result.stdout)
+
+    def test_cli_ignores_matching_prefix(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            values = {
+                "baseline": {"url/build_upload_url": 50, "core/transfer": 100},
+                "current": {"url/build_upload_url": 75, "core/transfer": 100},
+            }
+            for folder, benchmarks_by_name in values.items():
+                for name, value in benchmarks_by_name.items():
+                    path = root / folder / name / "new" / "estimates.json"
+                    path.parent.mkdir(parents=True)
+                    path.write_text(
+                        json.dumps(
+                            {
+                                "mean": {
+                                    "point_estimate": value,
+                                    "confidence_interval": {
+                                        "lower_bound": value - 1,
+                                        "upper_bound": value + 1,
+                                    },
+                                }
+                            }
+                        )
+                    )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    str(root / "baseline"),
+                    str(root / "current"),
+                    "--ignore-prefix",
+                    "url/",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                "Compared 1 benchmarks; ignored 1; 0 regressions", result.stdout
+            )
 
 
 if __name__ == "__main__":
