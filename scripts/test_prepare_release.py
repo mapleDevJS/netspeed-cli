@@ -47,7 +47,11 @@ class ReleasePreparationTests(unittest.TestCase):
         self.check_failure = False
         self.advance_main = False
         self.dirty_checks = False
-        self.env = patch.dict(os.environ, {"GITHUB_REPOSITORY": "test/repo"})
+        self.env = patch.dict(os.environ, {
+            "GITHUB_REPOSITORY": "test/repo",
+            "GITHUB_SHA": self.main,
+            "GITHUB_RUN_ID": "12345",
+        })
         self.env.start()
         self.runner = release.run
         self.mock = patch.object(release, "run", side_effect=self.mock_run)
@@ -101,12 +105,14 @@ class ReleasePreparationTests(unittest.TestCase):
         self.assertIn('version = "1.2.4"', self.git("show", "HEAD:Cargo.toml"))
         self.assertIn('version = "9.0.0"', self.git("show", "HEAD:Cargo.toml"))
         self.assertTrue(self.git("ls-remote", "origin", "refs/heads/release/netspeed-cli-v1.2.4"))
+        self.assertFalse(any(call[:2] == ("bash", "scripts/release-checks.sh") for call in self.calls))
 
     def test_approved_main_is_tagged_without_main_push(self):
         self.assertEqual(release.prepare("1.2.3")[0], "tag")
         self.assert_main_untouched()
         self.assertEqual(self.git("rev-parse", "v1.2.3^{commit}"), self.main)
         self.assertTrue(self.git("ls-remote", "origin", "refs/tags/v1.2.3"))
+        self.assertIn("Release validation run: 12345", self.git("for-each-ref", "--format=%(contents)", "refs/tags/v1.2.3"))
         self.assertFalse(any(call[:3] == ("gh", "pr", "create") for call in self.calls))
 
     def test_existing_preparation_is_preserved_and_pr_reused(self):
@@ -119,13 +125,24 @@ class ReleasePreparationTests(unittest.TestCase):
         self.assertEqual(self.git("ls-remote", "origin", branch), original)
         self.assertFalse(any(call[0] == "git" and "push" in call for call in self.calls))
 
-    def test_failed_gates_do_not_push_branch_or_tag(self):
+    def test_version_pr_does_not_run_the_expensive_release_gate(self):
         self.check_failure = True
-        with self.assertRaises(subprocess.CalledProcessError):
-            release.prepare("1.2.4")
+        self.assertEqual(release.prepare("1.2.4")[0], "pr")
         self.assert_main_untouched()
-        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/release/netspeed-cli-v1.2.4"), "")
+        self.assertTrue(self.git("ls-remote", "origin", "refs/heads/release/netspeed-cli-v1.2.4"))
         self.assertEqual(self.git("ls-remote", "origin", "refs/tags/v1.2.4"), "")
+
+    def test_main_is_not_tagged_without_github_actions_run_identity(self):
+        with patch.dict(os.environ, {"GITHUB_RUN_ID": ""}):
+            with self.assertRaisesRegex(ValueError, "GitHub Actions"):
+                release.prepare("1.2.3")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/tags/v1.2.3"), "")
+
+    def test_main_must_match_the_workflow_dispatch_commit(self):
+        with patch.dict(os.environ, {"GITHUB_SHA": "0" * 40}):
+            with self.assertRaisesRegex(ValueError, "changed since"):
+                release.prepare("1.2.3")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/tags/v1.2.3"), "")
 
     def test_main_advancing_aborts_tagging(self):
         self.advance_main = True

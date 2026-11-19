@@ -23,6 +23,8 @@ develop --(PR)--> main --(version PR + merge)--> main --(tag)--> publishing
 - `main` contains the changes intended for release.
 - The requested version is greater than the latest `vX.Y.Z` tag and is not
   already published on crates.io.
+- Release Actions require a `RELEASE_TOKEN`, `CARGO_REGISTRY_TOKEN`, and
+  `HOMEBREW_TAP_TOKEN` with the permissions described above.
 
 ## Release Steps
 
@@ -63,10 +65,9 @@ tagging, or publishing.
 ### 3. Approve the Version PR, Then Tag
 
 The first run opens `release/netspeed-cli-v<version>` against `main` with
-Cargo versions, changelog, completions, and man page updates. It runs the
-release gates and package dry run, then stops without tagging or publishing.
-Review its checks and merge the PR. Reruns preserve an existing preparation
-branch and reuse its open PR.
+Cargo versions, changelog, completions, and man page updates. It stops without
+tagging or publishing. The PR runs the required CI checks; review and merge it.
+Reruns preserve an existing preparation branch and reuse its open PR.
 
 Run the same command again after the PR merges:
 
@@ -75,16 +76,20 @@ gh workflow run release.yml --ref main -f version=<version>
 ```
 
 When `main` already has the requested package version, the workflow runs the
-gates again, verifies `main` has not advanced, and tags that exact commit.
-The tag push starts a separate publishing run; the manual run never publishes.
-If `main` advances during validation, rerun the command.
+full release gates once, confirms the checked-out commit is the dispatch SHA
+and that `main` did not advance, then creates an annotated tag linked to that
+successful validation run. The tag push starts a separate publishing run; it
+waits for that run to finish successfully and verifies the tag points to the
+same commit before any build or publication job proceeds. A manually pushed
+tag without matching validation evidence is rejected. If `main` advances,
+rerun the command.
 
 ### 4. What the Tag Workflow Does
 
 | Job | Responsibility |
 |---|---|
 | `release-context` | Validates the tag matches the package version and belongs to `main` |
-| `validate-release` | Runs release gates before any publishing |
+| `validate-release` | Confirms the tag identity and successful release-validation run for the exact tag commit |
 | `build-binaries` | Builds Linux, macOS, and Windows release binaries |
 | `publish-github-release` | Creates the GitHub Release, checksums, SBOM, and uploads assets |
 | `publish-crates-io` | Verifies and publishes the crate to crates.io |
@@ -108,8 +113,10 @@ and the tap formula all report the same version.
 
 ## Release Readiness
 
-The `Release Readiness` workflow runs on PRs to `main`, on demand, and weekly.
-It checks:
+The `Release Readiness` workflow runs the complete gate on manual dispatch.
+Its weekly schedule performs only the release-channel drift check and opens an
+issue if the published channels disagree. Pull requests to `main` use the
+regular CI workflow. Manual readiness checks include:
 
 - Rust formatting, clippy, unit/doc/socket tests, docs, package, and cargo-deny.
 - Generated completions and man page are committed.
