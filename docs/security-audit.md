@@ -134,7 +134,7 @@ cargo test --test e2e_test -- --ignored --nocapture
 
 ### Domain-restricted TLS (`--pin-certs`)
 
-The `--pin-certs` option is intentionally implemented as domain-restricted TLS rather than raw certificate-hash pinning. This means:
+Despite its compatibility name, `--pin-certs` implements domain-restricted TLS, not certificate or public-key pinning. This means:
 
 - ✅ Only connections to `*.speedtest.net` and `*.ookla.com` are allowed
 - ✅ The normal rustls/webpki certificate chain, validity, and hostname checks still run
@@ -152,10 +152,10 @@ The current implementation does not check certificate revocation lists (CRL) or 
 
 ### History File Contains IP Addresses
 
-Test results include the client's IP address. While this data stays local, users should be aware:
+History stores the client's IP address and approximate location. Users should be aware:
 - History files are created with `0o600` permissions on Unix
-- The data is not transmitted to any server other than speedtest.net
-- Users can disable history saving by using `--json` or `--csv` output
+- Discovery requests go to speedtest.net; measurement traffic goes to the selected speedtest servers, which may be operated by third parties
+- Users can disable history saving by using JSON, JSONL, or CSV output; the library API does not persist history
 
 ## Vulnerability Disclosure
 

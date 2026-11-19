@@ -702,7 +702,10 @@ pub(crate) fn run_result<'a>(
         ctx.set_elapsed(elapsed);
         // Delegate to orchestrator for output
         let output = orch.output_results(&mut result, &dl_result, &ul_result, elapsed);
-        if config.should_save_history() {
+        if let Err(e) = orch.record_result(result.clone()) {
+            return PhaseOutcome::PhaseError(e);
+        }
+        if !orch.is_library_api() && config.should_save_history() {
             if let Err(e) = orch.saver().save(&result) {
                 eprintln!("Warning: Failed to save test result: {e}");
             }

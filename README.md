@@ -7,6 +7,38 @@ Command line interface for testing internet bandwidth using speedtest.net
 [![Homebrew Tap](https://img.shields.io/badge/homebrew-tap-orange?logo=homebrew)](https://github.com/mapleDevJS/homebrew-netspeed-cli)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
+## Quick start
+
+Install from crates.io and run a test:
+
+```bash
+cargo install --locked netspeed-cli
+netspeed-cli
+```
+
+For JSON output suitable for scripts, run `netspeed-cli --format json`.
+The CLI contacts speedtest.net servers and stores successful interactive test
+results locally; see [Privacy](#privacy) for details.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Overview](#overview)
+- [Installation](#installation)
+- [System requirements](#system-requirements)
+- [Usage](#usage)
+- [Options](#options)
+- [Configuration file](#configuration-file)
+- [User profiles](#user-profiles)
+- [Output formats](#output-formats)
+- [Features](#features)
+- [Library API](#library-api)
+- [Building from source](#building-from-source)
+- [Privacy](#privacy)
+- [Verification](#verification)
+- [Security](#security)
+- [License](#license)
+
 ## Overview
 
 netspeed-cli is a Rust-based command line tool for testing your internet bandwidth using speedtest.net servers. It provides fast, accurate speed testing with detailed metrics including latency under load, peak speeds, jitter, per-metric letter grades, and an overall connection quality rating.
@@ -40,7 +72,7 @@ brew install mapleDevJS/homebrew-netspeed-cli/netspeed-cli
 ### Cargo
 
 ```bash
-cargo install netspeed-cli
+cargo install --locked netspeed-cli
 ```
 
 ### Direct Download
@@ -423,19 +455,46 @@ cargo build --release
 cargo test
 ```
 
+## Library API
+
+The command-line application is the primary interface. For Rust applications,
+`api::run_speed_test` is the supported embedding entry point. Lower-level
+modules remain public for advanced use but are implementation details and may
+change between releases. Only the `api` module is intended as the supported
+embedding interface.
+
+To run a complete test from an async application, use `TestOptions` and
+`run_speed_test`. The function returns the report without printing or saving
+history. It performs live network requests to speedtest.net:
+
+```rust
+use netspeed_cli::api::{run_speed_test, TestOptions, TestResult};
+
+async fn measure() -> Result<TestResult, Box<dyn std::error::Error>> {
+    let result = run_speed_test(TestOptions::default()).await?;
+    Ok(result)
+}
+```
+
 ## Privacy
 
 netspeed-cli stores test results locally for historical comparison. The following data is saved:
 
 - **Server information**: name, sponsor
 - **Test metrics**: ping, jitter, packet loss, download/upload speeds and peaks, latency under load (download/upload), timestamps
-- **Client IP address**: discovered from speedtest.net during each test
+- **Client network details**: public IP address and approximate location, discovered through speedtest.net
 
 **Storage location**: Platform-specific data directory (via the `directories` crate). Use `--show-config-path` to display the exact path. On Unix systems, the history file is created with `0o600` permissions (owner-only access).
 
-**No data is transmitted** to any server other than speedtest.net infrastructure. No analytics, telemetry, or crash reporting is included.
+**Network requests:** Discovery requests go to speedtest.net for the server list,
+client IP address, and approximate location. The measurement then connects to
+the selected speedtest servers, which may be operated by third parties. These
+requests reveal your network address to those services. The CLI includes no
+analytics, telemetry, or crash reporting.
 
-**To disable history**: machine-readable formats (`--format json`, `--format jsonl`, `--format csv`) skip history saving automatically.
+**To disable history:** Machine-readable formats (`--format json`,
+`--format jsonl`, `--format csv`) skip history saving automatically. The
+library API also does not persist history.
 
 ## Verification
 

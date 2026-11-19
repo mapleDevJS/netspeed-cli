@@ -100,11 +100,6 @@ pub struct Tracker {
     speed_samples: Mutex<Vec<f64>>,
 }
 
-// SAFETY: Tracker is only used from a single async task (download/upload loop)
-// with shared reference through Arc. The internal Mutex protects speed_samples.
-unsafe impl Send for Tracker {}
-unsafe impl Sync for Tracker {}
-
 impl Tracker {
     #[must_use]
     pub fn new(label: &str) -> Self {
