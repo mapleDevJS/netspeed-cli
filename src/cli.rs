@@ -221,16 +221,17 @@ pub struct Args {
     #[arg(long, value_name = "VERSION", value_parser = validate_tls_version, long_help = "Minimum TLS version to use (1.2 or 1.3).\nThe default and minimum 1.2 allow both TLS 1.2 and 1.3.\nMinimum 1.3 disables TLS 1.2.")]
     pub tls_version: Option<String>,
 
-    /// Restrict TLS connections to speedtest.net and ookla.com domains (not certificate pinning)
+    /// Restrict TLS connections to speedtest.net and ookla.com domains
     ///
     /// Normal rustls/webpki certificate-chain and hostname validation still run.
     /// This option adds a speedtest.net/ookla.com domain allowlist on top.
     #[arg(
-        long,
+        long = "restrict-tls-domains",
+        visible_alias = "pin-certs",
         action = ArgAction::Set,
         default_missing_value = "true",
         num_args = 0..=1,
-        long_help = "Restrict TLS connections to speedtest.net and ookla.com domains.\nThis is a domain allowlist, not certificate or public-key pinning. Normal\nrustls/webpki certificate-chain and hostname validation still run."
+        long_help = "Restrict TLS connections to speedtest.net and ookla.com domains.\nThis is a domain allowlist, not certificate or public-key pinning. It only\napplies to TLS connections; plain HTTP is not restricted. Normal rustls/webpki\ncertificate-chain and hostname validation still run. The legacy --pin-certs\nflag remains available as an alias."
     )]
     pub pin_certs: Option<bool>,
 }

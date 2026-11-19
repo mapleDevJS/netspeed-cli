@@ -10,8 +10,9 @@
 //! perform real-world bandwidth tests.
 //!
 //! The command-line application is the primary interface. For Rust applications,
-//! [`api`] is the supported embedding interface. Other public modules are
-//! implementation details for advanced use and may change between releases.
+//! [`api`] is the only supported embedding interface. Other modules remain public
+//! for compatibility and advanced use, but their APIs are unstable and may
+//! change between releases.
 //!
 //! # Example
 //!
@@ -37,8 +38,9 @@
 //!
 //! ## Public modules
 //!
-//! [`api`] is the supported embedding interface. All other modules are public
-//! for advanced use, but are unstable implementation details.
+//! [`api`] is the only supported embedding interface. All other modules remain
+//! public for compatibility and advanced use, but are unstable implementation
+//! details.
 //!
 //! - [`api`] — Supported quiet library entry point returning a test report
 //! - [`bandwidth_loop`] — Inner bandwidth measurement loop with live progress

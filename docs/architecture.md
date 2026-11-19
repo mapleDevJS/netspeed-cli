@@ -36,8 +36,8 @@ monitoring, cancellation, and aggregation for download and upload.
 `services.rs` isolates server discovery, IP discovery, and latency monitoring
 behind traits. `endpoints.rs` derives canonical latency, upload, and download
 URLs from server feed entries. The `api` facade is the recommended embedding
-interface; the lower-level modules remain public for advanced use and may
-change between minor releases.
+interface; lower-level modules remain public for compatibility, but are
+unsupported implementation details and may change between releases.
 
 ## Server Selection and History
 

@@ -17,8 +17,9 @@ netspeed-cli
 ```
 
 For JSON output suitable for scripts, run `netspeed-cli --format json`.
-The CLI contacts speedtest.net servers and stores successful interactive test
-results locally; see [Privacy](#privacy) for details.
+The CLI contacts speedtest.net and selected test servers, which may be operated
+by third parties. Successful interactive test results are stored locally; see
+[Privacy](#privacy) for details.
 
 ## Contents
 
@@ -187,7 +188,7 @@ netspeed-cli --show-config-path
 | `--no-emoji` | Disable emoji indicators in output |
 | `--ca-cert PATH` | Path to custom CA certificate file (PEM/DER) |
 | `--tls-version VERSION` | Minimum TLS version: `1.2` or `1.3` |
-| `--pin-certs` | Restrict TLS connections to speedtest.net and ookla.com domains while preserving normal certificate validation |
+| `--restrict-tls-domains` (`--pin-certs` alias) | Allow TLS connections only to speedtest.net and ookla.com domains, with normal certificate validation; does not restrict plain HTTP |
 | `--history` | Show test history with sparkline trends |
 | `--dry-run` | Show test configuration without running the test |
 | `--show-config-path` | Print the config file path and exit |
@@ -229,7 +230,7 @@ csv_header = false
 # TLS
 ca_cert = "/path/to/ca.pem"
 tls_version = "1.2"
-pin_certs = false
+pin_certs = false # Legacy config key for TLS domain restriction
 
 # Strict mode (warnings become errors)
 strict = false

@@ -28,7 +28,9 @@ You should receive a response within 48 hours. If you don't, please follow up vi
 - The project uses `rustls` for TLS (no OpenSSL dependency)
 - Dependencies are scanned for known vulnerabilities via `cargo audit` in CI
 - No secrets, API keys, or credentials are stored by the tool
-- Network communication is with speedtest.net infrastructure only
+- Discovery requests go to speedtest.net. Measurements also connect to selected
+  speedtest servers, which may be operated by third parties and receive your
+  network address.
 
 ## Dependency Security
 

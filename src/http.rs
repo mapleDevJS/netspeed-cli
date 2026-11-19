@@ -37,9 +37,18 @@ impl TlsConfig {
 
     /// Enable speedtest.net/ookla.com TLS domain restriction.
     #[must_use]
-    pub fn with_cert_pinning(mut self) -> Self {
+    pub fn with_domain_restriction(mut self) -> Self {
         self.pin_speedtest_certs = true;
         self
+    }
+
+    /// Enable speedtest.net/ookla.com TLS domain restriction.
+    ///
+    /// This compatibility method does not perform certificate or public-key pinning.
+    #[deprecated(note = "use with_domain_restriction")]
+    #[must_use]
+    pub fn with_cert_pinning(self) -> Self {
+        self.with_domain_restriction()
     }
 }
 
@@ -169,7 +178,7 @@ fn build_tls_config(tls: &TlsConfig) -> Result<ClientConfig, Error> {
 
     if tls.pin_speedtest_certs && tls.ca_cert_path.is_some() {
         eprintln!(
-            "Warning: Both --ca-cert and --pin-certs are set. Custom CA verification will be used before the speedtest.net domain restriction."
+            "Warning: Both --ca-cert and --restrict-tls-domains (--pin-certs alias) are set. Custom CA verification will be used before the speedtest.net domain restriction."
         );
     }
 
@@ -184,7 +193,7 @@ fn build_tls_config(tls: &TlsConfig) -> Result<ClientConfig, Error> {
     };
 
     if tls.pin_speedtest_certs {
-        let verifier = PinningVerifier::try_new(root_store, provider)?;
+        let verifier = DomainRestrictedVerifier::try_new(root_store, provider)?;
         return Ok(builder
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(verifier))
@@ -231,11 +240,11 @@ fn load_custom_ca_cert(path: &std::path::Path) -> Result<RootCertStore, Error> {
 /// Certificate verifier that restricts TLS to speedtest.net and ookla.com domains
 /// while preserving normal webpki chain, hostname, and validity checks.
 #[derive(Debug)]
-struct PinningVerifier {
+struct DomainRestrictedVerifier {
     inner: Arc<WebPkiServerVerifier>,
 }
 
-impl PinningVerifier {
+impl DomainRestrictedVerifier {
     #[cfg(test)]
     fn new() -> Self {
         Self::try_new(
@@ -261,7 +270,7 @@ impl PinningVerifier {
     }
 }
 
-impl ServerCertVerifier for PinningVerifier {
+impl ServerCertVerifier for DomainRestrictedVerifier {
     fn verify_server_cert(
         &self,
         end_entity: &CertificateDer<'_>,
@@ -383,36 +392,50 @@ where
 
 /// Discover the client's public IP address via speedtest.net.
 ///
-/// # Errors
-///
-/// Returns [`Error::NetworkError`] if all IP discovery endpoints fail.
+/// Returns `"unknown"` if both discovery endpoints fail or return an invalid IP.
 pub async fn discover_client_ip(client: &Client) -> Result<String, Error> {
-    if let Ok(response) = client
-        .get("https://www.speedtest.net/api/ip.php")
-        .send()
-        .await
+    Ok(discover_client_ip_at(
+        client,
+        "https://www.speedtest.net/api/ip.php",
+        "https://www.speedtest.net/api/ios-config.php",
+    )
+    .await)
+}
+
+async fn discover_client_ip_at(
+    client: &Client,
+    ip_endpoint: &str,
+    config_endpoint: &str,
+) -> String {
+    let ip_response = if let Ok(response) = client.get(ip_endpoint).send().await {
+        response.text().await.ok()
+    } else {
+        None
+    };
+
+    let config_response = if let Ok(response) = client.get(config_endpoint).send().await {
+        response.text().await.ok()
+    } else {
+        None
+    };
+
+    resolve_discovered_ip(ip_response.as_deref(), config_response.as_deref())
+}
+
+fn resolve_discovered_ip(ip_response: Option<&str>, config_response: Option<&str>) -> String {
+    if let Some(ip) = ip_response.map(str::trim)
+        && common::is_valid_ipv4(ip)
     {
-        if let Ok(text) = response.text().await {
-            let trimmed = text.trim().to_string();
-            if common::is_valid_ipv4(&trimmed) {
-                return Ok(trimmed);
-            }
-        }
+        return ip.to_string();
     }
 
-    if let Ok(response) = client
-        .get("https://www.speedtest.net/api/ios-config.php")
-        .send()
-        .await
+    if let Some(xml) = config_response
+        && let Some(ip) = parse_ip_from_xml(xml)
     {
-        if let Ok(text) = response.text().await {
-            if let Some(ip) = parse_ip_from_xml(&text) {
-                return Ok(ip);
-            }
-        }
+        return ip;
     }
 
-    Ok("unknown".to_string())
+    "unknown".to_string()
 }
 
 fn parse_ip_from_xml(xml: &str) -> Option<String> {
@@ -556,7 +579,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
         let config = TlsConfig::default();
         assert!(!config.pin_speedtest_certs);
 
-        let config = config.with_cert_pinning();
+        let config = config.with_domain_restriction();
         assert!(config.pin_speedtest_certs);
     }
 
@@ -566,7 +589,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
         let config = TlsConfig::default()
             .with_ca_cert(std::path::PathBuf::from("/custom/ca.pem"))
             .with_min_tls_version("1.3")
-            .with_cert_pinning();
+            .with_domain_restriction();
 
         assert_eq!(
             config.ca_cert_path,
@@ -838,116 +861,156 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
         assert!(result.is_ok());
     }
 
-    // ==================== PinningVerifier Tests ====================
+    // ==================== DomainRestrictedVerifier Tests ====================
 
     #[test]
     fn test_pinning_verifier_is_valid_domain_speedtest() {
         // Valid subdomains - .ends_with() matches exact domains too
-        assert!(PinningVerifier::is_valid_domain("speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("www.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("api.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("foo.bar.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("fake.speedtest.net")); // also valid (subdomain)
+        assert!(DomainRestrictedVerifier::is_valid_domain("speedtest.net"));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "www.speedtest.net"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "api.speedtest.net"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "foo.bar.speedtest.net"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "fake.speedtest.net"
+        )); // also valid (subdomain)
 
         // Invalid domains - must NOT end with .speedtest.net
-        assert!(!PinningVerifier::is_valid_domain("evilsite.net"));
-        assert!(!PinningVerifier::is_valid_domain("speedtest.com"));
-        assert!(!PinningVerifier::is_valid_domain("notspeedtest.net"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("evilsite.net"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("speedtest.com"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "notspeedtest.net"
+        ));
     }
 
     #[test]
     fn test_pinning_verifier_is_valid_domain_ookla() {
         // Valid subdomains - .ends_with() matches exact domains too
-        assert!(PinningVerifier::is_valid_domain("ookla.com"));
-        assert!(PinningVerifier::is_valid_domain("www.ookla.com"));
-        assert!(PinningVerifier::is_valid_domain("api.ookla.com"));
-        assert!(PinningVerifier::is_valid_domain("foo.bar.ookla.com"));
-        assert!(PinningVerifier::is_valid_domain("fake.ookla.com")); // also valid (subdomain)
+        assert!(DomainRestrictedVerifier::is_valid_domain("ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain("www.ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain("api.ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "foo.bar.ookla.com"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain("fake.ookla.com")); // also valid (subdomain)
 
         // Invalid domains - must NOT end with .ookla.com
-        assert!(!PinningVerifier::is_valid_domain("ookla.net"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("ookla.net"));
     }
 
     #[test]
     fn test_pinning_verifier_edge_cases() {
         // Edge cases for security
-        assert!(!PinningVerifier::is_valid_domain(""));
-        assert!(!PinningVerifier::is_valid_domain("speedtestXnet")); // no dot prefix
-        assert!(!PinningVerifier::is_valid_domain("attack.com")); // unrelated domain
+        assert!(!DomainRestrictedVerifier::is_valid_domain(""));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("speedtestXnet")); // no dot prefix
+        assert!(!DomainRestrictedVerifier::is_valid_domain("attack.com")); // unrelated domain
     }
 
     #[test]
     fn test_pinning_verifier_exact_domains() {
         // Test exact domain matches (should be valid)
-        assert!(PinningVerifier::is_valid_domain("speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain("speedtest.net"));
+        assert!(DomainRestrictedVerifier::is_valid_domain("ookla.com"));
     }
 
     #[test]
     fn test_pinning_verifier_subdomains() {
         // Test various subdomain depths
-        assert!(PinningVerifier::is_valid_domain("www.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("api.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("a.b.c.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("www.ookla.com"));
-        assert!(PinningVerifier::is_valid_domain("api.www.ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "www.speedtest.net"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "api.speedtest.net"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "a.b.c.speedtest.net"
+        ));
+        assert!(DomainRestrictedVerifier::is_valid_domain("www.ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "api.www.ookla.com"
+        ));
     }
 
     #[test]
     fn test_pinning_verifier_invalid_suffixes() {
         // These should NOT match because they don't end with the exact suffix
-        assert!(!PinningVerifier::is_valid_domain("xspeedtest.net")); // prefix attack
-        assert!(!PinningVerifier::is_valid_domain("fake-speedtest.net")); // prefix attack
-        assert!(!PinningVerifier::is_valid_domain("speedtest.net.evil.com")); // suffix confusion
-        assert!(!PinningVerifier::is_valid_domain("ookla.com.evil.com")); // suffix confusion
-        assert!(!PinningVerifier::is_valid_domain("fooookla.com")); // prefix attack
+        assert!(!DomainRestrictedVerifier::is_valid_domain("xspeedtest.net")); // prefix attack
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "fake-speedtest.net"
+        )); // prefix attack
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "speedtest.net.evil.com"
+        )); // suffix confusion
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "ookla.com.evil.com"
+        )); // suffix confusion
+        assert!(!DomainRestrictedVerifier::is_valid_domain("fooookla.com")); // prefix attack
     }
 
     #[test]
     fn test_pinning_verifier_case_sensitivity() {
         // Domain matching should be case-sensitive (DNS is case-insensitive but we check exact match)
-        assert!(!PinningVerifier::is_valid_domain("Speedtest.net")); // uppercase
-        assert!(!PinningVerifier::is_valid_domain("SPEEDTEST.NET")); // all caps
-        assert!(!PinningVerifier::is_valid_domain("www.Speedtest.net")); // mixed case
-        assert!(!PinningVerifier::is_valid_domain("OOKLA.COM")); // all caps ookla
+        assert!(!DomainRestrictedVerifier::is_valid_domain("Speedtest.net")); // uppercase
+        assert!(!DomainRestrictedVerifier::is_valid_domain("SPEEDTEST.NET")); // all caps
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "www.Speedtest.net"
+        )); // mixed case
+        assert!(!DomainRestrictedVerifier::is_valid_domain("OOKLA.COM")); // all caps ookla
     }
 
     #[test]
     fn test_pinning_verifier_special_characters() {
         // Invalid domain formats
-        assert!(!PinningVerifier::is_valid_domain("speedtest.net/")); // trailing slash
-        assert!(!PinningVerifier::is_valid_domain("speedtest.net:443")); // port number
-        assert!(!PinningVerifier::is_valid_domain("speedtest.net/path")); // path
+        assert!(!DomainRestrictedVerifier::is_valid_domain("speedtest.net/")); // trailing slash
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "speedtest.net:443"
+        )); // port number
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "speedtest.net/path"
+        )); // path
     }
 
     #[test]
     fn test_pinning_verifier_numeric_domains() {
         // Numeric subdomains are valid
-        assert!(PinningVerifier::is_valid_domain("123.speedtest.net")); // valid numeric subdomain
-        assert!(PinningVerifier::is_valid_domain("1.2.3.speedtest.net")); // valid numeric subdomain
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "123.speedtest.net"
+        )); // valid numeric subdomain
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "1.2.3.speedtest.net"
+        )); // valid numeric subdomain
         // Numeric prefix on base domain is invalid
-        assert!(!PinningVerifier::is_valid_domain("speedtest123.net")); // not valid
-        assert!(!PinningVerifier::is_valid_domain("123speedtest.net")); // not valid
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "speedtest123.net"
+        )); // not valid
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "123speedtest.net"
+        )); // not valid
     }
 
     #[test]
     fn test_pinning_verifier_new_returns_self() {
         // Test that new() creates an instance
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
         assert!(!verifier.supported_verify_schemes().is_empty());
     }
 
     #[test]
     fn test_pinning_verifier_debug_trait() {
         // Test that Debug can be derived and used
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
         let debug_str = format!("{:?}", verifier);
-        assert!(debug_str.contains("PinningVerifier"));
+        assert!(debug_str.contains("DomainRestrictedVerifier"));
     }
 
     #[test]
     fn test_pinning_verifier_supported_verify_schemes() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
         let schemes = verifier.supported_verify_schemes();
 
         // Should support these signature schemes
@@ -965,12 +1028,12 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     // Note: Signature verification tests are omitted because DigitallySignedStruct
     // has a private constructor in rustls. The signature verification methods always
-    // return HandshakeSignatureValid::assertion() in PinningVerifier, which is tested
+    // return HandshakeSignatureValid::assertion() in DomainRestrictedVerifier, which is tested
     // implicitly by successful TLS handshakes with valid speedtest.net certificates.
 
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_invalid_domain() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Create a DnsName for an invalid domain
         let dns_name = rustls::pki_types::DnsName::try_from("evil.com".to_string()).unwrap();
@@ -992,7 +1055,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_unsupported_name_type() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Test with an IpAddress server name (unsupported)
         let ip_addr = std::net::IpAddr::from([127, 0, 0, 1]);
@@ -1011,7 +1074,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_invalid_certificate() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Valid domain but invalid certificate structure
         let dns_name =
@@ -1034,7 +1097,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_domain_checked_before_cert_parse_speedtest() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Valid speedtest.net domain
         let dns_name = rustls::pki_types::DnsName::try_from("speedtest.net".to_string()).unwrap();
@@ -1058,7 +1121,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_ipv6_address_rejected() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Test with an IPv6 address server name
         let ip_addr = std::net::IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]); // ::1
@@ -1074,7 +1137,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_domain_checked_before_cert_parse_ookla() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Valid ookla.com domain
         let dns_name = rustls::pki_types::DnsName::try_from("ookla.com".to_string()).unwrap();
@@ -1093,7 +1156,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
     #[test]
     fn test_pinning_verifier_domain_validation_order() {
         // This test verifies that domain validation happens BEFORE certificate parsing
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Invalid domain should fail immediately, without attempting cert parsing
         let dns_name = rustls::pki_types::DnsName::try_from("attacker.com".to_string()).unwrap();
@@ -1118,7 +1181,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_verify_server_cert_rejects_different_tld() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Test with speedtest.net.org (should be rejected)
         let dns_name =
@@ -1140,7 +1203,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
     fn test_pinning_verifier_intermediate_certs_ignored() {
         // Test that intermediate certificates are ignored in validation
         // The implementation only validates the end-entity certificate
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Valid domain
         let dns_name =
@@ -1168,7 +1231,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
     #[test]
     fn test_pinning_verifier_ocsp_response_ignored() {
         // Test that OCSP response data is ignored
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
 
         // Valid domain
         let dns_name = rustls::pki_types::DnsName::try_from("api.ookla.com".to_string()).unwrap();
@@ -1213,7 +1276,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
         for domain in valid_subdomains {
             assert!(
-                PinningVerifier::is_valid_domain(domain),
+                DomainRestrictedVerifier::is_valid_domain(domain),
                 "Domain '{}' should be valid",
                 domain
             );
@@ -1239,7 +1302,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
         for domain in invalid_domains {
             assert!(
-                !PinningVerifier::is_valid_domain(domain),
+                !DomainRestrictedVerifier::is_valid_domain(domain),
                 "Domain '{}' should be invalid",
                 domain
             );
@@ -1531,26 +1594,13 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     // ==================== discover_client_ip Tests ====================
 
-    #[tokio::test]
-    async fn test_discover_client_ip_handles_network_failure() {
-        // Test with a client that's not properly configured (will fail to connect)
-        let settings = Settings::default().with_retry_disabled();
-        let client = create_client(&settings).unwrap();
-
-        // This test verifies the function handles network failures gracefully
-        let result = discover_client_ip(&client).await;
-
-        // Should return "unknown" on failure, not panic
-        match result {
-            Ok(ip) => {
-                // If it succeeds, verify the format
-                assert!(ip == "unknown" || common::is_valid_ipv4(&ip));
-            }
-            Err(e) => {
-                // Network errors are acceptable
-                assert!(matches!(e, Error::NetworkError(_)));
-            }
-        }
+    #[test]
+    fn test_resolve_discovered_ip_returns_unknown_when_unavailable() {
+        assert_eq!(resolve_discovered_ip(None, None), "unknown");
+        assert_eq!(
+            resolve_discovered_ip(Some("not-an-ip"), Some("<malformed")),
+            "unknown"
+        );
     }
 
     // ==================== TlsConfig Additional Tests ====================
@@ -1567,7 +1617,7 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
         let config = TlsConfig::default()
             .with_ca_cert(std::path::PathBuf::from("/test.pem"))
             .with_min_tls_version("1.3")
-            .with_cert_pinning();
+            .with_domain_restriction();
         let cloned = config.clone();
         assert_eq!(cloned.ca_cert_path, config.ca_cert_path);
         assert_eq!(cloned.min_tls_version, config.min_tls_version);
@@ -1822,31 +1872,39 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
         // HTTP/1.1 only is configured (verified by no_gzip and http1_only)
     }
 
-    // ==================== PinningVerifier additional tests ====================
+    // ==================== DomainRestrictedVerifier additional tests ====================
 
     #[test]
     fn test_pinning_verifier_single_char_subdomain() {
-        assert!(PinningVerifier::is_valid_domain("a.speedtest.net"));
-        assert!(PinningVerifier::is_valid_domain("z.ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain("a.speedtest.net"));
+        assert!(DomainRestrictedVerifier::is_valid_domain("z.ookla.com"));
     }
 
     #[test]
     fn test_pinning_verifier_numbers_in_subdomain() {
         // Numbers in subdomain are valid
-        assert!(PinningVerifier::is_valid_domain("123.speedtest.net")); // valid subdomain
-        assert!(!PinningVerifier::is_valid_domain("speedtest123.net")); // not valid, doesn't end with .speedtest.net
-        assert!(!PinningVerifier::is_valid_domain("123speedtest.net")); // prefix attack
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "123.speedtest.net"
+        )); // valid subdomain
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "speedtest123.net"
+        )); // not valid, doesn't end with .speedtest.net
+        assert!(!DomainRestrictedVerifier::is_valid_domain(
+            "123speedtest.net"
+        )); // prefix attack
     }
 
     #[test]
     fn test_pinning_verifier_unicode_in_subdomain() {
         // Unicode subdomains should still match the ends_with check
-        assert!(PinningVerifier::is_valid_domain("münchen.speedtest.net"));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "münchen.speedtest.net"
+        ));
     }
 
     #[test]
     fn test_pinning_verifier_empty_cert_with_valid_domain() {
-        let verifier = PinningVerifier::new();
+        let verifier = DomainRestrictedVerifier::new();
         let dns_name =
             rustls::pki_types::DnsName::try_from("cdn.speedtest.net".to_string()).unwrap();
         let server_name = ServerName::DnsName(dns_name);
@@ -1860,26 +1918,28 @@ zNy2CsJRW5MveqScOpZpiaD4B35sERh8z4z6bj6LOzuxVS6HSEcScJPJAg==
 
     #[test]
     fn test_pinning_verifier_subdomain_with_dashes() {
-        assert!(PinningVerifier::is_valid_domain(
+        assert!(DomainRestrictedVerifier::is_valid_domain(
             "my-custom-subdomain.speedtest.net"
         ));
-        assert!(PinningVerifier::is_valid_domain("api-v2.ookla.com"));
+        assert!(DomainRestrictedVerifier::is_valid_domain(
+            "api-v2.ookla.com"
+        ));
     }
 
     #[test]
     fn test_pinning_verifier_long_subdomain() {
         let long_subdomain = "a".repeat(63) + ".speedtest.net";
         // This should be valid as it ends with .speedtest.net
-        assert!(PinningVerifier::is_valid_domain(&long_subdomain));
+        assert!(DomainRestrictedVerifier::is_valid_domain(&long_subdomain));
     }
 
     #[test]
     fn test_pinning_verifier_concatenation_attack() {
         // These should all be rejected as they don't end with valid suffixes
-        assert!(!PinningVerifier::is_valid_domain("speedtestXnet"));
-        assert!(!PinningVerifier::is_valid_domain("speedtestXcom"));
-        assert!(!PinningVerifier::is_valid_domain("ooklaXcom"));
-        assert!(!PinningVerifier::is_valid_domain("ooklaXnet"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("speedtestXnet"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("speedtestXcom"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("ooklaXcom"));
+        assert!(!DomainRestrictedVerifier::is_valid_domain("ooklaXnet"));
     }
 
     // ==================== Settings additional chain tests ====================
