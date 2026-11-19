@@ -28,6 +28,7 @@ Use the canonical GitHub Actions release workflow:
   gh workflow run release.yml --ref main -f version=${VERSION}
   gh run list --workflow release.yml --limit 1
 
-The workflow validates the version, creates the release commit and tag,
-publishes GitHub/crates.io assets, and opens the Homebrew tap PR.
+The first run opens a version PR against main. Review and merge it, then rerun
+the same command to tag the approved main commit. The tag workflow publishes
+GitHub/crates.io assets and opens the local formula and Homebrew tap PRs.
 EOF

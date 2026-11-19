@@ -103,7 +103,7 @@ pub fn format_json_entry(level: Level, message: &str, fields: &[(&str, &str)]) -
     map.insert("message".to_string(), json!(message));
     map.insert(
         "timestamp".to_string(),
-        json!(chrono::Utc::now().to_rfc3339()),
+        json!(jiff::Timestamp::now().to_string()),
     );
     for (key, value) in fields {
         map.insert(key.to_string(), json!(value));
@@ -376,7 +376,7 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&entry).unwrap();
         let timestamp = parsed["timestamp"].as_str().unwrap();
         // Should be RFC3339 format (contains date-time separator T or space)
-        // chrono::Utc::now().to_rfc3339() produces format like "2024-01-01T12:00:00Z"
+        // Jiff's timestamp display uses RFC 3339 UTC form, e.g. "2024-01-01T12:00:00Z".
         assert!(!timestamp.is_empty());
         // Should contain year, month, day
         assert!(timestamp.contains("-"));

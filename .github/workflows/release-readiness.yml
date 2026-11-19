@@ -59,9 +59,10 @@ jobs:
           cargo package --locked --no-verify
           cargo publish --dry-run --locked
 
-      - name: Render local Homebrew formula
+      # Version PRs have no tag yet; verify the renderer against a released archive.
+      - name: Render latest released Homebrew formula
         run: |
-          VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)"
+          VERSION="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
           scripts/render-homebrew-formula.sh "${VERSION}" /tmp/netspeed-cli.rb
           grep -q "version \"${VERSION}\"" /tmp/netspeed-cli.rb
 
@@ -84,11 +85,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/check-release-sync.sh
 
-      - name: Open drift issue
+      - name: Open drift issue if none is already open
         if: steps.sync.outcome == 'failure' && github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue create \
-            --title "Release channel drift detected" \
-            --body "The scheduled release sync check failed. Run \`scripts/check-release-sync.sh\` locally and update the out-of-sync channel."
+          set -euo pipefail
+          issue_number=$(gh issue list --state open --search 'in:title "Release channel drift detected"' \
+            --json number,title \
+            --jq 'first(.[] | select(.title == "Release channel drift detected") | .number) // empty')
+          if [ -n "$issue_number" ]; then
+            echo "::notice::Release drift is already tracked by issue #$issue_number."
+          else
+            gh issue create \
+              --title "Release channel drift detected" \
+              --body "The scheduled release sync check failed. Run \`scripts/check-release-sync.sh\` locally and update the out-of-sync channel."
+          fi
