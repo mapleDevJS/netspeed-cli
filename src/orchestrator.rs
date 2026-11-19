@@ -349,8 +349,8 @@ impl Orchestrator {
         if config.single() {
             Self::print_kv(nc, "Streams", "single");
         }
-        if let Some(ca_cert) = config.ca_cert() {
-            Self::print_kv(nc, "CA cert", ca_cert);
+        if config.ca_cert().is_some() {
+            Self::print_kv(nc, "CA cert", "custom certificate configured");
         }
         if let Some(tls_version) = config.tls_version() {
             Self::print_kv(nc, "TLS version", tls_version);

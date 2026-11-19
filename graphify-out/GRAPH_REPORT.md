@@ -1,7 +1,7 @@
 # Graph Report - /Users/alexey.ivanov/Developer/netspeed-cli  (2026-11-19)
 
 ## Corpus Check
-- 72 files · ~343,125 words
+- 72 files · ~343,479 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -58,7 +58,7 @@
 
 ## Surprising Connections (you probably didn't know these)
 - `cli()` --calls--> `Env`  [INFERRED]
-  /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli/tests/integration_tls_cli_test.rs → src/terminal.rs
+  /Users/alexey.ivanov/Developer/netspeed-cli/tests/integration_tls_cli_test.rs → src/terminal.rs
 - `test_e2e_full_speedtest_flow()` --calls--> `select_best_server()`  [INFERRED]
   /Users/alexey.ivanov/vibe.dev/apps/netspeed-cli/tests/e2e_test.rs → src/domain/server.rs
 - `test_e2e_full_speedtest_flow()` --calls--> `ping_test()`  [INFERRED]
@@ -224,11 +224,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `no_color()` connect `Community 1` to `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 15`, `Community 20`?**
-  _High betweenness centrality (0.073) - this node is a cross-community bridge._
-- **Why does `format_verbose_sections()` connect `Community 7` to `Community 1`, `Community 3`, `Community 5`, `Community 15`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+  _High betweenness centrality (0.069) - this node is a cross-community bridge._
 - **Why does `grade_overall()` connect `Community 5` to `Community 1`, `Community 3`, `Community 7`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+  _High betweenness centrality (0.039) - this node is a cross-community bridge._
+- **Why does `format_minimal()` connect `Community 7` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`?**
+  _High betweenness centrality (0.036) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Args` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 35 inferred relationships involving `no_color()` (e.g. with `print_error()` and `print_suggestion()`) actually correct?**

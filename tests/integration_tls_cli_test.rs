@@ -101,6 +101,14 @@ fn test_ca_cert_accepts_valid_pem_file() {
         !stderr.contains("does not exist") && !stderr.contains("is a directory"),
         "Valid cert path should be accepted. stderr: {stderr}"
     );
+    assert!(
+        stderr.contains("CA cert: custom certificate configured"),
+        "Dry run should confirm a custom certificate without displaying its path. stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains(cert_path.to_str().unwrap()),
+        "Dry run should not display the configured certificate path. stderr: {stderr}"
+    );
     fs::remove_file(&cert_path).ok();
 }
 
