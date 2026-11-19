@@ -225,7 +225,7 @@ impl TestResultBuilder {
             download_samples: opt_samples(&self.download_samples),
             upload_samples: opt_samples(&self.upload_samples),
             ping_samples: opt_samples(&self.ping_samples),
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: jiff::Timestamp::now().to_string(),
             client_ip: self.client_ip,
             client_location: self.client_location,
             overall_grade: None,

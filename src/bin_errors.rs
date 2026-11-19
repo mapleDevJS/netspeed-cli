@@ -107,7 +107,7 @@ pub fn render_machine_error(e: &Error, exit_code: i32, format: OutputFormatType)
     let payload = MachineErrorOutput {
         status: "error",
         exit_code,
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: jiff::Timestamp::now().to_string(),
         error: MachineErrorBody {
             code,
             category,
