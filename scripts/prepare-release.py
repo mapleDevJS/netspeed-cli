@@ -55,6 +55,9 @@ def prepare(version, formula=False):
     git("fetch", "origin", "main", "--tags")
     git("checkout", "--detach", "origin/main")
     main_commit = git("rev-parse", "HEAD")
+    expected_main = os.environ.get("GITHUB_SHA")
+    if expected_main and main_commit != expected_main:
+        raise ValueError("main changed since this release workflow started; rerun preparation")
     git("config", "user.name", "github-actions[bot]")
     git("config", "user.email", "github-actions[bot]@users.noreply.github.com")
     if formula:
@@ -91,7 +94,12 @@ def prepare(version, formula=False):
         remote_main = git("ls-remote", "origin", "refs/heads/main").split()[0]
         if remote_main != main_commit:
             raise ValueError("main advanced during release checks; rerun preparation")
-        git("tag", "-a", f"v{version}", main_commit, "-m", f"Release v{version}")
+        run_id = os.environ.get("GITHUB_RUN_ID")
+        if not run_id or not run_id.isdecimal():
+            raise ValueError("Release validation must run in GitHub Actions")
+        git("tag", "-a", f"v{version}", main_commit,
+            "-m", f"Release v{version}",
+            "-m", f"Release validation run: {run_id}")
         git("push", "origin", f"refs/tags/v{version}")
         return "tag", f"Tagged approved main commit {main_commit}. Publishing runs on the tag event."
 
@@ -111,7 +119,6 @@ def prepare(version, formula=False):
     run("cargo", "check")
     run("cargo", "build", "--quiet")
     run("git-cliff", "--config", ".cliff.toml", "--tag", f"v{version}", "--output", "CHANGELOG.md")
-    release_checks()
     return "pr", push_pr(branch, ["Cargo.toml", "Cargo.lock", "CHANGELOG.md", "completions", "netspeed-cli.1"],
                          title, body)
 

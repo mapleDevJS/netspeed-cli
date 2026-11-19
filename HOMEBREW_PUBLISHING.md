@@ -6,7 +6,11 @@ and release automation opens reviewed PRs against the tap.
 
 ## Automated Tap Updates
 
-Every canonical release does the following after crates.io publish succeeds:
+After the GitHub Release is created, automation opens a PR for the in-repository
+formula. The tap PR is opened only after crates.io publishing succeeds and the
+released formula passes its Homebrew audit. Both PRs require review and merge.
+
+For the tap PR, automation:
 
 1. Computes the SHA256 for the GitHub source tarball
    `https://github.com/mapleDevJS/netspeed-cli/archive/refs/tags/vX.Y.Z.tar.gz`.
@@ -64,7 +68,9 @@ This compares:
 - Local `netspeed-cli.rb`.
 - Tap `netspeed-cli.rb`.
 
-The weekly `Release Readiness` workflow opens an issue if those channels drift.
+The weekly `Release Readiness` schedule checks channel sync and opens an issue
+if those channels drift. The workflow's full QA gate runs only on manual
+dispatch; pull requests use the regular CI workflow.
 
 ## Recovery
 

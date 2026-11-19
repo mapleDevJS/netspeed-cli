@@ -1,8 +1,6 @@
 name: Release Readiness
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "0 7 * * 1"
@@ -15,76 +13,53 @@ permissions:
 
 jobs:
   readiness:
-    name: Release Readiness
+    name: Manual Release Readiness
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           fetch-depth: 0
-
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy, rustfmt
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
-
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
       - name: Install cargo-deny
         uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6 # cargo-deny
-
-      - name: Validate YAML configuration
+      - name: Validate workflow YAML
         run: |
-          ruby -e 'require "yaml"; Dir[".github/**/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'
-
-      - name: Run QA gate
+          ruby <<'RUBY'
+          require "yaml"
+          Dir[".github/**/*.yml"].each do |file|
+            YAML.load_file(file)
+            puts "ok #{file}"
+          end
+          RUBY
+      - name: Run complete release gates
         run: |
-          cargo fmt --all -- --check
-          cargo clippy --all-targets --all-features -- -D warnings
-          cargo test --verbose
-          cargo test --doc
-          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
-          cargo test --lib socket_regression -- --ignored
-          python3 -m unittest discover -s scripts -p 'test_*.py'
-          cargo test --test mock_network_test -- --ignored --nocapture
-          cargo test --test integration_upload_fetch_test -- --ignored --nocapture
-          cargo test --test e2e_test -- --ignored --nocapture
-          cargo package --locked
-          cargo deny check
-
-      - name: Check generated docs
-        run: scripts/check-generated-docs.sh
-
-      - name: Check package dry run
-        run: |
-          cargo package --locked --no-verify
-          cargo publish --dry-run --locked
-
-      # Version PRs have no tag yet; verify the renderer against a released archive.
-      - name: Render latest released Homebrew formula
+          bash scripts/release-checks.sh
+          scripts/check-generated-docs.sh
+      - name: Render the latest released formula
         run: |
           VERSION="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
           scripts/render-homebrew-formula.sh "${VERSION}" /tmp/netspeed-cli.rb
           grep -q "version \"${VERSION}\"" /tmp/netspeed-cli.rb
 
   scheduled-sync:
-    name: Scheduled Release Sync
-    runs-on: ubuntu-latest
+    name: Weekly Release Channel Drift Check
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
       - name: Check release channel sync
         id: sync
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/check-release-sync.sh
-
       - name: Open drift issue if none is already open
         if: steps.sync.outcome == 'failure' && github.event_name == 'schedule'
         env:

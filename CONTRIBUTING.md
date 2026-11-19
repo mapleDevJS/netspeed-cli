@@ -25,7 +25,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-Note: the repo includes [.cargo/config.toml](/Users/alexey.ivanov/vibe.dev/netspeed-cli/.cargo/config.toml) to set `SDKROOT` on macOS. This avoids sandbox-related `xcrun` SDK cache warnings during local builds and CI.
+Note: the repo includes `.cargo/config.toml` to set `SDKROOT` on macOS. This avoids sandbox-related `xcrun` SDK cache warnings during local builds and CI.
 
 ### Running Tests
 
@@ -53,14 +53,20 @@ cargo install git-cliff
 just changelog     # Updates CHANGELOG.md
 ```
 
-All CI checks must pass before a PR can be merged:
+The pull request workflow runs the required checks before a PR can be merged:
 - `cargo test` on Ubuntu, macOS, and Windows
 - socket-binding integration tests on Linux
 - `cargo fmt -- --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
-- `cargo test --doc`
+- documentation, package, and generated-doc checks
 - `cargo deny check` (security + license audit)
 - MSRV verification with Rust 1.86
+
+Benchmarks and coverage run for PRs to `main` or by manual dispatch. To reset
+the benchmark comparison point, manually dispatch `ci.yml` against `main`; the
+next `main` PR measures that commit and compares it on the same runner. Full CI
+is not repeated on ordinary branch pushes; install the pre-push hook and run
+`just qa` locally before pushing.
 
 ## Development Workflow
 
@@ -93,8 +99,17 @@ for the complete release workflow.
 1. Develop on `develop`
 2. Open PR `develop` → `main`
 3. Merge PR to `main`
-4. Run `./scripts/release.sh <version>` from `main`
-5. CI builds binaries, publishes GitHub Release, updates Homebrew, and publishes to crates.io
+4. Run `gh workflow run release.yml --ref main -f version=<version>`
+5. Review and merge the version PR after its pull request checks pass
+6. Run the same workflow command again; it validates the exact `main` commit,
+   tags it, and starts publication
+7. Review and merge the generated formula PRs
+
+`./scripts/release.sh <version>` is a non-mutating compatibility wrapper that
+prints the canonical workflow command. Release and security QA are manual or
+PR-triggered rather than scheduled; release-channel drift is checked weekly,
+stale issue maintenance remains daily, and dependency updates are managed by
+Dependabot.
 
 ## What to Contribute
 
@@ -174,6 +189,15 @@ ci: add cargo-audit job
 **Commit types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
 A pre-commit hook validates commit messages. Use `npm install -D @commitlint/config-conventional` to enable local validation.
+
+Changelog PR generation is available on demand from `develop`:
+
+```bash
+gh workflow run changelog.yml --ref develop
+```
+
+Dependency update PRs are managed by Dependabot. Run the Lock File Check
+workflow manually when you need an additional dependency freshness report.
 
 ## Questions?
 
