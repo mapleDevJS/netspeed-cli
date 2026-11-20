@@ -282,7 +282,7 @@ impl Tracker {
         bar.set_prefix(progress_prefix(label, upload, layout));
         bar.set_message("starting...");
         bar.set_position(0);
-        if animated {
+        if animated && !bar.is_hidden() {
             bar.enable_steady_tick(Duration::from_millis(100));
         }
 
@@ -317,7 +317,9 @@ impl Tracker {
         bar.set_prefix(progress_prefix(label, upload, layout));
         bar.set_message("starting...");
         bar.set_position(0);
-        bar.enable_steady_tick(Duration::from_millis(100));
+        if !bar.is_hidden() {
+            bar.enable_steady_tick(Duration::from_millis(100));
+        }
 
         Self {
             bar,
@@ -556,6 +558,41 @@ pub fn reveal_pause() {
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    #[test]
+    fn hidden_trackers_do_not_install_background_tickers() {
+        #[derive(Clone)]
+        struct TickProbe(Arc<std::sync::atomic::AtomicUsize>);
+        impl indicatif::style::ProgressTracker for TickProbe {
+            fn clone_box(&self) -> Box<dyn indicatif::style::ProgressTracker> {
+                Box::new(self.clone())
+            }
+            fn tick(&mut self, _: &indicatif::ProgressState, _: std::time::Instant) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+            fn reset(&mut self, _: &indicatif::ProgressState, _: std::time::Instant) {}
+            fn write(&self, _: &indicatif::ProgressState, _: &mut dyn std::fmt::Write) {}
+        }
+
+        for tracker in [
+            Tracker::hidden("Download"),
+            Tracker::with_target("Download", ProgressDrawTarget::hidden()),
+            Tracker::with_target_animated("Download", ProgressDrawTarget::hidden()),
+        ] {
+            let ticks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            tracker.bar.set_style(
+                ProgressStyle::with_template("{probe}")
+                    .unwrap()
+                    .with_key("probe", TickProbe(Arc::clone(&ticks))),
+            );
+            // Indicatif suppresses manual ticks while a background ticker is
+            // installed. Every explicit tick must reach the probe immediately.
+            for _ in 0..10 {
+                tracker.bar.tick();
+            }
+            assert_eq!(ticks.load(Ordering::Relaxed), 10);
+        }
+    }
 
     fn set_no_color() {
         // SAFETY: tests in this module run serially via #[serial]; no concurrent set_var calls.

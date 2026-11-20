@@ -87,7 +87,7 @@ Verification ran on macOS ARM64 and in a disposable Linux ARM64 container. Comma
 loopback access outside the restricted sandbox.
 
 - Formatting, strict all-target Clippy, and diff whitespace checks passed.
-- The latest macOS full cargo test passed, with 975 library tests passing and 17 ignored, plus integration suites and 79 passing doc tests. The earlier Linux full run passed 969 library tests, its integration suites, and 79 doc tests.
+- The latest macOS full cargo test passed, with 976 library tests passing and 17 ignored, plus integration suites and 79 passing doc tests. The earlier Linux full run passed 969 library tests, its integration suites, and 79 doc tests.
 - All seven macOS PTY tests passed, including discovery HTTP failure cleanup, short height, resizing, actual-binary interruption with stdout piped, explicit-format precedence over legacy flags, and nine static-mode configurations. The earlier Linux lifecycle run passed its four-case PTY suite.
 - Complete report width assertions passed at 40, 60, 80, and 120 columns and heights 4, 8, and 24, across dark, light, high-contrast, and monochrome themes.
 - Explicit socket suite passed 5 socket regressions, 2 mock-network tests, 5 upload/fetch tests, and 3 end-to-end tests.
@@ -182,6 +182,17 @@ during terminal I/O. Timestamp gaps above two sampling intervals appear as chart
 gaps, and width reduction preserves the newest chart values.
 
 ## Performance evidence and platform limits
+
+The progress benchmark review also found that hidden legacy progress bars were
+starting indicatif timer threads despite having no visible draw target. Both
+tracker constructors now enable steady ticks only for visible bars. A regression
+probe observes actual indicatif tick callbacks and verifies that all hidden
+constructor paths accept synchronous manual ticks; indicatif suppresses those
+when a background ticker is installed. This requires no timing sleeps or OS
+thread-count sampling. The full suite, strict Clippy, release build, Rust 1.86
+check, and all three progress benchmarks passed after this change. The benchmark
+callback timings exclude fixture construction, so they do not quantify the
+removed timer-thread startup cost.
 
 The final four-density renderer built 10,000 diagnostic frames in 25.31 ms
 (2.53 microseconds/frame) and published 100,000 updates in 6.92 ms
