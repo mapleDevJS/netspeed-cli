@@ -112,11 +112,72 @@ where
     F: FnOnce(Arc<Tracker>) -> Fut,
     Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), Error>>,
 {
-    let progress = Arc::new(if is_verbose {
-        Tracker::new(test_label)
+    run_bandwidth_test_with_display(
+        client,
+        server,
+        test_label,
+        is_verbose,
+        crate::theme::Theme::Dark,
+        false,
+        test_fn,
+    )
+    .await
+}
+
+pub async fn run_bandwidth_test_with_display<F, Fut>(
+    client: reqwest::Client,
+    server: &Server,
+    test_label: &str,
+    show_progress: bool,
+    theme: crate::theme::Theme,
+    bytes: bool,
+    test_fn: F,
+) -> Result<TestRunResult, Error>
+where
+    F: FnOnce(Arc<Tracker>) -> Fut,
+    Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), Error>>,
+{
+    run_bandwidth_test_presented(
+        client,
+        server,
+        test_label,
+        show_progress,
+        theme,
+        bytes,
+        None,
+        test_fn,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_bandwidth_test_presented<F, Fut>(
+    client: reqwest::Client,
+    server: &Server,
+    test_label: &str,
+    show_progress: bool,
+    theme: crate::theme::Theme,
+    bytes: bool,
+    live: Option<crate::live::Handle>,
+    test_fn: F,
+) -> Result<TestRunResult, Error>
+where
+    F: FnOnce(Arc<Tracker>) -> Fut,
+    Fut: std::future::Future<Output = Result<(f64, f64, u64, Vec<f64>), Error>>,
+{
+    let progress = Arc::new(if let Some(live) = live {
+        Tracker::for_live(test_label, live)
+    } else if show_progress {
+        Tracker::with_display(
+            test_label,
+            indicatif::ProgressDrawTarget::stderr_with_hz(10),
+            theme,
+            bytes,
+        )
     } else {
-        Tracker::with_target(test_label, indicatif::ProgressDrawTarget::hidden())
+        Tracker::hidden(test_label)
     });
+    let display_worker = DisplayWorker::start(&progress, show_progress);
 
     // Set up latency-under-load monitoring
     let latency_samples = Arc::new(Mutex::new(Vec::new()));
@@ -134,11 +195,13 @@ where
     let outcome = tokio::select! {
         biased;
         _ = &mut monitoring => Err(Error::context("latency monitor stopped unexpectedly")),
-        result = test_fn(progress) => result,
+        result = test_fn(Arc::clone(&progress)) => result,
     };
     stop_signal.store(true, std::sync::atomic::Ordering::Release);
-    let (avg, peak, total_bytes, speed_samples) = outcome?;
     let duration = test_start.elapsed().as_secs_f64();
+    drop(display_worker);
+    let (avg, peak, total_bytes, speed_samples) = outcome?;
+    progress.finish(avg / 1_000_000.0, total_bytes, theme);
 
     // Calculate average latency under load
     let latency_under_load = {
@@ -163,9 +226,54 @@ where
     })
 }
 
+struct DisplayWorker {
+    progress: Arc<Tracker>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl DisplayWorker {
+    fn start(progress: &Arc<Tracker>, enabled: bool) -> Self {
+        let display = Arc::clone(progress);
+        let worker = enabled
+            .then(|| {
+                std::thread::Builder::new()
+                    .name("netspeed-progress".into())
+                    .spawn(move || {
+                        while !display.is_done() {
+                            display.render_latest();
+                            std::thread::park_timeout(std::time::Duration::from_millis(100));
+                        }
+                    })
+                    .ok()
+            })
+            .flatten();
+        Self {
+            progress: Arc::clone(progress),
+            worker,
+        }
+    }
+}
+impl Drop for DisplayWorker {
+    fn drop(&mut self) {
+        self.progress.mark_done();
+        if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
+            let _ = worker.join();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_worker_drop_stops_the_worker_and_releases_its_tracker() {
+        let tracker = Arc::new(Tracker::hidden("Download"));
+        let worker = DisplayWorker::start(&tracker, true);
+        drop(worker);
+        assert!(tracker.is_done());
+        assert_eq!(Arc::strong_count(&tracker), 1);
+    }
 
     #[test]
     fn test_test_run_result_structure() {

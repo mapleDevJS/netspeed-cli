@@ -1,6 +1,6 @@
-complete -c netspeed-cli -l no-download -d 'Do not perform download test' -r -f -a "true\t''
+complete -c netspeed-cli -l no-download -d 'Skip download test (bare switch enables; explicit true/false also accepted)' -r -f -a "true\t''
 false\t''"
-complete -c netspeed-cli -l no-upload -d 'Do not perform upload test' -r -f -a "true\t''
+complete -c netspeed-cli -l no-upload -d 'Skip upload test (bare switch enables; explicit true/false also accepted)' -r -f -a "true\t''
 false\t''"
 complete -c netspeed-cli -l single -d 'Only use a single connection instead of multiple' -r -f -a "true\t''
 false\t''"
@@ -34,11 +34,11 @@ powershell\t''
 elvish\t''"
 complete -c netspeed-cli -l quiet -d 'Suppress all progress output (JSON/CSV still go to stdout)' -r -f -a "true\t''
 false\t''"
-complete -c netspeed-cli -l minimal -d 'Minimal ASCII-only output (no Unicode box-drawing characters)' -r -f -a "true\t''
+complete -c netspeed-cli -l minimal -d 'Use ASCII/plain output; this is separate from --format minimal' -r -f -a "true\t''
 false\t''"
 complete -c netspeed-cli -l profile -d 'User profile for customized output (gamer, streamer, remote-worker, power-user, casual)' -r
 complete -c netspeed-cli -l theme -d 'Output color theme (dark, light, high-contrast, monochrome)' -r
-complete -c netspeed-cli -l strict-config -d 'Enable strict config mode - show warnings for invalid config values' -r -f -a "true\t''
+complete -c netspeed-cli -l strict-config -d 'Fail on invalid configuration (warnings remain nonfatal)' -r -f -a "true\t''
 false\t''"
 complete -c netspeed-cli -l ca-cert -d 'Path to a custom CA certificate file (PEM/DER format)' -r
 complete -c netspeed-cli -l tls-version -d 'Minimum TLS version to use (1.2 or 1.3)' -r
@@ -46,6 +46,7 @@ complete -c netspeed-cli -l restrict-tls-domains -l pin-certs -d 'Restrict TLS c
 false\t''"
 complete -c netspeed-cli -l list -d 'Display a list of speedtest.net servers sorted by distance'
 complete -c netspeed-cli -l history -d 'Display test history'
+complete -c netspeed-cli -l no-live-ui -d 'Disable live progress rendering in interactive terminals'
 complete -c netspeed-cli -l dry-run -d 'Validate configuration and exit without running tests'
 complete -c netspeed-cli -l no-emoji -d 'Disable emoji output (for environments where emojis don\'t render well)'
 complete -c netspeed-cli -l show-config-path -d 'Show the configuration file path and exit'

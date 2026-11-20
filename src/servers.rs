@@ -152,12 +152,31 @@ async fn fetch_from_urls(
     config_url: &str,
     servers_url: &str,
 ) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
+    fetch_from_urls_with_warnings(client, config_url, servers_url, &|message| {
+        eprintln!("{message}")
+    })
+    .await
+}
+
+pub(crate) async fn fetch_with_warnings(
+    client: &Client,
+    report: &(dyn for<'message> Fn(&'message str) + Send + Sync),
+) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
+    fetch_from_urls_with_warnings(client, SPEEDTEST_CONFIG_URL, SPEEDTEST_SERVERS_URL, report).await
+}
+
+async fn fetch_from_urls_with_warnings(
+    client: &Client,
+    config_url: &str,
+    servers_url: &str,
+    report: &(dyn for<'message> Fn(&'message str) + Send + Sync),
+) -> Result<(Vec<Server>, Option<crate::types::ClientLocation>), Error> {
     let client_location = match fetch_client_location_from_url(client, config_url).await {
         Ok(loc) => Some(loc),
         Err(ref e) => {
-            eprintln!(
+            report(&format!(
                 "Warning: could not determine client location ({e}), using latency-based selection"
-            );
+            ));
             None
         }
     };

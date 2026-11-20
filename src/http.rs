@@ -423,15 +423,14 @@ async fn discover_client_ip_at(
 }
 
 fn resolve_discovered_ip(ip_response: Option<&str>, config_response: Option<&str>) -> String {
-    if let Some(ip) = ip_response.map(str::trim)
-        && common::is_valid_ipv4(ip)
+    if let Some(ip) = ip_response
+        .map(str::trim)
+        .filter(|ip| common::is_valid_ipv4(ip))
     {
         return ip.to_string();
     }
 
-    if let Some(xml) = config_response
-        && let Some(ip) = parse_ip_from_xml(xml)
-    {
+    if let Some(ip) = config_response.and_then(parse_ip_from_xml) {
         return ip;
     }
 

@@ -21,6 +21,16 @@ The CLI contacts speedtest.net and selected test servers, which may be operated
 by third parties. Successful interactive test results are stored locally; see
 [Privacy](#privacy) for details.
 
+Use the default command for a full readable report, `--format compact` for a
+short summary with ratings, or `--format json` when another program will read
+the result.
+
+In a compatible interactive terminal, an inline dashboard appears automatically on stderr. It shows the current phase, elapsed time, measured transfer rate, collected throughput samples, transferred data, and available connection context. The temporary view clears before the final report is written to scrollback. Use
+`--no-live-ui` to suppress it; redirected output and machine-readable formats
+do not receive progress rendering. Set `PREFER_REDUCED_MOTION=1` to disable
+live refreshes and use static output. Press `Ctrl+C` to interrupt a test; the process exits with
+status 130 after cancelling the active operation.
+
 ## Contents
 
 - [Quick start](#quick-start)
@@ -166,18 +176,19 @@ netspeed-cli --show-config-path
 
 | Option | Description |
 |--------|-------------|
-| `--no-download` | Skip download test |
-| `--no-upload` | Skip upload test |
+| `--no-download` | Skip download test; a bare switch enables skipping, and explicit `true`/`false` values are also accepted |
+| `--no-upload` | Skip upload test; a bare switch enables skipping, and explicit `true`/`false` values are also accepted |
 | `--single` | Use single connection |
 | `--bytes` | Display values in bytes instead of bits |
 | `--format TYPE` | Output format: `json`, `jsonl`, `csv`, `minimal`, `simple`, `compact`, `detailed`, `dashboard` (supersedes `--json`, `--csv`, `--simple`) |
 | `--json` | Legacy alias for `--format json` |
 | `--csv` | Legacy alias for `--format csv` |
 | `--simple` | Legacy alias for `--format simple` |
-| `--minimal` | Legacy alias for `--format minimal` |
+| `--minimal` | Use an ASCII/plain report without Unicode box-drawing characters; non-ASCII server text uses `?`. Distinct from `--format minimal` |
 | `--csv-delimiter CHAR` | CSV delimiter character: `,`, `;`, `\|`, or tab (default: `,`) |
 | `--csv-header` | Include CSV header row |
 | `--quiet` | Suppress all progress output (for cron jobs / CI) |
+| `--no-live-ui` | Disable automatic interactive progress rendering |
 | `--list` | List available servers |
 | `--server ID` | Test against specific server (can be used multiple times) |
 | `--exclude ID` | Exclude server from selection (can be used multiple times) |
@@ -192,7 +203,7 @@ netspeed-cli --show-config-path
 | `--history` | Show test history with sparkline trends |
 | `--dry-run` | Show test configuration without running the test |
 | `--show-config-path` | Print the config file path and exit |
-| `--strict-config` | Treat config file warnings as errors |
+| `--strict-config` | Fail when configuration validation reports errors; warnings remain nonfatal and are reported |
 | `--generate-completion SHELL` | Generate shell completion script |
 | `--version` | Show version |
 
@@ -232,13 +243,15 @@ ca_cert = "/path/to/ca.pem"
 tls_version = "1.2"
 pin_certs = false # Legacy config key for TLS domain restriction
 
-# Strict mode (warnings become errors)
+# Strict mode (validation errors fail; warnings remain nonfatal)
 strict = false
 ```
 
 ## User Profiles
 
 Profiles adjust scoring weights, grading thresholds, and which sections appear in the output. Use `--profile` or set `profile` in the config file.
+Human-readable results identify the active profile. Grades depend on the profile,
+so results from different profiles are not directly comparable.
 
 | Profile | Description | Notes |
 |---------|-------------|-------|
@@ -254,26 +267,22 @@ Profiles are case-insensitive. Aliases: `poweruser`, `remote`, `remoteworker`.
 
 ### Dashboard
 
-Rich terminal dashboard with 3-column metrics and capability matrix:
+Persistent report with prominent download and upload speeds, overall grade,
+measured throughput histories, and available connection diagnostics. It shares
+the final layout with the default detailed format and adapts to terminal width.
 
-```
-  ┌────────────────────────────────────────────────────────┐
-  │          NetSpeed CLI                                 │
-  │  Rogers (Toronto) - CA - 12km - 192.168.1.1           │
-  └────────────────────────────────────────────────────────┘
-
-  ┌ PERFORMANCE ┬ STABILITY ┬ BUFFERBLOAT ┐
-  │  450.2 Mb/s v│ DL: A+    │ Grade: C    │
-  │  120.5 Mb/s ^│ UL: A+    │             │
-  │    12.1 ms  │           │ Overall: B+ │
-  └─────────────┴───────────┴─────────────┘
-```
+The live dashboard appears automatically during measurements in compatible
+terminals; `--format dashboard` selects the final report format. No extra flag
+is needed to enable live rendering. Temporary live rows clear before the report
+is written to normal scrollback.
 
 ### Compact
 
 Key metrics with quality ratings between simple and detailed:
 
 ```
+Profile: power-user
+
   TEST RESULTS
   Overall: Good
 
@@ -289,47 +298,25 @@ Key metrics with quality ratings between simple and detailed:
 
 ### Detailed (default)
 
-Default full report with overall grading, latency metrics, transfer speeds, connection info, summary totals, total time, and completion timestamp.
-When available, it also includes packet loss, bufferbloat, latency under load, variance, and UL/DL ratio.
-Profile-driven extras such as transfer estimates, stability analysis, latency percentiles, and history comparison may be appended after the main report when the necessary data is available.
+The default full report uses the dashboard layout. It presents overall grading,
+download and upload speeds and peaks, server context, transfer totals, elapsed
+time, and completion timestamp. Ping, jitter, packet loss, latency under load,
+bufferbloat, and throughput variation appear when measured.
 
-```
-  TEST RESULTS
-  Overall: Excellent
+A short deterministic conclusion uses the selected profile and existing grades
+to summarize the available results. It makes no additional network requests.
+Missing and skipped measurements remain distinct from successful zero throughput.
+Use `--bytes` for byte-based speed units or `--minimal` for an ASCII/plain report.
 
-  Latency:        5.2 ms  (Excellent)
-  Jitter:         1.3 ms
-  Packet Loss:    0.0%
-  Bufferbloat:    A (+7.2 ms)
-  Download:     450.23 Mb/s  (Excellent)
-  Peak:         520.10 Mb/s
-  Latency (load): 12.4 ms  +138% (significant)
-  Variance:     +/-4.8% (stable)
-  Upload:       120.45 Mb/s  (Good)
-  Peak:         145.80 Mb/s
-  Latency (load):  8.1 ms  +56% (significant)
-  Variance:     +/-8.6% (variable)
-  UL/DL Ratio:  3.74x download-heavy
-
-  CONNECTION INFO
-  Server:       Rogers (Toronto)
-  Location:     CA  (12 km)
-  Client IP:    192.168.1.1
-
-  TEST SUMMARY
-  Download:     12.4 MB in 3.2s
-  Upload:       4.1 MB in 2.1s
-  Total:        16.5 MB in 5.3s
-
-  Total time: 5.3s
-  Completed at: 2026-04-04T12:00:00Z
-```
+Actual fixture output and verification limits are recorded in
+[terminal UI verification](docs/terminal-ui-verification.md).
 
 > **Tip:** Use `--no-download` or `--no-upload` to skip a phase. Skipped tests show `-- (skipped)` in the output.
 
 ### Simple
 
 ```
+Profile: power-user
 Latency: 5.2 ms | Download: 450.23 Mb/s | Upload: 120.45 Mb/s
 ```
 

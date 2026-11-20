@@ -26,26 +26,25 @@ Results are saved to a local history file for trend tracking."
 #[command(
     after_help = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Examples:
-  netspeed-cli                          Run a full speed test
-  netspeed-cli --format compact         Key metrics with ratings
-  netspeed-cli --format dashboard       Rich dashboard with history
-  netspeed-cli --format json            Machine-readable output
-  netspeed-cli --list                   List available servers
-  netspeed-cli --history                Show test history
-  netspeed-cli --profile gamer          Optimize output for gaming
-  netspeed-cli --theme light            Light terminal background
-  netspeed-cli --no-emoji               Disable emoji output
-  netspeed-cli --quiet                  Suppress progress output
+  netspeed-cli                           Full readable report (default)
+  netspeed-cli --format compact          Quick summary with ratings
+  netspeed-cli --format json             Machine-readable output
+  netspeed-cli --profile gamer           Grade results for gaming priorities
+  netspeed-cli --list                    List available servers
+  netspeed-cli --history                 Show test history
+  netspeed-cli --minimal                 Use ASCII/plain output
+  netspeed-cli --no-live-ui              Suppress interactive progress rendering
+  netspeed-cli --quiet                   Suppress progress output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )]
 #[derive(Default)]
 pub struct Args {
-    /// Do not perform download test
-    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    /// Skip download test (bare switch enables; explicit true/false also accepted)
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1, long_help = "Skip the download test. Use --no-download to enable skipping; --no-download=false keeps the download test enabled.")]
     pub no_download: Option<bool>,
 
-    /// Do not perform upload test
-    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    /// Skip upload test (bare switch enables; explicit true/false also accepted)
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1, long_help = "Skip the upload test. Use --no-upload to enable skipping; --no-upload=false keeps the upload test enabled.")]
     pub no_upload: Option<bool>,
 
     /// Only use a single connection instead of multiple
@@ -169,6 +168,10 @@ pub struct Args {
     )]
     pub quiet: Option<bool>,
 
+    /// Disable live progress rendering in interactive terminals
+    #[arg(long)]
+    pub no_live_ui: bool,
+
     /// Validate configuration and exit without running tests
     #[arg(
         long,
@@ -180,8 +183,8 @@ pub struct Args {
     #[arg(long)]
     pub no_emoji: bool,
 
-    /// Minimal ASCII-only output (no Unicode box-drawing characters)
-    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    /// Use ASCII/plain output; this is separate from --format minimal
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1, long_help = "Use ASCII/plain output without Unicode box-drawing characters. This is separate from --format minimal, which selects a terse grade-and-speeds format. Use --minimal=false to disable this setting.")]
     pub minimal: Option<bool>,
 
     /// User profile for customized output (gamer, streamer, remote-worker, power-user, casual)
@@ -203,8 +206,8 @@ pub struct Args {
     #[arg(long)]
     pub show_config_path: bool,
 
-    /// Enable strict config mode - show warnings for invalid config values
-    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1)]
+    /// Fail on invalid configuration (warnings remain nonfatal)
+    #[arg(long, action = ArgAction::Set, default_missing_value = "true", num_args = 0..=1, long_help = "Enable strict configuration validation. Validation errors cause failure; warnings are reported and remain nonfatal. Use --strict-config=false to disable strict validation.")]
     pub strict_config: Option<bool>,
 
     /// Path to a custom CA certificate file (PEM/DER format)
@@ -323,6 +326,32 @@ pub enum OutputFormatType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_minimal_ascii_switch_is_distinct_from_format() {
+        let args = Args::parse_from(["netspeed-cli", "--minimal"]);
+        assert_eq!(args.minimal, Some(true));
+        assert!(args.format.is_none());
+
+        let args = Args::parse_from(["netspeed-cli", "--format", "minimal"]);
+        assert_eq!(args.minimal, None);
+        assert_eq!(args.format, Some(OutputFormatType::Minimal));
+    }
+
+    #[test]
+    fn test_boolean_switches_keep_explicit_values() {
+        let args = Args::parse_from(["netspeed-cli", "--no-upload"]);
+        assert_eq!(args.no_upload, Some(true));
+
+        let args = Args::parse_from(["netspeed-cli", "--no-upload=false"]);
+        assert_eq!(args.no_upload, Some(false));
+    }
+
+    #[test]
+    fn no_live_ui_flag_is_explicitly_available() {
+        let args = Args::parse_from(["netspeed-cli", "--no-live-ui"]);
+        assert!(args.no_live_ui);
+    }
 
     #[test]
     fn test_validate_csv_delimiter_comma() {

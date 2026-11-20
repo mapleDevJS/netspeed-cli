@@ -15,8 +15,8 @@ _netspeed-cli() {
 
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
-'--no-download=[Do not perform download test]::NO_DOWNLOAD:(true false)' \
-'--no-upload=[Do not perform upload test]::NO_UPLOAD:(true false)' \
+'--no-download=[Skip download test (bare switch enables; explicit true/false also accepted)]::NO_DOWNLOAD:(true false)' \
+'--no-upload=[Skip upload test (bare switch enables; explicit true/false also accepted)]::NO_UPLOAD:(true false)' \
 '--single=[Only use a single connection instead of multiple]::SINGLE:(true false)' \
 '--bytes=[Display values in bytes instead of bits]::BYTES:(true false)' \
 '--simple=[Suppress verbose output, only show basic information]::SIMPLE:(true false)' \
@@ -38,16 +38,17 @@ dashboard\:"Rich terminal dashboard with capability matrix"))' \
 '--timeout=[HTTP timeout in seconds (default\: 10)]:TIMEOUT:_default' \
 '--generate-completion=[Generate shell completion script]:GENERATE_COMPLETION:(bash zsh fish powershell elvish)' \
 '--quiet=[Suppress all progress output (JSON/CSV still go to stdout)]::QUIET:(true false)' \
-'--minimal=[Minimal ASCII-only output (no Unicode box-drawing characters)]::MINIMAL:(true false)' \
+'--minimal=[Use ASCII/plain output; this is separate from --format minimal]::MINIMAL:(true false)' \
 '--profile=[User profile for customized output (gamer, streamer, remote-worker, power-user, casual)]:PROFILE:_default' \
 '--theme=[Output color theme (dark, light, high-contrast, monochrome)]:THEME:_default' \
-'--strict-config=[Enable strict config mode - show warnings for invalid config values]::STRICT_CONFIG:(true false)' \
+'--strict-config=[Fail on invalid configuration (warnings remain nonfatal)]::STRICT_CONFIG:(true false)' \
 '--ca-cert=[Path to a custom CA certificate file (PEM/DER format)]:PATH:_default' \
 '--tls-version=[Minimum TLS version to use (1.2 or 1.3)]:VERSION:_default' \
 '--restrict-tls-domains=[Restrict TLS connections to speedtest.net and ookla.com domains]::PIN_CERTS:(true false)' \
 '--pin-certs=[Restrict TLS connections to speedtest.net and ookla.com domains]::PIN_CERTS:(true false)' \
 '--list[Display a list of speedtest.net servers sorted by distance]' \
 '--history[Display test history]' \
+'--no-live-ui[Disable live progress rendering in interactive terminals]' \
 '--dry-run[Validate configuration and exit without running tests]' \
 '--no-emoji[Disable emoji output (for environments where emojis don'\''t render well)]' \
 '--show-config-path[Show the configuration file path and exit]' \

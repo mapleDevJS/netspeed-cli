@@ -72,6 +72,20 @@ pub fn no_animation() -> bool {
     std::env::var("PREFER_REDUCED_MOTION").is_ok()
 }
 
+/// Whether the selected output stream supports live terminal updates.
+#[must_use]
+pub fn supports_live_updates(is_terminal: bool) -> bool {
+    is_terminal && std::env::var("TERM").as_deref() != Ok("dumb")
+}
+
+/// Remove terminal control sequences and bound untrusted display text by columns.
+#[must_use]
+pub fn sanitize_display_text(text: &str, max_width: usize) -> String {
+    let plain = console::strip_ansi_codes(text);
+    let safe: String = plain.chars().filter(|ch| !ch.is_control()).collect();
+    console::truncate_str(&safe, max_width, "…").into_owned()
+}
+
 /// Trait for terminal display capabilities.
 ///
 /// Implement this trait to provide custom terminal display behavior,
@@ -164,6 +178,22 @@ mod tests {
     #[test]
     fn test_no_animation_default() {
         let _ = no_animation();
+    }
+
+    #[test]
+    fn sanitize_display_text_removes_ansi_and_controls() {
+        let text = sanitize_display_text("x\u{1b}[31mY\n東京", 4);
+        assert!(!text.contains('\u{1b}'));
+        assert!(!text.contains('\n'));
+        assert!(console::measure_text_width(&text) <= 4);
+    }
+
+    #[test]
+    fn live_updates_require_a_terminal_and_non_dumb_term() {
+        assert!(!supports_live_updates(false));
+        if std::env::var("TERM").as_deref() == Ok("dumb") {
+            assert!(!supports_live_updates(true));
+        }
     }
 
     #[test]

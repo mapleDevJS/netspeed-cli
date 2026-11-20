@@ -17,23 +17,89 @@ use std::time::Duration;
 
 const SPARKLINE_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 const SPARKLINE_LEN: usize = 12;
-const MIN_BAR_WIDTH: usize = 20;
+const UI_UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 
-fn adaptive_bar_width() -> usize {
-    let term_w = common::get_terminal_width().unwrap_or(100) as usize;
-    let available = term_w.saturating_sub(52);
-    available.clamp(MIN_BAR_WIDTH, 50)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProgressLayout {
+    Minimal,
+    Compact,
+    Standard,
 }
 
-fn speed_color(speed_mbps: f64, theme: crate::theme::Theme) -> String {
-    if speed_mbps >= 100.0 {
-        Colors::good(&format!("{speed_mbps:.1} Mb/s"), theme)
-    } else if speed_mbps >= 25.0 {
-        Colors::info(&format!("{speed_mbps:.1} Mb/s"), theme)
-    } else if speed_mbps >= 5.0 {
-        Colors::warn(&format!("{speed_mbps:.1} Mb/s"), theme)
+impl ProgressLayout {
+    fn from_terminal_width(width: usize) -> Self {
+        match width {
+            0..60 => Self::Minimal,
+            60..100 => Self::Compact,
+            _ => Self::Standard,
+        }
+    }
+
+    const fn code(self) -> u8 {
+        match self {
+            Self::Minimal => 0,
+            Self::Compact => 1,
+            Self::Standard => 2,
+        }
+    }
+
+    const fn from_code(code: u8) -> Self {
+        match code {
+            0 => Self::Minimal,
+            1 => Self::Compact,
+            _ => Self::Standard,
+        }
+    }
+}
+
+fn format_progress_rate(mbps: f64, bytes: bool) -> String {
+    let value = if bytes { mbps / 8.0 } else { mbps };
+    let (value, unit) = if bytes {
+        if value < 1.0 {
+            (value * 1000.0, "KB/s")
+        } else if value < 1000.0 {
+            (value, "MB/s")
+        } else {
+            (value / 1000.0, "GB/s")
+        }
+    } else if value < 1000.0 {
+        (value, "Mb/s")
     } else {
-        Colors::bad(&format!("{speed_mbps:.1} Mb/s"), theme)
+        (value / 1000.0, "Gb/s")
+    };
+    if value < 10.0 {
+        format!("{value:.2} {unit}")
+    } else {
+        format!("{value:.1} {unit}")
+    }
+}
+
+fn bar_width_for_terminal(term_w: usize) -> usize {
+    match ProgressLayout::from_terminal_width(term_w) {
+        ProgressLayout::Minimal => 0,
+        ProgressLayout::Compact => term_w.saturating_sub(39).clamp(8, 40),
+        ProgressLayout::Standard => term_w.saturating_sub(72).clamp(8, 50),
+    }
+}
+
+fn progress_style(layout: ProgressLayout, width: usize, animated: bool) -> ProgressStyle {
+    let spinner = if animated { "{spinner} " } else { "" };
+    let template = match layout {
+        ProgressLayout::Minimal => format!("{{prefix}} {spinner}{{msg}}"),
+        ProgressLayout::Compact => {
+            format!("  {{prefix}} {spinner}{{bar:{width}}} {{percent:>3}}% {{msg}}")
+        }
+        ProgressLayout::Standard => format!(
+            "  {{prefix}} {spinner}{{bar:{width}}} {{percent:>3}}%  {{elapsed_precise}} | {{msg}}"
+        ),
+    };
+    let style = ProgressStyle::with_template(&template)
+        .unwrap()
+        .progress_chars("━░─");
+    if animated {
+        style.tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠏"])
+    } else {
+        style
     }
 }
 
@@ -58,6 +124,26 @@ fn speed_trend(samples: &[f64]) -> &'static str {
         "↓"
     } else {
         "→"
+    }
+}
+
+fn progress_prefix(label: &str, upload: bool, layout: ProgressLayout) -> String {
+    let arrow = if upload { "↑" } else { "↓" };
+    let text = if layout == ProgressLayout::Minimal {
+        format!("{arrow} {}", if upload { "UL" } else { "DL" })
+    } else {
+        format!("{arrow} {label}:")
+    };
+    let text = if layout == ProgressLayout::Minimal {
+        text
+    } else {
+        format!("{text:<12}")
+    };
+    if terminal::no_color() {
+        text
+    } else {
+        use owo_colors::OwoColorize;
+        text.dimmed().to_string()
     }
 }
 
@@ -98,12 +184,71 @@ pub struct Tracker {
     bar: ProgressBar,
     done: Arc<AtomicBool>,
     speed_samples: Mutex<Vec<f64>>,
+    theme: crate::theme::Theme,
+    bytes: bool,
+    updates_enabled: bool,
+    upload: bool,
+    animated: bool,
+    bar_width: std::sync::atomic::AtomicUsize,
+    layout: std::sync::atomic::AtomicU8,
+    label: String,
+    created_at: std::time::Instant,
+    last_ui_update_ms: std::sync::atomic::AtomicU64,
+    latest_display: Mutex<(f64, f64, u64)>,
+    live: Option<crate::live::Handle>,
 }
 
 impl Tracker {
+    pub(crate) fn warning(&self, message: &str) {
+        if let Some(live) = &self.live {
+            live.warning(message);
+        } else {
+            eprintln!("{}", crate::terminal::sanitize_display_text(message, 240));
+        }
+    }
+    pub(crate) fn for_live(label: &str, handle: crate::live::Handle) -> Self {
+        let mut tracker = Self::hidden(label);
+        tracker.live = Some(handle);
+        tracker
+    }
+
+    /// Publish the newest sample without terminal I/O or sample-vector work.
+    pub fn publish(&self, speed_mbps: f64, progress: f64, bytes: u64) {
+        if let Some(live) = &self.live {
+            live.sample(speed_mbps, bytes);
+            return;
+        }
+
+        *self
+            .latest_display
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = (speed_mbps, progress, bytes);
+    }
+
+    /// Render the latest published sample. Called by the bounded UI worker.
+    pub fn render_latest(&self) {
+        let (speed, progress, bytes) = *self
+            .latest_display
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        self.update(speed, progress, bytes);
+    }
+
+    pub fn mark_done(&self) {
+        self.done.store(true, Ordering::Release);
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.done.load(Ordering::Acquire)
+    }
     #[must_use]
     pub fn new(label: &str) -> Self {
-        Self::with_target(label, ProgressDrawTarget::stderr_with_hz(10))
+        Self::with_display(
+            label,
+            ProgressDrawTarget::stderr_with_hz(10),
+            crate::theme::Theme::Dark,
+            false,
+        )
     }
 
     #[must_use]
@@ -116,66 +261,60 @@ impl Tracker {
 
     #[must_use]
     pub fn with_target(label: &str, target: ProgressDrawTarget) -> Self {
+        Self::with_display(label, target, crate::theme::Theme::Dark, false)
+    }
+
+    pub fn with_display(
+        label: &str,
+        target: ProgressDrawTarget,
+        theme: crate::theme::Theme,
+        bytes: bool,
+    ) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let bar = ProgressBar::with_draw_target(Some(100), target);
-        let bw = adaptive_bar_width();
+        let term_w = common::get_terminal_width().unwrap_or(100) as usize;
+        let layout = ProgressLayout::from_terminal_width(term_w);
+        let bw = bar_width_for_terminal(term_w);
+        let upload = label.starts_with('U') || label.to_ascii_lowercase().contains("upload");
 
-        let tmpl = format!(
-            "  {{prefix}} {{bar:{bw}.cyan/blue}} {{percent:>3}}%  {{elapsed_precise}} | {{msg}}"
-        );
-        let style = ProgressStyle::with_template(&tmpl)
-            .unwrap()
-            .progress_chars("━░─");
-
-        bar.set_style(style);
-        let arrow = if label.starts_with('D') {
-            "↓ "
-        } else if label.starts_with('U') {
-            "↑ "
-        } else {
-            "  "
-        };
-        bar.set_prefix(if terminal::no_color() {
-            format!("{:<12}", format!("{arrow}{label}:"))
-        } else {
-            format!("{:<12}", format!("{arrow}{label}:").dimmed())
-        });
+        let animated = !terminal::no_animation();
+        bar.set_style(progress_style(layout, bw, animated));
+        bar.set_prefix(progress_prefix(label, upload, layout));
         bar.set_message("starting...");
         bar.set_position(0);
+        if animated {
+            bar.enable_steady_tick(Duration::from_millis(100));
+        }
 
         Self {
             bar,
             done,
             speed_samples: Mutex::new(Vec::new()),
+            theme,
+            bytes,
+            updates_enabled: true,
+            upload,
+            animated,
+            bar_width: std::sync::atomic::AtomicUsize::new(bw),
+            layout: std::sync::atomic::AtomicU8::new(layout.code()),
+            label: label.to_string(),
+            created_at: std::time::Instant::now(),
+            last_ui_update_ms: std::sync::atomic::AtomicU64::new(u64::MAX),
+            latest_display: Mutex::new((0.0, 0.0, 0)),
+            live: None,
         }
     }
 
     fn with_target_animated(label: &str, target: ProgressDrawTarget) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let bar = ProgressBar::with_draw_target(Some(100), target);
-        let bw = adaptive_bar_width();
+        let term_w = common::get_terminal_width().unwrap_or(100) as usize;
+        let layout = ProgressLayout::from_terminal_width(term_w);
+        let bw = bar_width_for_terminal(term_w);
+        let upload = label.starts_with('U') || label.to_ascii_lowercase().contains("upload");
 
-        let tmpl = format!(
-            "  {{prefix}} {{spinner}} {{bar:{bw}.cyan/blue}} {{percent:>3}}%  {{elapsed_precise}} | {{msg}}"
-        );
-        let style = ProgressStyle::with_template(&tmpl)
-            .unwrap()
-            .progress_chars("━░─")
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠏"]);
-
-        bar.set_style(style);
-        let arrow = if label.starts_with('D') {
-            "↓ "
-        } else if label.starts_with('U') {
-            "↑ "
-        } else {
-            "  "
-        };
-        bar.set_prefix(if terminal::no_color() {
-            format!("{:<12}", format!("{arrow}{label}:"))
-        } else {
-            format!("{:<12}", format!("{arrow}{label}:").dimmed())
-        });
+        bar.set_style(progress_style(layout, bw, true));
+        bar.set_prefix(progress_prefix(label, upload, layout));
         bar.set_message("starting...");
         bar.set_position(0);
         bar.enable_steady_tick(Duration::from_millis(100));
@@ -184,82 +323,189 @@ impl Tracker {
             bar,
             done,
             speed_samples: Mutex::new(Vec::new()),
+            theme: crate::theme::Theme::Dark,
+            bytes: false,
+            updates_enabled: true,
+            upload,
+            animated: true,
+            bar_width: std::sync::atomic::AtomicUsize::new(bw),
+            layout: std::sync::atomic::AtomicU8::new(layout.code()),
+            label: label.to_string(),
+            created_at: std::time::Instant::now(),
+            last_ui_update_ms: std::sync::atomic::AtomicU64::new(u64::MAX),
+            latest_display: Mutex::new((0.0, 0.0, 0)),
+            live: None,
         }
     }
 
     pub fn update(&self, speed_mbps: f64, progress: f64, bytes: u64) {
-        {
-            let mut samples = self.speed_samples.lock().unwrap();
-            samples.push(speed_mbps);
-            if samples.len() > 60 {
-                let drain = samples.len() - 60;
-                samples.drain(..drain);
-            }
+        if !self.updates_enabled {
+            return;
         }
-
-        let data_str = common::format_data_size(bytes);
-
-        let msg = if terminal::no_color() {
-            let speed_str = format!("{speed_mbps:.1} Mb/s");
-            format!("{data_str} @ {speed_str}")
+        let now_ms = self.created_at.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        let previous = self.last_ui_update_ms.load(Ordering::Relaxed);
+        if previous != u64::MAX
+            && now_ms.saturating_sub(previous) < UI_UPDATE_INTERVAL.as_millis() as u64
+        {
+            return;
+        }
+        if self
+            .last_ui_update_ms
+            .compare_exchange(previous, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+        let terminal_width = common::get_terminal_width().unwrap_or(100) as usize;
+        let width = bar_width_for_terminal(terminal_width);
+        let layout = ProgressLayout::from_terminal_width(terminal_width);
+        let previous_width = self.bar_width.swap(width, Ordering::Relaxed);
+        let previous_layout =
+            ProgressLayout::from_code(self.layout.swap(layout.code(), Ordering::Relaxed));
+        if width != previous_width || layout != previous_layout {
+            self.bar
+                .set_style(progress_style(layout, width, self.animated));
+            self.bar
+                .set_prefix(progress_prefix(&self.label, self.upload, layout));
+        }
+        let mut samples = self.speed_samples.lock().unwrap();
+        samples.push(speed_mbps);
+        if samples.len() > 60 {
+            let drain = samples.len() - 60;
+            samples.drain(..drain);
+        }
+        let sparkline = render_sparkline(&samples);
+        let trend = speed_trend(&samples);
+        let compact_chart: String = sparkline
+            .chars()
+            .rev()
+            .take(5)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        let pct = (progress * 100.0).clamp(0.0, u64::MAX as f64) as u64;
+        let speed_text = format_progress_rate(speed_mbps, self.bytes);
+        let speed_display = if terminal::no_color() {
+            speed_text.clone()
+        } else if self.upload {
+            Colors::header(&speed_text, self.theme)
         } else {
-            let speed_colored = speed_color(speed_mbps, crate::theme::Theme::Dark);
-            let samples = self.speed_samples.lock().unwrap();
-            let sparkline = render_sparkline(&samples);
-            let trend = speed_trend(&samples);
-            if sparkline.is_empty() {
-                format!("{} @ {}", data_str.white(), speed_colored)
-            } else {
-                format!(
-                    "{} {} {} @ {}",
-                    data_str.white(),
-                    sparkline.dimmed(),
-                    trend,
-                    speed_colored
-                )
+            Colors::info(&speed_text, self.theme)
+        };
+        let msg = match layout {
+            ProgressLayout::Minimal => {
+                let chart = if compact_chart.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {compact_chart} {trend}")
+                };
+                format!("{speed_display}{chart} {pct:>3}%")
+            }
+            ProgressLayout::Compact => {
+                if compact_chart.is_empty() {
+                    speed_display
+                } else {
+                    format!("{speed_display} {compact_chart}")
+                }
+            }
+            ProgressLayout::Standard if terminal::no_color() => {
+                format!("{} @ {}", common::format_data_size(bytes), speed_text)
+            }
+            ProgressLayout::Standard => {
+                let data_str = common::format_data_size(bytes);
+                let speed_colored = if self.upload {
+                    Colors::header(&speed_text, self.theme)
+                } else {
+                    Colors::info(&speed_text, self.theme)
+                };
+                if sparkline.is_empty() {
+                    format!("{} @ {}", data_str.white(), speed_colored)
+                } else {
+                    format!(
+                        "{} {} {} @ {}",
+                        data_str.white(),
+                        sparkline.dimmed(),
+                        trend,
+                        speed_colored
+                    )
+                }
             }
         };
 
         self.bar.set_message(msg);
-        let pct = (progress * 100.0).clamp(0.0, u64::MAX as f64) as u64;
         self.bar.set_position(pct.min(100));
     }
 
     pub fn finish(&self, final_speed_mbps: f64, total_bytes: u64, theme: crate::theme::Theme) {
-        let speed_str = if final_speed_mbps < 1000.0 {
-            format!("{final_speed_mbps:.2} Mb/s")
-        } else {
-            format!("{:.2} Gb/s", final_speed_mbps / 1000.0)
-        };
-
+        let speed_str = format_progress_rate(final_speed_mbps, self.bytes);
         let data_str = common::format_data_size(total_bytes);
-
+        let layout = ProgressLayout::from_code(self.layout.load(Ordering::Relaxed));
+        if layout != ProgressLayout::Standard {
+            let speed = if terminal::no_color() {
+                speed_str
+            } else if self.upload {
+                Colors::header(&speed_str, theme)
+            } else {
+                Colors::info(&speed_str, theme)
+            };
+            let done = if terminal::no_color() {
+                "DONE".to_string()
+            } else {
+                Colors::good("DONE", theme)
+            };
+            self.bar.finish_with_message(format!("{done} {speed}"));
+            self.done.store(true, Ordering::Relaxed);
+            return;
+        }
         self.bar.set_position(100);
         let msg = if terminal::no_color() {
             format!("DONE ({data_str} total @ {speed_str})")
         } else {
+            let speed = if self.upload {
+                Colors::header(&speed_str, theme)
+            } else {
+                Colors::info(&speed_str, theme)
+            };
             format!(
                 "{} ({} total @ {})",
                 Colors::good("DONE", theme),
                 data_str.dimmed(),
-                Colors::good(&speed_str, theme)
+                speed
             )
         };
         self.bar.finish_with_message(msg);
         self.done.store(true, Ordering::Relaxed);
+    }
+
+    pub fn hidden(label: &str) -> Self {
+        let mut tracker = Self::with_target(label, ProgressDrawTarget::hidden());
+        tracker.updates_enabled = false;
+        tracker
+    }
+}
+
+impl Drop for Tracker {
+    fn drop(&mut self) {
+        self.bar.finish_and_clear();
     }
 }
 
 #[must_use]
 pub fn create_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(10));
-    pb.set_style(
+    let style = if terminal::no_animation() {
+        ProgressStyle::with_template("  {msg}").unwrap()
+    } else {
         ProgressStyle::with_template("  {spinner} {msg}")
             .unwrap()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠏"]),
-    );
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠏"])
+    };
+    pb.set_style(style);
     pb.set_message(message.to_string());
-    pb.enable_steady_tick(std::time::Duration::from_millis(120));
+    if !terminal::no_animation() {
+        pb.enable_steady_tick(std::time::Duration::from_millis(120));
+    }
     pb
 }
 
@@ -275,12 +521,8 @@ pub fn finish_ok(pb: &ProgressBar, message: &str, theme: crate::theme::Theme) {
 
 pub fn reveal_grade(label: &str, grade_str: &str, grade_plain: &str, nc: bool) {
     if nc {
-        std::thread::sleep(Duration::from_millis(300));
         eprintln!("  {label} → {grade_plain}");
     } else {
-        let spinner = create_spinner(&format!("Computing {label}..."));
-        std::thread::sleep(Duration::from_millis(400));
-        spinner.finish_and_clear();
         eprintln!("  {label} → {grade_str}");
     }
 }
@@ -295,10 +537,8 @@ pub fn reveal_scan_complete(
     if terminal::no_animation() {
         eprintln!("  ◉ Scanned {sample_count} samples  {grade_plain}");
     } else if nc {
-        std::thread::sleep(Duration::from_millis(100));
         eprintln!("  ◉ Scanned {sample_count} samples  Grade: {grade_plain}");
     } else {
-        std::thread::sleep(Duration::from_millis(100));
         eprintln!(
             "  {}  Scanned {} samples  {}",
             Colors::good("◉", theme),
@@ -309,10 +549,7 @@ pub fn reveal_scan_complete(
 }
 
 pub fn reveal_pause() {
-    if terminal::no_animation() {
-        return;
-    }
-    std::thread::sleep(Duration::from_millis(40));
+    // Kept for compatibility with callers; result presentation never blocks.
 }
 
 #[cfg(test)]
@@ -377,11 +614,25 @@ mod tests {
             sp.update(50.0 + i as f64 * 2.0, i as f64 / 20.0, 1024 * 1024);
         }
         let samples = sp.speed_samples.lock().unwrap();
-        assert_eq!(samples.len(), 20);
+        assert!((1..=20).contains(&samples.len()));
         let sparkline = render_sparkline(&samples);
-        assert!(!sparkline.is_empty());
-        assert_eq!(sparkline.chars().count(), SPARKLINE_LEN);
+        if samples.len() >= 2 {
+            assert_eq!(sparkline.chars().count(), SPARKLINE_LEN);
+        } else {
+            assert!(sparkline.is_empty());
+        }
         sp.bar.finish_and_clear();
+    }
+
+    #[test]
+    fn rapid_updates_are_coalesced_for_display_work() {
+        let tracker = Tracker::with_target("Download", ProgressDrawTarget::hidden());
+        for i in 1..=100 {
+            tracker.update(i as f64, i as f64 / 100.0, i);
+        }
+        let samples = tracker.speed_samples.lock().unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(tracker.bar.position(), 1);
     }
 
     #[test]
@@ -447,28 +698,37 @@ mod tests {
     }
 
     #[test]
-    fn test_speed_color_good() {
-        let colored = speed_color(150.0, crate::theme::Theme::Dark);
-        assert!(colored.contains("150.0"));
-    }
-
-    #[test]
-    fn test_speed_color_warn() {
-        let colored = speed_color(10.0, crate::theme::Theme::Dark);
-        assert!(colored.contains("10.0"));
-    }
-
-    #[test]
-    fn test_speed_color_bad() {
-        let colored = speed_color(2.0, crate::theme::Theme::Dark);
-        assert!(colored.contains("2.0"));
+    fn progress_rate_respects_byte_display() {
+        assert_eq!(format_progress_rate(100.0, true), "12.5 MB/s");
+        assert_eq!(format_progress_rate(100.0, false), "100.0 Mb/s");
     }
 
     #[test]
     fn test_adaptive_bar_width() {
-        let w = adaptive_bar_width();
-        assert!(w >= MIN_BAR_WIDTH);
-        assert!(w <= 50);
+        assert_eq!(bar_width_for_terminal(40), 0);
+        assert_eq!(bar_width_for_terminal(60), 21);
+        assert_eq!(bar_width_for_terminal(80), 40);
+        assert_eq!(bar_width_for_terminal(120), 48);
+    }
+
+    #[test]
+    fn bar_width_tracks_terminal_size() {
+        assert_eq!(
+            ProgressLayout::from_terminal_width(40),
+            ProgressLayout::Minimal
+        );
+        assert_eq!(
+            ProgressLayout::from_terminal_width(60),
+            ProgressLayout::Compact
+        );
+        assert_eq!(
+            ProgressLayout::from_terminal_width(99),
+            ProgressLayout::Compact
+        );
+        assert_eq!(
+            ProgressLayout::from_terminal_width(100),
+            ProgressLayout::Standard
+        );
     }
 
     #[test]

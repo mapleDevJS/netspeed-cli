@@ -85,6 +85,8 @@ pub enum OutputFormat {
         elapsed: std::time::Duration,
         profile: UserProfile,
         theme: Theme,
+        bytes: bool,
+        skipped: SkipState,
     },
 }
 
@@ -134,20 +136,40 @@ impl OutputFormat {
                 minimal,
                 theme,
             } => {
-                format_detailed(
-                    result,
-                    bytes,
-                    *dl_bytes,
-                    *ul_bytes,
-                    *dl_duration,
-                    *ul_duration,
-                    *skipped,
-                    *elapsed,
-                    *profile,
-                    *minimal,
-                    *theme,
-                )?;
-                format_verbose_sections(result, *profile, *minimal, *theme);
+                if *minimal {
+                    format_detailed(
+                        result,
+                        bytes,
+                        *dl_bytes,
+                        *ul_bytes,
+                        *dl_duration,
+                        *ul_duration,
+                        *skipped,
+                        *elapsed,
+                        *profile,
+                        true,
+                        *theme,
+                    )?;
+                } else {
+                    dashboard::show(
+                        result,
+                        &dashboard::Summary {
+                            dl_mbps: result.download.unwrap_or(f64::NAN) / 1_000_000.0,
+                            dl_peak_mbps: result.download_peak.unwrap_or(f64::NAN) / 1_000_000.0,
+                            dl_bytes: *dl_bytes,
+                            dl_duration: *dl_duration,
+                            ul_mbps: result.upload.unwrap_or(f64::NAN) / 1_000_000.0,
+                            ul_peak_mbps: result.upload_peak.unwrap_or(f64::NAN) / 1_000_000.0,
+                            ul_bytes: *ul_bytes,
+                            ul_duration: *ul_duration,
+                            elapsed: *elapsed,
+                            profile: *profile,
+                            theme: *theme,
+                            bytes,
+                            skipped: *skipped,
+                        },
+                    )?;
+                }
                 Ok(())
             }
             OutputFormat::Dashboard {
@@ -162,6 +184,8 @@ impl OutputFormat {
                 elapsed,
                 profile,
                 theme,
+                bytes,
+                skipped,
             } => {
                 dashboard::show(
                     result,
@@ -177,6 +201,8 @@ impl OutputFormat {
                         elapsed: *elapsed,
                         profile: *profile,
                         theme: *theme,
+                        bytes: *bytes,
+                        skipped: *skipped,
                     },
                 )?;
                 Ok(())
@@ -313,9 +339,28 @@ pub fn format_simple(result: &TestResult, bytes: bool, theme: Theme) -> Result<(
 ///
 /// This function does not currently return errors, but the signature is
 /// `Result` for future extensibility.
-pub fn format_minimal(result: &TestResult, _bytes: bool, theme: Theme) -> Result<(), Error> {
+pub fn format_minimal(result: &TestResult, bytes: bool, theme: Theme) -> Result<(), Error> {
+    format_minimal_for_profile(result, bytes, UserProfile::default(), theme)
+}
+
+pub(crate) fn format_minimal_for_profile(
+    result: &TestResult,
+    bytes: bool,
+    profile: UserProfile,
+    theme: Theme,
+) -> Result<(), Error> {
+    eprintln!("{}", build_minimal_line(result, bytes, profile, theme));
+    Ok(())
+}
+
+fn build_minimal_line(
+    result: &TestResult,
+    bytes: bool,
+    profile: UserProfile,
+    theme: Theme,
+) -> String {
+    let divider = if bytes { 8_000_000.0 } else { 1_000_000.0 };
     let nc = terminal::no_color();
-    let profile = UserProfile::default();
 
     let overall_grade = grades::grade_overall(
         result.ping,
@@ -333,7 +378,7 @@ pub fn format_minimal(result: &TestResult, _bytes: bool, theme: Theme) -> Result
     let dl_str = result.download.map_or_else(
         || "—↓".to_string(),
         |d| {
-            let mbps = d / 1_000_000.0;
+            let mbps = d / divider;
             format!("{mbps:.1}↓")
         },
     );
@@ -341,7 +386,7 @@ pub fn format_minimal(result: &TestResult, _bytes: bool, theme: Theme) -> Result
     let ul_str = result.upload.map_or_else(
         || "—↑".to_string(),
         |u| {
-            let mbps = u / 1_000_000.0;
+            let mbps = u / divider;
             format!("{mbps:.1}↑")
         },
     );
@@ -350,8 +395,7 @@ pub fn format_minimal(result: &TestResult, _bytes: bool, theme: Theme) -> Result
         .ping
         .map_or_else(|| "—ms".to_string(), |p| format!("{p:.0}ms"));
 
-    eprintln!("{grade_str}  {dl_str}  {ul_str}  {lat_str}");
-    Ok(())
+    format!("{grade_str}  {dl_str}  {ul_str}  {lat_str}")
 }
 
 /// JSONL mode — one JSON object per line, ideal for logging/parsing.
@@ -360,8 +404,7 @@ pub fn format_minimal(result: &TestResult, _bytes: bool, theme: Theme) -> Result
 ///
 /// Returns [`Error::ParseJson`] if serialization fails.
 pub fn format_jsonl(result: &TestResult) -> Result<(), Error> {
-    println!("{}", serde_json::to_string(result)?);
-    Ok(())
+    write_json(result, false, std::io::stdout().lock())
 }
 
 /// Compact mode — key metrics with ratings and brief summary.
@@ -404,14 +447,17 @@ pub fn format_compact(
     eprintln!();
 
     if let Some(ip) = &result.client_ip {
+        let ip = terminal::sanitize_display_text(ip, 40);
         if nc {
-            eprintln!("  Server: {} · {}", result.server.sponsor, ip);
+            let sponsor = terminal::sanitize_display_text(&result.server.sponsor, 40);
+            eprintln!("  Server: {} · {}", sponsor, ip);
         } else {
+            let sponsor = terminal::sanitize_display_text(&result.server.sponsor, 40);
             eprintln!(
                 "  {} {} · {}",
                 "Server:".dimmed(),
-                Colors::bold(&result.server.sponsor, theme),
-                Colors::muted(ip, theme),
+                Colors::bold(&sponsor, theme),
+                Colors::muted(&ip, theme),
             );
         }
         eprintln!();
@@ -450,6 +496,119 @@ pub fn format_compact(
         );
     }
     sections::format_footer(&result.timestamp, nc, theme);
+    print_interpretation(result, profile, nc, theme);
+}
+
+pub(crate) fn profile_interpretation(result: &TestResult, profile: UserProfile) -> Option<String> {
+    let valid = |value: Option<f64>| value.filter(|v| v.is_finite() && *v >= 0.0);
+    let ping = valid(result.ping);
+    let jitter = valid(result.jitter);
+    let download = valid(result.download);
+    let upload = valid(result.upload);
+    if matches!(profile, UserProfile::Streamer) && download.is_none() && upload.is_none() {
+        return None;
+    }
+    if ping.is_none() && jitter.is_none() && download.is_none() && upload.is_none() {
+        return None;
+    }
+    let mut observations = Vec::new();
+    let mut add = |value: Option<f64>,
+                   grade: fn(f64, UserProfile) -> grades::LetterGrade,
+                   label: &str,
+                   priority: usize| {
+        if let Some(value) = value {
+            let grade = grade(value, profile);
+            observations.push((
+                grade.score(),
+                priority,
+                format!("{label} is rated {}", grade.description()),
+            ));
+        }
+    };
+    let priorities = match profile {
+        UserProfile::Gamer => [0, 1, 6, 5],
+        UserProfile::Streamer => [5, 4, 0, 1],
+        UserProfile::RemoteWorker => [0, 1, 6, 2],
+        UserProfile::PowerUser | UserProfile::Casual => [2, 3, 0, 1],
+    };
+    add(ping, grades::grade_ping, "latency", priorities[0]);
+    add(jitter, grades::grade_jitter, "jitter", priorities[1]);
+    add(
+        download.map(|bps| bps / 1_000_000.0),
+        grades::grade_download,
+        "download capacity",
+        priorities[2],
+    );
+    add(
+        upload.map(|bps| bps / 1_000_000.0),
+        grades::grade_upload,
+        "upload capacity",
+        priorities[3],
+    );
+    for (label, load, cv) in [
+        (
+            "download",
+            valid(result.latency_download),
+            valid(result.download_cv),
+        ),
+        (
+            "upload",
+            valid(result.latency_upload),
+            valid(result.upload_cv),
+        ),
+    ] {
+        if let (Some(load), Some(idle)) = (load, ping) {
+            let grade = grades::grade_bufferbloat((load - idle).max(0.0));
+            observations.push((
+                grade.score(),
+                2,
+                format!(
+                    "{label} latency under load is rated {}",
+                    grade.description()
+                ),
+            ));
+        }
+        if let Some(cv) = cv {
+            let grade = grades::grade_stability(cv * 100.0);
+            observations.push((
+                grade.score(),
+                3,
+                format!("{label} consistency is rated {}", grade.description()),
+            ));
+        }
+    }
+    observations.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+    let audience = match profile {
+        UserProfile::Gamer => "Gaming profile",
+        UserProfile::Streamer => "Streaming profile",
+        UserProfile::RemoteWorker => "Remote-work profile",
+        UserProfile::PowerUser => "Power-user profile",
+        UserProfile::Casual => "Connection summary",
+    };
+    if let Some(loss) = valid(result.packet_loss).filter(|loss| *loss > 0.0 && *loss <= 100.0) {
+        return Some(format!(
+            "{audience}: the test observed {loss:.1}% packet loss. {}.",
+            observations.first()?.2
+        ));
+    }
+    let weakest = observations.first()?;
+    let strongest = observations.last()?;
+    if strongest.0 > weakest.0 && strongest.2 != weakest.2 {
+        Some(format!("{audience}: {}. {}.", weakest.2, strongest.2))
+    } else {
+        Some(format!("{audience}: {}.", weakest.2))
+    }
+}
+
+fn print_interpretation(result: &TestResult, profile: UserProfile, nc: bool, theme: Theme) {
+    if let Some(text) = profile_interpretation(result, profile) {
+        let title = if nc {
+            "Interpretation".to_string()
+        } else {
+            Colors::header("Interpretation", theme)
+        };
+        eprintln!("\n  {title}: {text}");
+    }
 }
 
 /// Detailed mode — clean key/value pairs.
@@ -472,6 +631,26 @@ pub fn format_detailed(
     minimal: bool,
     theme: Theme,
 ) -> Result<(), Error> {
+    if minimal {
+        return dashboard::show_ascii(
+            result,
+            &dashboard::Summary {
+                dl_mbps: result.download.unwrap_or(f64::NAN) / 1_000_000.0,
+                dl_peak_mbps: result.download_peak.unwrap_or(f64::NAN) / 1_000_000.0,
+                dl_bytes,
+                dl_duration,
+                ul_mbps: result.upload.unwrap_or(f64::NAN) / 1_000_000.0,
+                ul_peak_mbps: result.upload_peak.unwrap_or(f64::NAN) / 1_000_000.0,
+                ul_bytes,
+                ul_duration,
+                elapsed,
+                profile,
+                theme: Theme::Monochrome,
+                bytes,
+                skipped,
+            },
+        );
+    }
     let nc = terminal::no_color() || minimal;
     let overall_grade = grades::grade_overall(
         result.ping,
@@ -523,12 +702,20 @@ pub fn format_json(result: &TestResult) -> Result<(), Error> {
         use std::io::IsTerminal;
         std::io::stdout().is_terminal()
     };
-    let output = if is_tty {
+    write_json(result, is_tty, std::io::stdout().lock())
+}
+
+fn write_json(
+    result: &TestResult,
+    pretty: bool,
+    mut writer: impl std::io::Write,
+) -> Result<(), Error> {
+    let output = if pretty {
         serde_json::to_string_pretty(result)?
     } else {
         serde_json::to_string(result)?
     };
-    println!("{output}");
+    writeln!(writer, "{output}")?;
     Ok(())
 }
 
@@ -538,10 +725,18 @@ pub fn format_json(result: &TestResult) -> Result<(), Error> {
 ///
 /// Returns [`Error::Csv`] if CSV serialization fails.
 pub fn format_csv(result: &TestResult, delimiter: char, print_header: bool) -> Result<(), Error> {
-    let stdout = std::io::stdout();
+    write_csv(result, delimiter, print_header, std::io::stdout().lock())
+}
+
+fn write_csv(
+    result: &TestResult,
+    delimiter: char,
+    print_header: bool,
+    writer: impl std::io::Write,
+) -> Result<(), Error> {
     let mut wtr = csv::WriterBuilder::new()
         .delimiter(delimiter as u8)
-        .from_writer(stdout);
+        .from_writer(writer);
     if print_header {
         wtr.write_record([
             "Server ID",
@@ -712,6 +907,8 @@ impl FormatterFactory {
                 elapsed: std::time::Duration::ZERO,
                 profile: crate::profiles::UserProfile::default(),
                 theme,
+                bytes: false,
+                skipped: SkipState::default(),
             }),
             None => Box::new(OutputFormat::Simple { theme }),
         }
@@ -763,6 +960,68 @@ mod tests {
                 download: PhaseResult::completed(),
                 upload: PhaseResult::completed(),
             },
+        }
+    }
+
+    #[test]
+    fn minimal_output_converts_both_rates_when_bytes_are_requested() {
+        let fixture = make_test_result();
+        let bits = build_minimal_line(&fixture, false, UserProfile::PowerUser, Theme::Monochrome);
+        let bytes = build_minimal_line(&fixture, true, UserProfile::PowerUser, Theme::Monochrome);
+        assert!(bits.contains("100.0↓") && bits.contains("50.0↑"));
+        assert!(bytes.contains("12.5↓") && bytes.contains("6.2↑"));
+    }
+
+    #[test]
+    fn machine_json_and_jsonl_preserve_the_complete_fixture_contract() {
+        let result = make_test_result();
+        let expected = serde_json::json!({
+            "status": "ok", "version": env!("CARGO_PKG_VERSION"),
+            "server": {"id":"1", "name":"Test", "sponsor":"Test ISP", "country":"US", "distance":10.0},
+            "ping":15.0, "jitter":1.5, "packet_loss":0.0,
+            "download":100000000.0, "download_peak":120000000.0,
+            "upload":50000000.0, "upload_peak":60000000.0,
+            "download_cv":0.05, "upload_cv":0.04,
+            "download_ci_95":[140.0,160.0], "upload_ci_95":[45.0,55.0],
+            "latency_download":20.0, "latency_upload":18.0,
+            "download_samples":[95000000.0,100000000.0,105000000.0],
+            "upload_samples":[48000000.0,50000000.0,52000000.0],
+            "ping_samples":[12.0,15.0,18.0], "timestamp":"2026-01-01T00:00:00Z",
+            "client_ip":"192.168.1.100", "overall_grade":null, "download_grade":null,
+            "upload_grade":null, "connection_rating":null,
+            "phases":{"ping":{"state":"completed"},"download":{"state":"completed"},"upload":{"state":"completed"}}
+        });
+        for pretty in [false, true] {
+            let mut output = Vec::new();
+            write_json(&result, pretty, &mut output).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&output).unwrap(),
+                expected
+            );
+            assert!(!output.contains(&0x1b));
+            assert_eq!(output.last(), Some(&b'\n'));
+            if !pretty {
+                assert_eq!(output.iter().filter(|byte| **byte == b'\n').count(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn csv_fixture_preserves_fields_units_and_legacy_header_behavior() {
+        let result = make_test_result();
+        let header = "server_id,sponsor,server_name,timestamp,distance,ping,jitter,packet_loss,download,download_peak,upload,upload_peak,ip_address\n";
+        let row = "1,Test ISP,Test,2026-01-01T00:00:00Z,10.0,15.0,1.5,0.0,100000000.0,120000000.0,50000000.0,60000000.0,192.168.1.100\n";
+        for explicit_header in [false, true] {
+            let mut output = Vec::new();
+            write_csv(&result, ',', explicit_header, &mut output).unwrap();
+            let expected = if explicit_header {
+                format!(
+                    "Server ID,Sponsor,Server Name,Timestamp,Distance,Ping,Jitter,Packet Loss,Download,Download Peak,Upload,Upload Peak,IP Address\n{header}{row}"
+                )
+            } else {
+                format!("{header}{row}")
+            };
+            assert_eq!(String::from_utf8(output).unwrap(), expected);
         }
     }
 
@@ -1138,6 +1397,8 @@ mod tests {
             elapsed: std::time::Duration::from_secs(5),
             profile: UserProfile::default(),
             theme: Theme::Dark,
+            bytes: false,
+            skipped: SkipState::default(),
         };
         let result = make_test_result();
         assert!(fmt.format(&result, false).is_ok());
@@ -1228,5 +1489,61 @@ mod tests {
     #[test]
     fn test_format_data_gb() {
         assert_eq!(crate::common::format_data_size(1_073_741_824), "1.00 GB");
+    }
+
+    #[test]
+    fn profile_interpretations_use_profile_relevant_measured_values() {
+        let result = make_test_result();
+        for (profile, expected) in [
+            (UserProfile::Gamer, "Gaming profile"),
+            (UserProfile::Streamer, "Streaming profile"),
+            (UserProfile::RemoteWorker, "Remote-work profile"),
+            (UserProfile::PowerUser, "Power-user profile"),
+            (UserProfile::Casual, "Connection summary"),
+        ] {
+            let interpretation = profile_interpretation(&result, profile).unwrap();
+            assert!(interpretation.contains(expected));
+            assert!(interpretation.len() < 240);
+        }
+    }
+
+    #[test]
+    fn profile_interpretation_handles_partial_and_invalid_results() {
+        let mut result = make_test_result();
+        result.ping = Some(18.0);
+        result.jitter = None;
+        result.download = None;
+        result.upload = None;
+        let gaming = profile_interpretation(&result, UserProfile::Gamer).unwrap();
+        assert!(gaming.contains("latency"));
+        assert!(!gaming.contains("jitter"));
+        assert!(profile_interpretation(&result, UserProfile::Streamer).is_none());
+
+        result.ping = Some(f64::NAN);
+        assert!(profile_interpretation(&result, UserProfile::PowerUser).is_none());
+    }
+
+    #[test]
+    fn interpretations_prioritize_observed_loss_and_degraded_load_for_every_profile() {
+        let mut result = make_test_result();
+        result.packet_loss = Some(4.0);
+        result.latency_upload = Some(900.0);
+        result.upload_cv = Some(0.8);
+        let original = serde_json::to_value(&result).unwrap();
+        for profile in [
+            UserProfile::Gamer,
+            UserProfile::Streamer,
+            UserProfile::RemoteWorker,
+            UserProfile::PowerUser,
+            UserProfile::Casual,
+        ] {
+            let text = profile_interpretation(&result, profile).unwrap();
+            assert!(text.contains("4.0% packet loss"));
+            assert_eq!(text, profile_interpretation(&result, profile).unwrap());
+            assert_eq!(original, serde_json::to_value(&result).unwrap());
+        }
+        result.packet_loss = Some(0.0);
+        let text = profile_interpretation(&result, UserProfile::RemoteWorker).unwrap();
+        assert!(text.contains("latency under load") || text.contains("consistency"));
     }
 }

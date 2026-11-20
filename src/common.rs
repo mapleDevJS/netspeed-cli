@@ -12,7 +12,7 @@ use std::io::IsTerminal;
 
 /// Get the terminal width in columns, or a sensible default.
 ///
-/// Returns `None` if stdout is not a terminal (piped output).
+/// Returns `None` if stderr is not a terminal (human output uses stderr).
 /// Returns the width in character columns when available.
 /// Falls back to 100 columns if width cannot be determined.
 ///
@@ -26,10 +26,13 @@ use std::io::IsTerminal;
 /// ```
 #[must_use]
 pub fn get_terminal_width() -> Option<u16> {
-    if !std::io::stdout().is_terminal() {
+    // Human-readable reports and progress render to stderr. Measuring stdout
+    // gives the wrong width when stdout is piped but stderr remains a TTY.
+    if !std::io::stderr().is_terminal() {
         return None;
     }
-    terminal_size::terminal_size().map(|(w, _)| w.0)
+    #[allow(deprecated)]
+    terminal_size::terminal_size_of(std::io::stderr()).map(|(w, _)| w.0)
 }
 
 /// Get the terminal width with a minimum and maximum bound.

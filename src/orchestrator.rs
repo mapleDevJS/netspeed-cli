@@ -24,6 +24,7 @@ pub(crate) struct EarlyExitFlags {
     pub(crate) generate_completion: Option<crate::cli::ShellType>,
     pub(crate) history: bool,
     pub(crate) dry_run: bool,
+    pub(crate) no_live_ui: bool,
 }
 
 impl EarlyExitFlags {
@@ -33,6 +34,7 @@ impl EarlyExitFlags {
             generate_completion: args.generate_completion,
             history: args.history,
             dry_run: args.dry_run,
+            no_live_ui: args.no_live_ui,
         }
     }
 }
@@ -285,6 +287,26 @@ impl Orchestrator {
             && !format_non_verbose
     }
 
+    /// Whether terminal progress can be rendered safely on stderr.
+    #[must_use]
+    pub fn is_progress_enabled(&self) -> bool {
+        use std::io::IsTerminal;
+        let machine_format = self.cfg().format().map_or_else(
+            || self.cfg().json() || self.cfg().csv(),
+            crate::config::Format::is_machine_readable,
+        );
+        !self.library_api
+            && !self.cfg().quiet()
+            && !self.cfg().minimal()
+            && !self.early_exit.no_live_ui
+            && !crate::terminal::no_animation()
+            && std::env::var_os("CI").is_none()
+            && !machine_format
+            && self.cfg().format() != Some(crate::config::Format::Minimal)
+            && !self.cfg().list()
+            && crate::terminal::supports_live_updates(std::io::stderr().is_terminal())
+    }
+
     /// Check if this is a simple/quiet mode.
     #[must_use]
     pub fn is_simple_mode(&self) -> bool {
@@ -342,41 +364,23 @@ impl Orchestrator {
             elapsed,
         );
 
-        if self.is_verbose() {
-            self.reveal_results(result, self.cfg().theme(), profile);
-        }
-
         if !self.library_api {
-            output_format.format(result, self.cfg().bytes())?;
+            let format = self.cfg().format();
+            if !format.is_some_and(crate::config::Format::is_machine_readable) {
+                eprintln!("Profile: {}", profile.name());
+            }
+            if format == Some(crate::config::Format::Minimal) {
+                crate::formatter::format_minimal_for_profile(
+                    result,
+                    self.cfg().bytes(),
+                    profile,
+                    self.cfg().theme(),
+                )?;
+            } else {
+                output_format.format(result, self.cfg().bytes())?;
+            }
         }
         Ok(())
-    }
-
-    /// Show the scan completion reveal before outputting detailed results.
-    fn reveal_results(
-        &self,
-        result: &TestResult,
-        theme: crate::theme::Theme,
-        profile: UserProfile,
-    ) {
-        let nc = terminal::no_color();
-
-        let sample_count = result.download_samples.as_ref().map_or(0, Vec::len)
-            + result.upload_samples.as_ref().map_or(0, Vec::len)
-            + result.ping_samples.as_ref().map_or(0, Vec::len);
-
-        let overall_grade = crate::grades::grade_overall(
-            result.ping,
-            result.jitter,
-            result.download,
-            result.upload,
-            profile,
-        );
-
-        let grade_badge = overall_grade.color_str(nc, theme);
-        let grade_plain = overall_grade.as_str().to_string();
-        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc, theme);
-        crate::progress::reveal_pause();
     }
 
     fn print_kv(nc: bool, key: &str, value: &str) {
@@ -540,6 +544,7 @@ mod tests {
             generate_completion: None,
             history: false,
             dry_run: false,
+            no_live_ui: false,
         }
     }
 
@@ -569,6 +574,35 @@ mod tests {
         };
         let orch = orch_from_source(&source, default_early_exit());
         assert!(!orch.is_verbose());
+    }
+
+    #[test]
+    fn live_progress_respects_explicit_disable_and_machine_formats() {
+        let config = Config::from_source(&ConfigSource::default());
+        let mut flags = default_early_exit();
+        flags.no_live_ui = true;
+        let orch = Orchestrator::from_config(config, flags).unwrap();
+        assert!(!orch.is_progress_enabled());
+
+        let source = ConfigSource {
+            output: OutputSource {
+                format: Some(crate::config::Format::Json),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(!orch.is_progress_enabled());
+
+        let source = ConfigSource {
+            output: OutputSource {
+                minimal: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(!orch.is_progress_enabled());
     }
 
     #[test]

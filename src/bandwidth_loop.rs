@@ -12,9 +12,7 @@
 use crate::common;
 use crate::error::Error;
 use crate::progress::Tracker;
-use crate::terminal;
 use crate::test_config::TestConfig;
-use owo_colors::OwoColorize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -103,8 +101,11 @@ impl LoopState {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(speed);
+        drop(cursor);
         let pct = (total as f64 / self.estimated_total.max(1) as f64).min(1.0);
-        self.progress.update(speed / 1_000_000.0, pct, total);
+        // Keep progress rendering out of the sampling critical path. The
+        // presentation worker coalesces these values at its own frame rate.
+        self.progress.publish(speed / 1_000_000.0, pct, total);
     }
 
     /// Compute final results from accumulated state.
@@ -215,22 +216,14 @@ pub async fn run_concurrent_streams(
             Ok(Ok(())) => any_succeeded = true,
             Ok(Err(err)) => {
                 let msg = format!("Warning: {label} stream {i} failed: {err}");
-                if terminal::no_color() {
-                    eprintln!("\n{msg}");
-                } else {
-                    eprintln!("\n{}", msg.yellow().bold());
-                }
+                state.progress.warning(&msg);
                 if first_error.is_none() {
                     first_error = Some(err);
                 }
             }
             Err(e) => {
                 let msg = format!("Warning: {label} stream {i} failed: {e}");
-                if terminal::no_color() {
-                    eprintln!("\n{msg}");
-                } else {
-                    eprintln!("\n{}", msg.yellow().bold());
-                }
+                state.progress.warning(&msg);
                 if first_error.is_none() {
                     first_error = Some(Error::context(format!("{label} stream {i} panicked: {e}")));
                 }
@@ -266,6 +259,33 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn presentation_publication_preserves_deterministic_measurement_samples() {
+        let hidden = LoopState::new(1000, Arc::new(Tracker::hidden("Download")));
+        let live = LoopState::new(
+            1000,
+            Arc::new(Tracker::for_live("Download", crate::live::Handle::new())),
+        );
+        for (index, bytes) in [100, 200, 0, 0, 300].into_iter().enumerate() {
+            for state in [&hidden, &live] {
+                state.total_bytes.fetch_add(bytes, Ordering::Release);
+                state.sample_at(Duration::from_millis((index as u64 + 1) * 100), true);
+            }
+        }
+        assert_eq!(
+            *hidden.speed_samples.lock().unwrap(),
+            *live.speed_samples.lock().unwrap()
+        );
+        assert_eq!(
+            hidden.peak_bps.load(Ordering::Acquire),
+            live.peak_bps.load(Ordering::Acquire)
+        );
+        assert_eq!(
+            hidden.total_bytes.load(Ordering::Acquire),
+            live.total_bytes.load(Ordering::Acquire)
+        );
+    }
 
     #[test]
     fn finish_does_not_turn_a_short_tail_into_a_peak_sample() {

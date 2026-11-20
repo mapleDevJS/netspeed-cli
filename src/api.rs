@@ -58,8 +58,10 @@ pub async fn run_speed_test(options: TestOptions) -> Result<TestResult, Error> {
     if !(1..=300).contains(&options.timeout_secs) {
         return Err(Error::context("timeout_secs must be between 1 and 300"));
     }
-    if let Some(source_ip) = options.source_ip.as_deref()
-        && source_ip.parse::<std::net::IpAddr>().is_err()
+    if options
+        .source_ip
+        .as_deref()
+        .is_some_and(|source_ip| source_ip.parse::<std::net::IpAddr>().is_err())
     {
         return Err(Error::context(
             "source_ip must be a valid IPv4 or IPv6 address",
