@@ -4,20 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.11.0] - 2026-11-20
 
-## [Unreleased]
-
-### Added
+### 🚀 Features
 
 - Automatic inline live dashboard with responsive layouts, real throughput samples, and an explicit `--no-live-ui` override.
 - Persistent final report with measured connection diagnostics and deterministic profile-aware interpretations.
 - Supported Rust API for configured, result-returning speed tests.
 
-### Fixed
+### 🐛 Bug Fixes
 
 - Byte-mode formatting, skipped and unavailable measurement presentation, and narrow-terminal header alignment.
 - Unicode display width, terminal metadata sanitization, and renderer cleanup on interruption and failure.
 - Clarified the existing TLS domain restriction option without changing its behavior.
+- *(homebrew)* Update canonical tap formula path (#85)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Update Homebrew formula for v0.10.4 (#84)
 
 ## [0.10.4] - 2026-11-19
 
@@ -37,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(deps)* Bump the github-actions group with 2 updates (#71)
 - *(deps)* Bump Swatinem/rust-cache (#74)
 - *(release)* Promote develop to main (#82)
+- *(release)* Bump to v0.10.4 (#83)
 ## [0.10.3] - 2026-04-30
 
 ### ⚙️ Miscellaneous Tasks
