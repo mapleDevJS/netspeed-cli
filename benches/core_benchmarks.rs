@@ -143,6 +143,79 @@ mod formatting {
     }
 }
 
+mod progress_updates {
+    use super::*;
+    use indicatif::ProgressDrawTarget;
+    use netspeed_cli::progress::Tracker;
+    use std::time::Duration;
+
+    const CALLBACKS_PER_BATCH: usize = 1_000;
+
+    pub fn bench_progress_update_cost(c: &mut Criterion) {
+        let mut group = c.benchmark_group("progress/update");
+        group.sample_size(20);
+        group.warm_up_time(Duration::from_secs(1));
+        group.measurement_time(Duration::from_secs(2));
+
+        group.bench_function("disabled/1000_callbacks", |b| {
+            b.iter_batched_ref(
+                || Tracker::hidden("Download"),
+                |tracker| {
+                    for index in 0..CALLBACKS_PER_BATCH {
+                        tracker.update(
+                            std::hint::black_box(100.0 + index as f64),
+                            std::hint::black_box(index as f64 / CALLBACKS_PER_BATCH as f64),
+                            std::hint::black_box(index as u64 * 1024),
+                        );
+                    }
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        group.bench_function("publish/1000_callbacks", |b| {
+            b.iter_batched_ref(
+                || Tracker::hidden("Download"),
+                |tracker| {
+                    for index in 0..CALLBACKS_PER_BATCH {
+                        tracker.publish(
+                            std::hint::black_box(100.0 + index as f64),
+                            std::hint::black_box(index as f64 / CALLBACKS_PER_BATCH as f64),
+                            std::hint::black_box(index as u64 * 1024),
+                        );
+                    }
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        group.bench_function("coalesced/1000_callbacks", |b| {
+            b.iter_batched_ref(
+                || {
+                    Tracker::with_display(
+                        "Download",
+                        ProgressDrawTarget::hidden(),
+                        netspeed_cli::theme::Theme::Dark,
+                        false,
+                    )
+                },
+                |tracker| {
+                    for index in 0..CALLBACKS_PER_BATCH {
+                        tracker.update(
+                            std::hint::black_box(100.0 + index as f64),
+                            std::hint::black_box(index as f64 / CALLBACKS_PER_BATCH as f64),
+                            std::hint::black_box(index as u64 * 1024),
+                        );
+                    }
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        group.finish();
+    }
+}
+
 mod validation {
     use super::*;
 
@@ -218,6 +291,7 @@ criterion_group!(
     distance::bench_calculate_distance,
     formatting::bench_format_distance,
     formatting::bench_format_data_size,
+    progress_updates::bench_progress_update_cost,
     validation::bench_is_valid_ipv4,
     url_construction::bench_build_test_url,
     url_construction::bench_build_upload_url,

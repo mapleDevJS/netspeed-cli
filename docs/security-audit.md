@@ -48,7 +48,7 @@ This document provides a comprehensive security audit framework for netspeed-cli
 |---------|---------------|--------|
 | TLS 1.3 support | `rustls` v0.23 | ✅ Implemented |
 | TLS 1.2 support | `rustls` v0.23 | ✅ Implemented |
-| Domain-restricted TLS | `PinningVerifier` wrapper around rustls webpki validation | ✅ Implemented |
+| Domain-restricted TLS | `DomainRestrictedVerifier` wrapper around rustls webpki validation | ✅ Implemented |
 | Custom CA support | `--ca-cert` flag | ✅ Implemented |
 | Root CA trust store | `webpki-roots` | ✅ Implemented |
 
@@ -132,14 +132,15 @@ cargo test --test e2e_test -- --ignored --nocapture
 
 ## Known Security Considerations
 
-### Domain-restricted TLS (`--pin-certs`)
+### Domain-restricted TLS (`--restrict-tls-domains`; legacy alias `--pin-certs`)
 
-The `--pin-certs` option is intentionally implemented as domain-restricted TLS rather than raw certificate-hash pinning. This means:
+The option implements domain-restricted TLS, not certificate or public-key pinning. This means:
 
-- ✅ Only connections to `*.speedtest.net` and `*.ookla.com` are allowed
+- ✅ Only TLS connections to `speedtest.net`/`*.speedtest.net` and `ookla.com`/`*.ookla.com` are allowed
 - ✅ The normal rustls/webpki certificate chain, validity, and hostname checks still run
 - ✅ The custom verifier delegates TLS signature verification to rustls
 - ⚠️ It does not pin SPKI/certificate hashes because speedtest.net server certificates are operationally rotated
+- ⚠️ It only restricts TLS connections; plain HTTP endpoints are not restricted by this option
 
 If stable SPKI pins become available, add them only after normal webpki verification succeeds.
 
@@ -152,10 +153,10 @@ The current implementation does not check certificate revocation lists (CRL) or 
 
 ### History File Contains IP Addresses
 
-Test results include the client's IP address. While this data stays local, users should be aware:
+History stores the client's IP address and approximate location. Users should be aware:
 - History files are created with `0o600` permissions on Unix
-- The data is not transmitted to any server other than speedtest.net
-- Users can disable history saving by using `--json` or `--csv` output
+- Discovery requests go to speedtest.net; measurement traffic goes to the selected speedtest servers, which may be operated by third parties
+- Users can disable history saving by using JSON, JSONL, or CSV output; the library API does not persist history
 
 ## Vulnerability Disclosure
 
@@ -193,7 +194,7 @@ tls_version = "1.3"  # Require TLS 1.3 (or use 1.2)
 
 ```bash
 # Add speedtest.net/ookla.com domain restriction on top of normal TLS validation
-netspeed-cli --pin-certs
+netspeed-cli --restrict-tls-domains
 
 # Use custom CA certificate
 netspeed-cli --ca-cert /path/to/ca.pem

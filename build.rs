@@ -33,8 +33,15 @@ fn main() -> std::io::Result<()> {
     let man = clap_mangen::Man::new(cmd);
     let mut buffer: Vec<u8> = Vec::new();
     man.render(&mut buffer)?;
+    let rendered = String::from_utf8(buffer)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    let normalized = rendered
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    fs::write(man_dir.join("netspeed-cli.1"), buffer)?;
+    fs::write(man_dir.join("netspeed-cli.1"), format!("{normalized}\n"))?;
 
     println!("cargo:rerun-if-changed=src/cli.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");

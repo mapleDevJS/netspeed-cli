@@ -25,6 +25,8 @@ pub mod exit_codes {
     pub const CONFIG_ERROR: i32 = 65;
     pub const NETWORK_ERROR: i32 = 69;
     pub const INTERNAL_ERROR: i32 = 70;
+    /// Conventional shell status for an operation interrupted by Ctrl+C.
+    pub const INTERRUPTED: i32 = 130;
 }
 
 #[derive(Serialize)]
@@ -227,6 +229,7 @@ mod tests {
         assert_eq!(exit_codes::CONFIG_ERROR, 65);
         assert_eq!(exit_codes::NETWORK_ERROR, 69);
         assert_eq!(exit_codes::INTERNAL_ERROR, 70);
+        assert_eq!(exit_codes::INTERRUPTED, 130);
     }
 
     #[test]

@@ -22,6 +22,13 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait ServerFetcher: Send + Sync {
     async fn fetch_servers(&self) -> Result<(Vec<Server>, Option<ClientLocation>), Error>;
+    async fn fetch_servers_with_warnings(
+        &self,
+        report: &(dyn for<'message> Fn(&'message str) + Send + Sync),
+    ) -> Result<(Vec<Server>, Option<ClientLocation>), Error> {
+        let _ = report;
+        self.fetch_servers().await
+    }
 }
 
 // async_trait injects #[must_use] on an already-must-use boxed Future.
@@ -106,6 +113,12 @@ impl DefaultServerService {
 impl ServerFetcher for DefaultServerService {
     async fn fetch_servers(&self) -> Result<(Vec<Server>, Option<ClientLocation>), Error> {
         crate::servers::fetch(&self.client).await
+    }
+    async fn fetch_servers_with_warnings(
+        &self,
+        report: &(dyn for<'message> Fn(&'message str) + Send + Sync),
+    ) -> Result<(Vec<Server>, Option<ClientLocation>), Error> {
+        crate::servers::fetch_with_warnings(&self.client, report).await
     }
 }
 

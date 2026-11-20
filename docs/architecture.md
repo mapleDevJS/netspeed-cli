@@ -1,265 +1,134 @@
-# Architecture & Design Decisions
-
-This document describes the architectural decisions and design patterns used in netspeed-cli.
+# Architecture and Design Decisions
 
 ## Architecture Overview
 
-netspeed-cli follows a **modular layered architecture** with clear separation between:
-- **CLI Layer** (`cli.rs`, `config.rs`) — Argument parsing and configuration merging
-- **Core Layer** (`download.rs`, `upload.rs`, `servers.rs`) — Network operations
-- **Protocol Layer** (`endpoints.rs`) — Canonical speedtest endpoint derivation
-- **Orchestration Layer** (`task_runner.rs`) — Test coordination and result aggregation
-- **Presentation Layer** (`formatter/`) — Output formatting with Strategy pattern
-- **Infrastructure Layer** (`http.rs`, `history.rs`, `progress.rs`) — Cross-cutting concerns
+The binary parses CLI arguments, builds configuration, and hands control to an
+`Orchestrator`. Rust applications can use the supported `api::run_speed_test`
+entry point to receive a report without CLI output or history persistence.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         main.rs                              │
-│                   (Entry Point & Flow)                       │
-├──────────────┬──────────────┬──────────────┬────────────────┤
-│   cli.rs     │   config.rs  │  formatter/  │   history.rs   │
-│  (Parsing)   │  (Merging)   │ (Strategy)   │ (Persistence)  │
-├──────────────┴──────────────┴──────────────┴────────────────┤
-│                     test_runner.rs                           │
-│               (Template Method Pattern)                      │
-├──────────────┬──────────────┬──────────────┬────────────────┤
-│ download.rs  │  upload.rs   │  servers.rs  │   progress.rs  │
-│ (Bandwidth)  │ (Bandwidth)  │ (Discovery)  │   (UI/UX)      │
-├──────────────┴──────────────┬──────────────┴────────────────┤
-│        endpoints.rs         │                                │
-│   (Speedtest URL model)     │                                │
-├──────────────┴──────────────┴──────────────┴────────────────┤
-│                    common.rs                                 │
-│              (Shared Pure Functions)                         │
-├─────────────────────────────────────────────────────────────┤
-│                    error.rs                                  │
-│              (Unified Error Types)                           │
-└─────────────────────────────────────────────────────────────┘
+```text
+main.rs / cli.rs / api.rs / config/
+  inputs, supported entry points, and configuration
+             |
+orchestrator.rs / phase_runner.rs / phase_registry.rs
+  lifecycle coordination and ordered phase execution
+             |
+phases.rs / services.rs / task_runner.rs
+  phase state, injected network services, transfer lifecycle
+       /                                      \
+download.rs / upload.rs                servers.rs / endpoints.rs
+bandwidth measurement                   discovery and protocol URLs
+       \                                      /
+formatter/ / result_processor.rs / output.rs / storage.rs
+  report enrichment, presentation, and optional local history
+             |
+http.rs / progress.rs / terminal.rs / error.rs
+  network, terminal, and cross-cutting support
 ```
 
-## Server selection and history storage
+## Workflow and Boundaries
 
-Production discovery uses the asynchronous `ServerSelector::select_reachable` service method. The default service probes at most 20 distinct server URLs with five concurrent requests, a two-second budget per candidate, and a shared four-second deadline. Two successful, bounded latency responses are required per candidate. Geographic distance narrows the shortlist when valid client coordinates are available; otherwise candidates are sampled across the feed. The fastest completed candidate wins. Failed probes are skipped, and an entirely failed shortlist produces a network error.
+`PhaseRunner` executes registered lifecycle functions in order. `PhaseContext`
+carries discovered server metadata and measurement results between phases.
+`task_runner::run_bandwidth_test` shares transfer setup, latency-under-load
+monitoring, cancellation, and aggregation for download and upload.
 
-Unknown distances use an internal infinity sentinel and serialize as JSON `null` or an empty CSV field. Human-readable output displays `unknown`. Metadata requests check HTTP status and reject invalid client coordinates.
+`services.rs` isolates server discovery, IP discovery, and latency monitoring
+behind traits. `endpoints.rs` derives canonical latency, upload, and download
+URLs from server feed entries. The `api` facade is the recommended embedding
+interface; lower-level modules remain public for compatibility, but are
+unsupported implementation details and may change between releases.
 
-History schema version 1 preserves complete reports alongside legacy summary fields. Existing summary-only entries remain readable, with unavailable metadata left unknown. Unsupported schemas fail without overwriting the file.
+## Server Selection and History
 
-`FileStorage::with_path` applies to every save, load, report write, and clear operation. Writers and clearing share a stable sibling lock file. Saves use a unique temporary file and atomic replacement; clearing removes primary history, backup, and corrupt recovery copies while retaining the lock file.
+Production discovery uses `ServerSelector::select_reachable`. The default
+service probes at most 20 distinct server URLs with five concurrent requests,
+a two-second budget per candidate, and a shared four-second deadline. Two
+successful, bounded latency responses are required per candidate. Valid client
+coordinates narrow the shortlist geographically; otherwise candidates are
+sampled across the feed. Failed probes are skipped, and an entirely failed
+shortlist produces a network error.
 
-## Design Patterns
+Unknown distances use an internal infinity sentinel and serialize as JSON
+`null` or an empty CSV field. Human-readable output displays `unknown`.
+Metadata requests check HTTP status and reject invalid client coordinates.
 
-### 1. Strategy Pattern — Output Formatting
+History schema version 1 preserves complete reports alongside legacy summary
+fields. Existing summary-only entries remain readable. Unsupported schemas
+fail without overwriting the file. `FileStorage::with_path` applies to every
+save, load, report write, and clear operation. Writers and clearing share a
+stable sibling lock file; saves use a unique temporary file and atomic
+replacement. Clearing removes primary history, backup, and corrupt recovery
+copies while retaining the lock file.
 
-The `formatter` module uses the Strategy pattern to dispatch to different output formats:
+## Configuration and Output
 
-```rust
-pub enum OutputFormat {
-    Detailed { dl_bytes, ul_bytes, dl_duration, ul_duration },
-    Simple,
-    Json,
-    Csv { delimiter, header },
-}
+The CLI merges configuration in this order:
 
-impl OutputFormat {
-    pub fn format(&self, result: &TestResult, bytes: bool) -> Result<(), SpeedtestError> {
-        match self {
-            OutputFormat::Detailed { .. } => format_detailed(result, bytes),
-            OutputFormat::Simple => format_simple(result, bytes),
-            OutputFormat::Json => format_json(result),
-            OutputFormat::Csv { .. } => format_csv(result, delimiter, header),
-        }
-    }
-}
+```text
+CLI flags > config file > built-in defaults
 ```
 
-**Why:** Eliminates conditional branching in `main.rs`, makes adding new formats trivial (just add a variant and implementation).
+Mergeable boolean CLI flags use tri-state parsing to distinguish omitted
+options from explicitly enabled or disabled values. The formatter modules
+render structured results into human-readable and machine-readable formats;
+`output.rs` dispatches output, while `result_processor.rs` enriches results.
+JSON and JSONL failures use a machine-readable error envelope.
 
-**Sub-modules:**
-- `sections.rs` — Header, results, connection info, summary sections
-- `ratings.rs` — Connection quality rating calculation
-- `stability.rs` — Latency stability analysis
-- `estimates.rs` — Time-based download/upload estimates
+## Concurrency and Measurement
 
-### 2. Template Method Pattern — Test Runner
+- Tokio runs asynchronous network work; the HTTP client uses HTTP/1 and
+  disables gzip so transfer measurements count uncompressed network bytes.
+- Downloads stream response chunks instead of buffering entire bodies.
+- Four concurrent streams are used by default; `--single` selects one stream.
+- Atomic counters track bytes and mutex-protected samples track interval rates.
+- A background task samples latency during bandwidth phases and stops when
+  transfer work completes or is cancelled.
 
-The `test_runner::run_bandwidth_test` function implements a template method:
+Warm-up and byte caps, upload payload sizing, sampling limits, and the
+interpretation of short or capped runs are documented in the README's
+Measurement limits section.
 
-```
-1. Set up progress tracking
-2. Spawn background latency monitoring
-3. Execute the bandwidth test (via closure)
-4. Stop latency monitoring
-5. Aggregate results
-```
+## Testing and Quality Gates
 
-**Why:** Download and upload tests share identical orchestration logic. The closure parameter (`test_fn`) allows injection of the specific network operation while keeping the flow consistent.
-
-### 3. Protocol Normalization — `endpoints.rs`
-
-The `endpoints` module converts the raw speedtest server URL into a canonical
-set of runtime endpoints:
-
-- `base()` — directory containing test assets
-- `upload()` — upload endpoint
-- `latency()` — latency probe endpoint
-- `download_asset(name)` — download asset URL
-
-**Why:** Protocol assumptions used to be duplicated across download, upload,
-and latency measurement code. Centralizing them prevents drift and makes
-regressions easier to test.
-
-### 4. Pure Function Isolation — `common.rs`
-
-All shared utilities are pure functions with no side effects:
-- `calculate_bandwidth(bytes, elapsed)` → `bps`
-- `determine_stream_count(single)` → `usize`
-- `format_distance(km)` → `String`
-- `format_data_size(bytes)` → `String`
-- `is_valid_ipv4(s)` → `bool`
-
-**Why:** Pure functions are trivially testable, reusable across modules, and have no hidden dependencies.
-
-## Error Handling Strategy
-
-### Unified Error Enum with `thiserror`
-
-```rust
-#[derive(Debug, Error)]
-pub enum SpeedtestError {
-    #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
-
-    #[error("Server not found: {0}")]
-    ServerNotFound(String),
-
-    #[error("{msg}")]
-    Context { msg: String, source: Option<Box<dyn Error + Send + Sync>> },
-    // ...
-}
-```
-
-**Design decisions:**
-- **`thiserror`** for automatic `Display` and `From` implementations
-- **Error chain preservation** via `#[from]` and `source` field in `Context` variant
-- **No `anyhow`** — we need a specific error type for the library API, not just a binary
-- **Contextual errors** — `SpeedtestError::context()` and `with_source()` for adding domain-specific messages
-- **Machine-readable failures** — `--format json` and `--format jsonl` emit a stable error envelope on runtime failure so automation does not need to scrape stderr prose
-- **Machine-readable success metadata** — successful JSON payloads include top-level `status` plus explicit per-phase completion/skipped state
-
-## Configuration Merging
-
-Configuration follows a **three-tier merge strategy**:
-
-```
-CLI args (highest priority)
-    ↓
-Config file (~/.config/netspeed-cli/config.toml)
-    ↓
-Hardcoded defaults (lowest priority)
-```
-
-**Why:** Users can set persistent defaults in the config file while overriding per-invocation via CLI flags.
-
-Mergeable boolean CLI flags are parsed as tri-state values so the application
-can distinguish:
-- flag omitted
-- flag explicitly enabled
-- config/default fallback
-
-## History Persistence
-
-- **Atomic writes** — history is written through a temp file and renamed into place
-- **Backup rotation** — the previous valid file is copied to `history.json.bak`
-- **Repair path** — if `history.json` is corrupt but the backup is valid, load/save operations recover from the backup and preserve the corrupt file as `history.json.corrupt`
-
-## Concurrency Model
-
-### Async Runtime
-- **Tokio** with `#[tokio::main]` for the async runtime
-- **HTTP/1 only** — Speedtest.net servers don't support HTTP/2 consistently
-- **No gzip** — Raw bytes needed for accurate bandwidth measurement
-
-### Multi-stream Testing
-- **4 concurrent streams** by default (simulates real browser behavior)
-- **1 stream** with `--single` flag (debugging/analysis mode)
-- **Atomic counters** (`AtomicU64`) for thread-safe byte counting
-- **Mutex-protected samples** for speed sample collection
-
-### Latency Under Load
-- **Background task** pings server every 100ms during bandwidth test
-- **AtomicBool** for clean shutdown signaling
-- **Sample aggregation** after test completion
-
-## Performance Decisions
-
-### Release Profile
-```toml
-[profile.release]
-lto = "thin"        # Link-time optimization for better performance
-opt-level = "3"     # Maximum speed optimization (network-bound workload)
-codegen-units = 1   # Single codegen unit for better inlining
-strip = true        # Remove debug symbols to reduce binary size
-```
-
-**Why `opt-level = "3"` over `"z"`:**
-- Network I/O is the bottleneck, not binary size
-- Maximum speed optimization benefits the bandwidth calculation loop
-- Binary size difference is negligible for a CLI tool
-
-### Streaming Downloads
-- **`reqwest::bytes_stream()`** — Process chunks as they arrive, no buffering
-- **Progress updates every 50ms** — Balance between responsiveness and overhead
-- **Dynamic estimated total** — Adjusts as actual data is downloaded
-
-## Testing Strategy
-
-### Unit Tests
-- **Pure functions** in `common.rs`, `formatter/`, `error.rs` — 100% coverage target
-- **Serialization/deserialization** — XML, JSON, CSV parsing tests
-- **Algorithm validation** — Haversine distance, bandwidth calculation
-
-### Integration Tests
-- **Mock network** — `wiremock` for HTTP endpoint simulation
-- **CLI behavior** — End-to-end test runs with mock servers
-- **Config file** — TOML loading and merge behavior
-
-### Benchmarks
-- **Criterion** for statistical benchmarking
-- **Core functions** — Bandwidth calculation, distance, formatting, validation
-- **CI integration** — Benchmarks run on PRs to detect regressions
+- Unit tests cover pure functions, serialization, and measurement algorithms.
+- Integration tests use `wiremock`; socket-binding suites run in a dedicated
+  CI lane.
+- Criterion benchmarks cover bandwidth calculations, distance, formatting,
+  and validation. Regression comparisons run for main-targeting pull requests
+  and manual dispatches.
+- CI checks formatting, Clippy, tests, docs, package contents, generated docs,
+  dependency policy, and the Rust 1.86 minimum supported version. Coverage
+  enforcement runs on main-targeting pull requests and manual dispatches.
 
 ## Module Responsibilities
 
 | Module | Responsibility |
-|--------|---------------|
-| `cli.rs` | Argument parsing with clap, input validation |
-| `common.rs` | Pure utility functions (bandwidth, formatting, validation) |
-| `config.rs` | Three-tier config merge (CLI > file > defaults) |
-| `download.rs` | Multi-stream download bandwidth measurement |
-| `endpoints.rs` | Canonical endpoint derivation from raw server URLs |
-| `upload.rs` | Multi-stream upload bandwidth measurement |
-| `error.rs` | Unified error types with thiserror |
-| `formatter/` | Output formatting (Strategy pattern) |
-| `history.rs` | Persistent test result storage and retrieval |
-| `http.rs` | HTTP client creation, client IP discovery |
-| `progress.rs` | Terminal progress bars and spinners |
-| `servers.rs` | Server discovery, distance calculation, ping testing |
-| `task_runner.rs` | Test orchestration with template method |
-| `types.rs` | Shared data structures (Server, TestResult) |
+|---|---|
+| `api.rs` | Supported quiet library entry point returning a test report |
+| `cli.rs`, `config/` | CLI parsing and three-tier configuration merge |
+| `orchestrator.rs` | Workflow setup, dependencies, output and storage policy |
+| `phase_runner.rs`, `phase_registry.rs` | Ordered phase registration and execution |
+| `phases.rs` | Phase context and lifecycle implementations |
+| `services.rs` | Network service interfaces and default implementations |
+| `task_runner.rs` | Shared download/upload measurement lifecycle |
+| `download.rs`, `upload.rs` | Transfer-specific bandwidth operations |
+| `servers.rs`, `endpoints.rs` | Server discovery and canonical endpoint derivation |
+| `formatter/`, `result_processor.rs`, `output.rs` | Result enrichment and output |
+| `storage.rs`, `history.rs` | Storage interfaces and file-backed history |
+| `http.rs`, `http_client.rs` | HTTP client settings and abstraction |
+| `types.rs`, `error.rs` | Shared data types and error model |
+| `progress.rs`, `terminal.rs`, `theme.rs` | Terminal feedback and presentation support |
 
-## Dependencies Rationale
+## Key Dependencies
 
-| Dependency | Purpose | Why This One |
-|-----------|---------|-------------|
-| `clap` | CLI argument parsing | Industry standard, derive API, shell completions |
-| `reqwest` | HTTP client | Async, rustls support, streaming |
-| `tokio` | Async runtime | Dominant async ecosystem, full feature set |
-| `serde` | Serialization | Rust standard, derive macros |
-| `quick-xml` | XML parsing | Fast, streaming and deserialization support |
-| `indicatif` | Progress bars | Rich terminal UI, thread-safe |
-| `thiserror` | Error handling | Zero-cost, derive macros, no runtime overhead |
-| `chrono` | Timestamps | RFC3339 formatting, serialization |
-| `directories` | Config paths | Cross-platform XDG compliance |
-| `criterion` | Benchmarking | Statistical analysis, HTML reports |
-| `wiremock` | HTTP mocking | Async, realistic mock server |
+| Dependency | Purpose |
+|---|---|
+| `clap` | CLI parsing, shell completions, and help generation |
+| `reqwest`, `rustls` | Async HTTP and TLS |
+| `tokio` | Async runtime |
+| `serde`, `serde_json`, `csv`, `quick-xml`, `toml` | Data formats and configuration |
+| `jiff` | Date and time support |
+| `indicatif`, `owo-colors`, `crossterm` | Terminal progress and styling |
+| `thiserror` | Typed error definitions |
+| `wiremock`, `criterion`, `proptest` | Network, performance, and property testing |

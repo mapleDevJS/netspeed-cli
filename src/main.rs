@@ -51,7 +51,24 @@ async fn run_speedtest(
     orchestrator: Orchestrator,
     machine_error_format: Option<OutputFormatType>,
 ) -> i32 {
-    match orchestrator.run().await {
+    let run = orchestrator.run();
+    let interrupt = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            eprintln!("Could not register Ctrl+C handler: {error}");
+            std::future::pending::<()>().await;
+        }
+    };
+
+    let result = match netspeed_cli::interrupt::run_or_interrupt(run, interrupt).await {
+        Ok(result) => result,
+        Err(netspeed_cli::interrupt::Interrupted) => {
+            let _ = std::io::Write::write_all(&mut std::io::stderr().lock(), b"\nInterrupted.\n");
+            let _ = std::io::Write::flush(&mut std::io::stderr().lock());
+            return exit_codes::INTERRUPTED;
+        }
+    };
+
+    match result {
         Ok(()) => exit_codes::SUCCESS,
         Err(ref e) if is_list_sentinel(e) => exit_codes::SUCCESS,
         Err(ref e) if is_network_error(e) => {

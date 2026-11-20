@@ -54,6 +54,11 @@ pub fn resolve_output_format(
             elapsed,
             profile,
             theme,
+            bytes: config.bytes(),
+            skipped: SkipState {
+                download: config.no_download(),
+                upload: config.no_upload(),
+            },
         },
         Some(Format::Detailed) => OutputFormat::Detailed {
             dl_bytes: dl_result.total_bytes,
@@ -371,6 +376,37 @@ mod tests {
                 assert_eq!(profile, UserProfile::Gamer);
             }
             _ => panic!("Expected Compact format"),
+        }
+    }
+
+    #[test]
+    fn dashboard_receives_byte_mode_and_skipped_phase_state() {
+        let source = ConfigSource {
+            output: OutputSource {
+                format: Some(Format::Dashboard),
+                bytes: Some(true),
+                ..Default::default()
+            },
+            test: crate::config::TestSource {
+                no_upload: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let config = Config::from_source(&source);
+        let result = resolve_output_format(
+            &config,
+            &make_test_run(100_000_000.0, 120_000_000.0, 10_000_000, 2.0),
+            &TestRunResult::default(),
+            std::time::Duration::from_secs(5),
+        );
+        match result {
+            OutputFormat::Dashboard { bytes, skipped, .. } => {
+                assert!(bytes);
+                assert!(skipped.upload);
+                assert!(!skipped.download);
+            }
+            _ => panic!("Expected dashboard format"),
         }
     }
 }

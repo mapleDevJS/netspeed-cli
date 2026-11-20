@@ -37,6 +37,7 @@ pub struct PhaseContext {
     elapsed: Option<std::time::Duration>,
     started: std::time::Instant,
     services: std::sync::Arc<dyn Services>,
+    live: Option<crate::live::Session>,
 }
 
 impl PhaseContext {
@@ -53,6 +54,14 @@ impl PhaseContext {
             elapsed: None,
             started: std::time::Instant::now(),
             services,
+            live: None,
+        }
+    }
+
+    pub(crate) fn finish_live(&mut self, state: crate::live::RunState) {
+        if let Some(live) = self.live.take() {
+            live.handle().finish(state);
+            drop(live);
         }
     }
 
@@ -168,10 +177,17 @@ impl PhaseExecutor {
             let outcome = phase(orch, &mut ctx).await;
             match outcome {
                 PhaseOutcome::PhaseCompleted => {}
-                PhaseOutcome::PhaseEarlyExit => return Ok(()),
-                PhaseOutcome::PhaseError(e) => return Err(e),
+                PhaseOutcome::PhaseEarlyExit => {
+                    ctx.finish_live(crate::live::RunState::Completed);
+                    return Ok(());
+                }
+                PhaseOutcome::PhaseError(e) => {
+                    ctx.finish_live(crate::live::RunState::Failed);
+                    return Err(e);
+                }
             }
         }
+        ctx.finish_live(crate::live::RunState::Completed);
         Ok(())
     }
 }
@@ -326,7 +342,10 @@ pub(crate) fn run_header<'a>(
     _ctx: &'a mut PhaseContext,
 ) -> BoxFuture<'a, PhaseOutcome> {
     Box::pin(async move {
-        if orch.is_verbose() {
+        if orch.is_progress_enabled() {
+            _ctx.live = crate::live::Session::start(orch.config().bytes(), orch.config().theme());
+        }
+        if orch.is_verbose() && _ctx.live.is_none() {
             let version = env!("CARGO_PKG_VERSION");
             let nc = crate::terminal::no_color();
             let theme = orch.config().theme();
@@ -353,27 +372,31 @@ pub(crate) fn run_server_discovery<'a>(
     orch: &'a Orchestrator,
     ctx: &'a mut PhaseContext,
 ) -> BoxFuture<'a, PhaseOutcome> {
-    let is_verbose = orch.is_verbose();
-    let spinner = if is_verbose {
-        Some(crate::progress::create_spinner("Finding servers..."))
-    } else {
-        None
-    };
+    let is_verbose = orch.is_verbose() && ctx.live.is_none();
+    if let Some(live) = &ctx.live {
+        live.handle().phase(crate::live::Phase::DiscoveringServers);
+    }
 
     Box::pin(async move {
         // Discover servers asynchronously using injected service
-        let result = ctx.services().server_service().fetch_servers().await;
+        let live = ctx.live.as_ref().map(|session| session.handle());
+        let report = |message: &str| {
+            if let Some(handle) = &live {
+                handle.warning(message);
+            } else if !orch.is_library_api() {
+                eprintln!("{}", crate::terminal::sanitize_display_text(message, 240));
+            }
+        };
+        let result = ctx
+            .services()
+            .server_service()
+            .fetch_servers_with_warnings(&report)
+            .await;
         let (mut servers, client_location) = match result {
             Ok((servers, location)) => (servers, location),
             Err(e) => return PhaseOutcome::PhaseError(e),
         };
         ctx.set_client_location(client_location);
-
-        if let Some(ref pb) = spinner {
-            let theme = orch.config().theme();
-            crate::progress::finish_ok(pb, &format!("Found {} servers", servers.len()), theme);
-            eprintln!();
-        }
 
         if orch.config().list() {
             if let Err(e) = crate::formatter::format_list(&servers, orch.config().theme()) {
@@ -408,27 +431,34 @@ pub(crate) fn run_server_discovery<'a>(
 
         if is_verbose {
             let dist = crate::common::format_distance(server.distance);
+            let sponsor = crate::terminal::sanitize_display_text(&server.sponsor, 32);
+            let name = crate::terminal::sanitize_display_text(&server.name, 32);
+            let country = crate::terminal::sanitize_display_text(&server.country, 24);
             eprintln!();
             let theme = orch.config().theme();
             if crate::terminal::no_color() {
-                eprintln!("  Server:   {} ({})", server.sponsor, server.name);
-                eprintln!("  Location: {} ({dist})", server.country);
+                eprintln!("  Server:   {sponsor} ({name})");
+                eprintln!("  Location: {country} ({dist})");
             } else {
                 eprintln!(
                     "  {}   {} ({})",
                     Colors::dimmed("Server:", theme),
-                    Colors::bold(&server.sponsor, theme),
-                    server.name
+                    Colors::bold(&sponsor, theme),
+                    name
                 );
                 eprintln!(
                     "  {} {} ({dist})",
                     Colors::dimmed("Location:", theme),
-                    server.country
+                    country
                 );
             }
             eprintln!();
         }
 
+        if let Some(live) = &ctx.live {
+            live.handle()
+                .context(format!("{} · {}", server.sponsor, server.country));
+        }
         ctx.set_server(server);
         PhaseOutcome::PhaseCompleted
     })
@@ -445,7 +475,12 @@ pub(crate) fn run_ip_discovery<'a>(
             Ok(ip) => ctx.set_client_ip(ip),
             Err(e) => {
                 if is_verbose {
-                    eprintln!("Warning: Could not discover client IP: {e}");
+                    let message = format!("Warning: Could not discover client IP: {e}");
+                    if let Some(live) = &ctx.live {
+                        live.handle().warning(&message);
+                    } else {
+                        eprintln!("{message}");
+                    }
                 }
             }
         }
@@ -472,12 +507,9 @@ pub(crate) fn run_ping<'a>(
         }
     };
 
-    let is_verbose = orch.is_verbose();
-    let spinner = if is_verbose {
-        Some(crate::progress::create_spinner("Testing latency..."))
-    } else {
-        None
-    };
+    if let Some(live) = &ctx.live {
+        live.handle().phase(crate::live::Phase::MeasuringLatency);
+    }
 
     let services = ctx.services_arc();
 
@@ -488,19 +520,12 @@ pub(crate) fn run_ping<'a>(
             Err(e) => return PhaseOutcome::PhaseError(e),
         };
 
-        if let Some(ref pb) = spinner {
-            let theme = orch.config().theme();
-            let msg = if crate::terminal::no_color() {
-                format!("Latency: {:.2} ms", ping_result.0)
-            } else {
-                format!(
-                    "Latency: {}",
-                    Colors::info(&format!("{:.2} ms", ping_result.0), theme)
-                )
-            };
-            crate::progress::finish_ok(pb, &msg, theme);
+        if let Some(live) = &ctx.live {
+            live.handle().context(format!(
+                "{} · {} · Latency {:.2} ms · Jitter {:.2} ms",
+                server.sponsor, server.name, ping_result.0, ping_result.1
+            ));
         }
-
         ctx.set_ping_result(PingResult {
             latency_ms: ping_result.0,
             jitter_ms: ping_result.1,
@@ -518,16 +543,13 @@ pub(crate) fn run_download<'a>(
     ctx: &'a mut PhaseContext,
 ) -> BoxFuture<'a, PhaseOutcome> {
     let single = orch.config().single();
-    let is_verbose = orch.is_verbose();
-    // Only show spinner in non-verbose mode (verbose mode has progress bar which is better)
-    let spinner = if !is_verbose && !orch.config().quiet() && !orch.config().no_download() {
-        Some(crate::progress::create_spinner("Testing download..."))
-    } else {
-        None
-    };
+    let show_progress = false;
 
     Box::pin(async move {
         if orch.config().no_download() {
+            if let Some(live) = &ctx.live {
+                live.handle().transfer_finished(false, None);
+            }
             return PhaseOutcome::PhaseCompleted;
         }
 
@@ -540,29 +562,26 @@ pub(crate) fn run_download<'a>(
             }
         };
 
+        if let Some(live) = &ctx.live {
+            live.handle().phase(crate::live::Phase::TestingDownload);
+        }
         let client = orch.http_client();
-        match crate::task_runner::run_bandwidth_test(
+        match crate::task_runner::run_bandwidth_test_presented(
             client.clone(),
             &server,
             "Download",
-            is_verbose,
+            show_progress,
+            orch.config().theme(),
+            orch.config().bytes(),
+            ctx.live.as_ref().map(|live| live.handle()),
             |progress| crate::download::run(client, &server, single, progress),
         )
         .await
         {
             Ok(result) => {
-                let avg = result.avg_bps;
-                if let Some(ref pb) = spinner {
-                    let theme = orch.config().theme();
-                    let msg = if crate::terminal::no_color() {
-                        format!("Download: {:.2} Mbps", avg / 1_000_000.0)
-                    } else {
-                        format!(
-                            "Download: {}",
-                            Colors::good(&format!("{:.2} Mbps", avg / 1_000_000.0), theme)
-                        )
-                    };
-                    crate::progress::finish_ok(pb, &msg, theme);
+                if let Some(live) = &ctx.live {
+                    live.handle()
+                        .transfer_finished(false, Some(result.avg_bps / 1_000_000.0));
                 }
                 ctx.set_download_result(result);
                 // Put server back for upload phase
@@ -579,16 +598,13 @@ pub(crate) fn run_upload<'a>(
     ctx: &'a mut PhaseContext,
 ) -> BoxFuture<'a, PhaseOutcome> {
     let single = orch.config().single();
-    let is_verbose = orch.is_verbose();
-    // Only show spinner in non-verbose mode (verbose mode has progress bar which is better)
-    let spinner = if !is_verbose && !orch.config().quiet() && !orch.config().no_upload() {
-        Some(crate::progress::create_spinner("Testing upload..."))
-    } else {
-        None
-    };
+    let show_progress = false;
 
     Box::pin(async move {
         if orch.config().no_upload() {
+            if let Some(live) = &ctx.live {
+                live.handle().transfer_finished(true, None);
+            }
             return PhaseOutcome::PhaseCompleted;
         }
 
@@ -601,29 +617,26 @@ pub(crate) fn run_upload<'a>(
             }
         };
 
+        if let Some(live) = &ctx.live {
+            live.handle().phase(crate::live::Phase::TestingUpload);
+        }
         let client = orch.http_client();
-        match crate::task_runner::run_bandwidth_test(
+        match crate::task_runner::run_bandwidth_test_presented(
             client.clone(),
             &server,
             "Upload",
-            is_verbose,
+            show_progress,
+            orch.config().theme(),
+            orch.config().bytes(),
+            ctx.live.as_ref().map(|live| live.handle()),
             |progress| crate::upload::run(client, &server, single, progress),
         )
         .await
         {
             Ok(result) => {
-                let avg = result.avg_bps;
-                if let Some(ref pb) = spinner {
-                    let theme = orch.config().theme();
-                    let msg = if crate::terminal::no_color() {
-                        format!("Upload: {:.2} Mbps", avg / 1_000_000.0)
-                    } else {
-                        format!(
-                            "Upload: {}",
-                            Colors::good(&format!("{:.2} Mbps", avg / 1_000_000.0), theme)
-                        )
-                    };
-                    crate::progress::finish_ok(pb, &msg, theme);
+                if let Some(live) = &ctx.live {
+                    live.handle()
+                        .transfer_finished(true, Some(result.avg_bps / 1_000_000.0));
                 }
                 ctx.set_upload_result(result);
                 // Put server back for result phase
@@ -640,6 +653,10 @@ pub(crate) fn run_result<'a>(
     ctx: &'a mut PhaseContext,
 ) -> BoxFuture<'a, PhaseOutcome> {
     Box::pin(async move {
+        if let Some(live) = &ctx.live {
+            live.handle().phase(crate::live::Phase::Finalizing);
+        }
+        ctx.finish_live(crate::live::RunState::Completed);
         // Take server info before taking results
         let server_info = match ctx.take_server() {
             Some(s) => crate::types::ServerInfo {
@@ -702,7 +719,10 @@ pub(crate) fn run_result<'a>(
         ctx.set_elapsed(elapsed);
         // Delegate to orchestrator for output
         let output = orch.output_results(&mut result, &dl_result, &ul_result, elapsed);
-        if config.should_save_history() {
+        if let Err(e) = orch.record_result(result.clone()) {
+            return PhaseOutcome::PhaseError(e);
+        }
+        if !orch.is_library_api() && config.should_save_history() {
             if let Err(e) = orch.saver().save(&result) {
                 eprintln!("Warning: Failed to save test result: {e}");
             }
@@ -829,6 +849,7 @@ mod tests {
                 generate_completion: None,
                 history: false,
                 dry_run: false,
+                no_live_ui: false,
             },
             crate::orchestrator::StorageBuilder::new()
                 .with_saver_arc(storage.clone())

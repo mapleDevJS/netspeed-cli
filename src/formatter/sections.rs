@@ -15,9 +15,47 @@ use super::ratings::{
 const LATENCY_WIDTH: usize = 10; // "    12.1 ms"
 const JITTER_WIDTH: usize = 10; // "     1.5 ms"
 const LOSS_WIDTH: usize = 8; // "     0.0%"
-const SPEED_WIDTH: usize = 14; // "    150.00 Mb/s"
 const DATA_SIZE_WIDTH: usize = 10; // "    15.0 MB"
 const DURATION_WIDTH: usize = 8; // "    30.5s"
+
+fn format_speed_value(bps: f64, bytes: bool) -> String {
+    if !bps.is_finite() || bps < 0.0 {
+        return "unavailable".to_string();
+    }
+    let (value, unit) = if bytes {
+        let bytes_per_second = bps / 8.0;
+        if bytes_per_second >= 1_000_000_000.0 {
+            (bytes_per_second / 1_000_000_000.0, "GB/s")
+        } else if bytes_per_second >= 1_000_000.0 {
+            (bytes_per_second / 1_000_000.0, "MB/s")
+        } else if bytes_per_second >= 1_000.0 {
+            (bytes_per_second / 1_000.0, "KB/s")
+        } else {
+            (bytes_per_second, "B/s")
+        }
+    } else if bps >= 1_000_000_000.0 {
+        (bps / 1_000_000_000.0, "Gb/s")
+    } else if bps >= 1_000_000.0 {
+        (bps / 1_000_000.0, "Mb/s")
+    } else if bps >= 1_000.0 {
+        (bps / 1_000.0, "Kb/s")
+    } else {
+        (bps, "b/s")
+    };
+    format!("{value:>8.2} {unit}")
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::format_speed_value;
+
+    #[test]
+    fn detailed_rate_respects_byte_mode_and_invalid_values() {
+        assert!(format_speed_value(80_000_000.0, true).contains("10.00 MB/s"));
+        assert!(format_speed_value(80_000_000.0, false).contains("80.00 Mb/s"));
+        assert_eq!(format_speed_value(f64::NAN, false), "unavailable");
+    }
+}
 
 // ── Layout Mode ──────────────────────────────────────────────────────────────
 
@@ -67,45 +105,26 @@ fn build_skipped_line(label: &str, nc: bool) -> String {
     }
 }
 
-fn build_speed_section(
-    label: &str,
-    speed_bps: f64,
-    _bytes: bool,
-    nc: bool,
-    theme: Theme,
-) -> String {
-    let speed_tabular = common::format_speed_tabular(speed_bps, SPEED_WIDTH);
+fn build_speed_section(label: &str, speed_bps: f64, bytes: bool, nc: bool, theme: Theme) -> String {
+    let speed_tabular = format_speed_value(speed_bps, bytes);
     let rating = colorize_rating(speed_rating_mbps(speed_bps / 1_000_000.0), nc, theme);
-    let bar = crate::common::bar_chart(speed_bps / 1_000_000.0, 1000.0, 28);
-    let fill_pct = (speed_bps / 1_000_000.0 / 1000.0).clamp(0.0, 1.0) * 100.0;
-    let bar_display = if nc {
-        bar
-    } else if fill_pct >= 70.0 {
-        Colors::good(&bar, theme)
-    } else if fill_pct >= 40.0 {
-        Colors::warn(&bar, theme)
-    } else {
-        Colors::bad(&bar, theme)
-    };
     if nc {
-        format!("  {label:>14}:   {speed_tabular}  {bar_display}")
+        format!("  {label:>14}:   {speed_tabular}  {rating}")
     } else {
         // Pad label first, then colorize (ANSI-safe alignment)
         let lbl = Colors::dimmed(&format!("{label:>14}"), theme);
-        // speed_tabular is pre-padded to SPEED_WIDTH; colorize without trimming
-        let speed_col = if fill_pct >= 70.0 {
-            Colors::good(&speed_tabular, theme)
-        } else if fill_pct >= 40.0 {
-            Colors::warn(&speed_tabular, theme)
+        // Colorize after padding to keep labels aligned.
+        let speed_col = if label == "Download" {
+            Colors::info(&speed_tabular, theme)
         } else {
-            Colors::bad(&speed_tabular, theme)
+            Colors::header(&speed_tabular, theme)
         };
-        format!("  {lbl}:   {speed_col}  {bar_display}  {rating}")
+        format!("  {lbl}:   {speed_col}  {rating}")
     }
 }
 
-fn build_peak_line(peak_bps: f64, _bytes: bool, nc: bool, theme: Theme) -> String {
-    let peak_tabular = common::format_speed_tabular(peak_bps, SPEED_WIDTH);
+fn build_peak_line(peak_bps: f64, bytes: bool, nc: bool, theme: Theme) -> String {
+    let peak_tabular = format_speed_value(peak_bps, bytes);
     if nc {
         format!("  {:>14}:   {peak_tabular}", "Peak (1s avg)")
     } else {
@@ -378,6 +397,9 @@ pub fn format_upload_section(
 #[must_use]
 pub fn build_connection_info(result: &TestResult, nc: bool, theme: Theme) -> String {
     let dist = common::format_distance(result.server.distance);
+    let sponsor = terminal::sanitize_display_text(&result.server.sponsor, 40);
+    let server_name = terminal::sanitize_display_text(&result.server.name, 40);
+    let country = terminal::sanitize_display_text(&result.server.country, 32);
     let mut lines = Vec::new();
 
     lines.push(section_header("CONNECTION INFO", nc, theme));
@@ -385,27 +407,22 @@ pub fn build_connection_info(result: &TestResult, nc: bool, theme: Theme) -> Str
     if nc {
         lines.push(format!(
             "  {:>16}:   {} ({})",
-            "Server", result.server.sponsor, result.server.name
+            "Server", sponsor, server_name
         ));
-        lines.push(format!(
-            "  {:>16}:   {}  ({dist})",
-            "Location", result.server.country
-        ));
+        lines.push(format!("  {:>16}:   {}  ({dist})", "Location", country));
     } else {
         let server_lbl = Colors::dimmed(&format!("{:>16}", "Server"), theme);
         lines.push(format!(
             "  {server_lbl}:   {} ({})",
-            Colors::bold(&result.server.sponsor, theme),
-            result.server.name
+            Colors::bold(&sponsor, theme),
+            server_name
         ));
         let loc_lbl = Colors::dimmed(&format!("{:>16}", "Location"), theme);
-        lines.push(format!(
-            "  {loc_lbl}:   {}  ({dist})",
-            result.server.country
-        ));
+        lines.push(format!("  {loc_lbl}:   {}  ({dist})", country));
     }
 
     if let Some(ip) = &result.client_ip {
+        let ip = terminal::sanitize_display_text(ip, 40);
         if nc {
             lines.push(format!("  {:>16}:   {ip}", "Client IP"));
         } else {
@@ -604,21 +621,25 @@ pub fn build_list(servers: &[Server], theme: Theme) -> String {
 
     for server in servers {
         let dist = common::format_distance(server.distance);
+        let id = terminal::sanitize_display_text(&server.id, 12);
+        let sponsor = terminal::sanitize_display_text(&server.sponsor, 24);
+        let name = terminal::sanitize_display_text(&server.name, 22);
+        let country = terminal::sanitize_display_text(&server.country, 16);
+        let name_country = format!("{name} ({country})");
+        let id = console::pad_str(&id, idw, console::Alignment::Left, Some("…"));
+        let sponsor_plain = console::pad_str(&sponsor, sw, console::Alignment::Left, Some("…"));
+        let name_country = console::pad_str(&name_country, 24, console::Alignment::Left, Some("…"));
         if nc {
             lines.push(format!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
-                server.id,
-                server.sponsor,
-                format!("{} ({})", server.name, server.country),
-                dist,
+                "  {id}  {sponsor_plain}  {name_country}  {dist:>10}"
             ));
         } else {
+            let sponsor_colored = Colors::bold(&sponsor, theme);
+            let sponsor_colored =
+                console::pad_str(&sponsor_colored, sw, console::Alignment::Left, Some("…"));
             lines.push(format!(
-                "  {:<idw$}  {:<sw$}  {:<24}  {:>10}",
-                server.id,
-                Colors::bold(&server.sponsor, theme),
-                format!("{} ({})", server.name, server.country),
-                Colors::muted(&dist, theme),
+                "  {id}  {sponsor_colored}  {name_country}  {}",
+                console::pad_str(&dist, 10, console::Alignment::Right, None)
             ));
         }
     }

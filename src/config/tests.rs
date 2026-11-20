@@ -1180,8 +1180,14 @@ fn test_tls_config_cli_tls_version() {
 
 #[test]
 fn test_tls_config_cli_pin_certs() {
-    // Test that --pin-certs CLI flag enables pinning
+    // The legacy spelling remains a supported alias.
     let args = Args::parse_from(["netspeed-cli", "--pin-certs"]);
+    assert_eq!(args.pin_certs, Some(true));
+}
+
+#[test]
+fn test_tls_config_cli_restrict_tls_domains() {
+    let args = Args::parse_from(["netspeed-cli", "--restrict-tls-domains"]);
     assert_eq!(args.pin_certs, Some(true));
 }
 

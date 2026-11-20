@@ -9,6 +9,23 @@
 //! under load. It connects to speedtest.net's server infrastructure to
 //! perform real-world bandwidth tests.
 //!
+//! The command-line application is the primary interface. For Rust applications,
+//! [`api`] is the only supported embedding interface. Other modules remain public
+//! for compatibility and advanced use, but their APIs are unstable and may
+//! change between releases.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use netspeed_cli::api::{run_speed_test, TestOptions};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let report = run_speed_test(TestOptions::default()).await?;
+//! println!("Download: {:?} Mbps", report.download);
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! ## Key Features
 //!
 //! - **Multi-format output**: dashboard, detailed, compact, simple, minimal, JSON, JSONL, CSV
@@ -19,8 +36,13 @@
 //! - **Test history**: persistent local storage with backup and corruption recovery
 //! - **TLS options**: custom CA certs, domain-restricted TLS, configurable TLS version
 //!
-//! ## Modules
+//! ## Public modules
 //!
+//! [`api`] is the only supported embedding interface. All other modules remain
+//! public for compatibility and advanced use, but are unstable implementation
+//! details.
+//!
+//! - [`api`] — Supported quiet library entry point returning a test report
 //! - [`bandwidth_loop`] — Inner bandwidth measurement loop with live progress
 //! - [`bin_errors`] — Binary-level error handling and exit codes
 //! - [`cli`] — Command-line argument parsing with clap
@@ -63,6 +85,7 @@
     clippy::cast_sign_loss
 )]
 
+pub mod api;
 pub mod bandwidth_loop;
 pub mod bin_errors;
 pub mod cli;
@@ -77,6 +100,8 @@ pub mod grades;
 pub mod history;
 pub mod http;
 pub mod http_client;
+#[doc(hidden)]
+pub mod interrupt;
 pub mod logging;
 pub mod orchestrator;
 pub mod output;
@@ -96,3 +121,5 @@ pub mod test_config;
 pub mod theme;
 pub mod types;
 pub mod upload;
+
+mod live;

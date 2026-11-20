@@ -24,6 +24,7 @@ pub(crate) struct EarlyExitFlags {
     pub(crate) generate_completion: Option<crate::cli::ShellType>,
     pub(crate) history: bool,
     pub(crate) dry_run: bool,
+    pub(crate) no_live_ui: bool,
 }
 
 impl EarlyExitFlags {
@@ -33,6 +34,7 @@ impl EarlyExitFlags {
             generate_completion: args.generate_completion,
             history: args.history,
             dry_run: args.dry_run,
+            no_live_ui: args.no_live_ui,
         }
     }
 }
@@ -114,6 +116,8 @@ pub struct Orchestrator {
 
     phase_runner: std::sync::Arc<dyn PhaseRunner + Send + Sync>,
     services: std::sync::Arc<dyn crate::services::Services>,
+    library_api: bool,
+    last_result: std::sync::Mutex<Option<TestResult>>,
 }
 
 impl Orchestrator {
@@ -127,18 +131,34 @@ impl Orchestrator {
         args: crate::cli::Args,
         file_config: Option<crate::config::File>,
     ) -> Result<Self, Error> {
+        Self::new_with_mode(args, file_config, false)
+    }
+
+    pub(crate) fn new_for_library(args: crate::cli::Args) -> Result<Self, Error> {
+        Self::new_with_mode(args, None, true)
+    }
+
+    fn new_with_mode(
+        args: crate::cli::Args,
+        file_config: Option<crate::config::File>,
+        library_api: bool,
+    ) -> Result<Self, Error> {
         let source = ConfigSource::from_args(&args);
 
         let (config, profile_validation) =
             Config::from_args_with_file(&source, file_config.clone());
 
-        for warning in &profile_validation.warnings {
-            eprintln!("Warning: {warning}");
+        if !library_api {
+            for warning in &profile_validation.warnings {
+                eprintln!("Warning: {warning}");
+            }
         }
 
         let file_validation = config.validate_and_report(&source, file_config);
-        for error in &file_validation.errors {
-            eprintln!("Error: {error}");
+        if !library_api {
+            for error in &file_validation.errors {
+                eprintln!("Error: {error}");
+            }
         }
 
         let combined_valid = profile_validation.valid && file_validation.valid;
@@ -150,19 +170,43 @@ impl Orchestrator {
         }
 
         let early_exit = EarlyExitFlags::from_args(&args);
-        Self::from_config(config, early_exit)
+        Self::from_config_with_mode(config, early_exit, library_api)
     }
 
     /// Create an orchestrator from pre-built config.
+    #[cfg(test)]
     pub(crate) fn from_config(config: Config, early_exit: EarlyExitFlags) -> Result<Self, Error> {
-        Self::from_config_with_storage(config, early_exit, StorageBuilder::new())
+        Self::from_config_with_mode(config, early_exit, false)
+    }
+
+    fn from_config_with_mode(
+        config: Config,
+        early_exit: EarlyExitFlags,
+        library_api: bool,
+    ) -> Result<Self, Error> {
+        Self::from_config_with_storage_and_mode(
+            config,
+            early_exit,
+            StorageBuilder::new(),
+            library_api,
+        )
     }
 
     /// Create an orchestrator from pre-built config with custom storage.
+    #[cfg(test)]
     pub(crate) fn from_config_with_storage(
         config: Config,
         early_exit: EarlyExitFlags,
         storage: StorageBuilder,
+    ) -> Result<Self, Error> {
+        Self::from_config_with_storage_and_mode(config, early_exit, storage, false)
+    }
+
+    fn from_config_with_storage_and_mode(
+        config: Config,
+        early_exit: EarlyExitFlags,
+        storage: StorageBuilder,
+        library_api: bool,
     ) -> Result<Self, Error> {
         let http_settings = http::Settings::from(&config);
         let client = http::create_client(&http_settings)?;
@@ -180,6 +224,8 @@ impl Orchestrator {
             processor: std::sync::Arc::new(DefaultResultProcessor),
             phase_runner: std::sync::Arc::new(DefaultPhaseRunner::new()),
             services,
+            library_api,
+            last_result: std::sync::Mutex::new(None),
         })
     }
 
@@ -205,10 +251,32 @@ impl Orchestrator {
         self.phase_runner.run_all(self).await
     }
 
+    pub(crate) async fn run_for_library(&self) -> Result<TestResult, Error> {
+        self.phase_runner.run_all(self).await?;
+        self.last_result
+            .lock()
+            .map_err(|e| Error::context(format!("result lock poisoned: {e}")))?
+            .take()
+            .ok_or_else(|| Error::context("speed test completed without producing a result"))
+    }
+
+    pub(crate) fn record_result(&self, result: TestResult) -> Result<(), Error> {
+        let mut last_result = self
+            .last_result
+            .lock()
+            .map_err(|e| Error::context(format!("result lock poisoned: {e}")))?;
+        *last_result = Some(result);
+        Ok(())
+    }
+
+    pub(crate) fn is_library_api(&self) -> bool {
+        self.library_api
+    }
+
     /// Whether verbose output should be shown.
     #[must_use]
     pub fn is_verbose(&self) -> bool {
-        if self.cfg().quiet() {
+        if self.library_api || self.cfg().quiet() {
             return false;
         }
         let format_non_verbose = self.cfg().format().is_some_and(|f| f.is_non_verbose());
@@ -217,6 +285,26 @@ impl Orchestrator {
             && !self.cfg().csv()
             && !self.cfg().list()
             && !format_non_verbose
+    }
+
+    /// Whether terminal progress can be rendered safely on stderr.
+    #[must_use]
+    pub fn is_progress_enabled(&self) -> bool {
+        use std::io::IsTerminal;
+        let machine_format = self.cfg().format().map_or_else(
+            || self.cfg().json() || self.cfg().csv(),
+            crate::config::Format::is_machine_readable,
+        );
+        !self.library_api
+            && !self.cfg().quiet()
+            && !self.cfg().minimal()
+            && !self.early_exit.no_live_ui
+            && !crate::terminal::no_animation()
+            && std::env::var_os("CI").is_none()
+            && !machine_format
+            && self.cfg().format() != Some(crate::config::Format::Minimal)
+            && !self.cfg().list()
+            && crate::terminal::supports_live_updates(std::io::stderr().is_terminal())
     }
 
     /// Check if this is a simple/quiet mode.
@@ -276,39 +364,23 @@ impl Orchestrator {
             elapsed,
         );
 
-        if self.is_verbose() {
-            self.reveal_results(result, self.cfg().theme(), profile);
+        if !self.library_api {
+            let format = self.cfg().format();
+            if !format.is_some_and(crate::config::Format::is_machine_readable) {
+                eprintln!("Profile: {}", profile.name());
+            }
+            if format == Some(crate::config::Format::Minimal) {
+                crate::formatter::format_minimal_for_profile(
+                    result,
+                    self.cfg().bytes(),
+                    profile,
+                    self.cfg().theme(),
+                )?;
+            } else {
+                output_format.format(result, self.cfg().bytes())?;
+            }
         }
-
-        output_format.format(result, self.cfg().bytes())?;
         Ok(())
-    }
-
-    /// Show the scan completion reveal before outputting detailed results.
-    fn reveal_results(
-        &self,
-        result: &TestResult,
-        theme: crate::theme::Theme,
-        profile: UserProfile,
-    ) {
-        let nc = terminal::no_color();
-
-        let sample_count = result.download_samples.as_ref().map_or(0, Vec::len)
-            + result.upload_samples.as_ref().map_or(0, Vec::len)
-            + result.ping_samples.as_ref().map_or(0, Vec::len);
-
-        let overall_grade = crate::grades::grade_overall(
-            result.ping,
-            result.jitter,
-            result.download,
-            result.upload,
-            profile,
-        );
-
-        let grade_badge = overall_grade.color_str(nc, theme);
-        let grade_plain = overall_grade.as_str().to_string();
-        crate::progress::reveal_scan_complete(sample_count, &grade_badge, &grade_plain, nc, theme);
-        crate::progress::reveal_pause();
     }
 
     fn print_kv(nc: bool, key: &str, value: &str) {
@@ -384,6 +456,83 @@ mod tests {
     use super::*;
     use crate::config::{ConfigSource, OutputSource};
 
+    struct ResultPhaseRunner;
+
+    #[async_trait::async_trait]
+    impl PhaseRunner for ResultPhaseRunner {
+        async fn run_all(&self, orch: &Orchestrator) -> Result<(), Error> {
+            let mut result = crate::types::TestResult::default();
+            result.server.name = "captured server".into();
+            orch.record_result(result)
+        }
+    }
+
+    struct FailingPhaseRunner;
+
+    #[async_trait::async_trait]
+    impl PhaseRunner for FailingPhaseRunner {
+        async fn run_all(&self, _orch: &Orchestrator) -> Result<(), Error> {
+            Err(Error::context("measurement failed"))
+        }
+    }
+
+    #[tokio::test]
+    async fn library_run_returns_report_and_disables_verbose_mode() {
+        let mut orch = Orchestrator::new_for_library(crate::cli::Args::default()).unwrap();
+        orch.phase_runner = std::sync::Arc::new(ResultPhaseRunner);
+
+        assert!(orch.is_library_api());
+        assert!(!orch.is_verbose());
+        let report = orch.run_for_library().await.unwrap();
+        assert_eq!(report.server.name, "captured server");
+    }
+
+    #[tokio::test]
+    async fn library_run_propagates_measurement_errors() {
+        let mut orch = Orchestrator::new_for_library(crate::cli::Args::default()).unwrap();
+        orch.phase_runner = std::sync::Arc::new(FailingPhaseRunner);
+
+        let error = orch.run_for_library().await.unwrap_err();
+        assert!(error.to_string().contains("measurement failed"));
+    }
+
+    #[tokio::test]
+    async fn library_result_phase_does_not_save_history() {
+        struct CountingSaver(std::sync::atomic::AtomicUsize);
+
+        impl crate::storage::SaveResult for CountingSaver {
+            fn save(&self, _result: &crate::types::TestResult) -> Result<(), Error> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        let mut orch = Orchestrator::new_for_library(crate::cli::Args::default()).unwrap();
+        let saver = std::sync::Arc::new(CountingSaver(std::sync::atomic::AtomicUsize::new(0)));
+        orch.saver = saver.clone();
+        let mut context = crate::phases::PhaseContext::new(orch.services_arc()).with_server(
+            crate::types::Server {
+                id: "test".into(),
+                url: "http://127.0.0.1/upload.php".into(),
+                name: "test server".into(),
+                sponsor: "test sponsor".into(),
+                country: "CA".into(),
+                lat: 0.0,
+                lon: 0.0,
+                distance: 0.0,
+            },
+        );
+
+        assert!(matches!(
+            crate::phases::run_result(&orch, &mut context).await,
+            crate::phases::PhaseOutcome::PhaseCompleted
+        ));
+        assert_eq!(saver.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(!orch.is_verbose());
+        let report = orch.last_result.lock().unwrap().take().unwrap();
+        assert_eq!(report.server.name, "test server");
+    }
+
     fn orch_from_source(source: &ConfigSource, early_exit: EarlyExitFlags) -> Orchestrator {
         let config = Config::from_source(source);
         Orchestrator::from_config(config, early_exit).unwrap()
@@ -395,6 +544,7 @@ mod tests {
             generate_completion: None,
             history: false,
             dry_run: false,
+            no_live_ui: false,
         }
     }
 
@@ -424,6 +574,35 @@ mod tests {
         };
         let orch = orch_from_source(&source, default_early_exit());
         assert!(!orch.is_verbose());
+    }
+
+    #[test]
+    fn live_progress_respects_explicit_disable_and_machine_formats() {
+        let config = Config::from_source(&ConfigSource::default());
+        let mut flags = default_early_exit();
+        flags.no_live_ui = true;
+        let orch = Orchestrator::from_config(config, flags).unwrap();
+        assert!(!orch.is_progress_enabled());
+
+        let source = ConfigSource {
+            output: OutputSource {
+                format: Some(crate::config::Format::Json),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(!orch.is_progress_enabled());
+
+        let source = ConfigSource {
+            output: OutputSource {
+                minimal: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let orch = orch_from_source(&source, default_early_exit());
+        assert!(!orch.is_progress_enabled());
     }
 
     #[test]

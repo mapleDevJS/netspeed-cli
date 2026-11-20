@@ -9,7 +9,7 @@ repository = "https://github.com/mapleDevJS/netspeed-cli"
 homepage = "https://github.com/mapleDevJS/netspeed-cli"
 documentation = "https://docs.rs/netspeed-cli"
 readme = "README.md"
-keywords = ["speedtest", "bandwidth", "network", "internet", "cli"]
+keywords = ["speedtest", "bandwidth", "network", "internet", "latency"]
 categories = ["command-line-utilities", "network-programming"]
 rust-version = "1.86"
 exclude = [
@@ -40,7 +40,7 @@ clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "stream"] }
 rustls = "0.23.45"
 webpki-roots = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync", "signal"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 quick-xml = { version = "0.41", features = ["serialize"] }
@@ -50,7 +50,6 @@ indicatif = "0.18"
 owo-colors = "4"
 textwrap = "0.16"
 console = "0.16"
-crossterm = "0.29"
 futures-util = "0.3.31"
 directories = "6.0.0"
 toml = "1.1.2"
@@ -65,6 +64,9 @@ clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.3"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
 wiremock = "0.6.5"
@@ -72,6 +74,7 @@ serial_test = "3.2"
 criterion = { version = "0.8", features = ["html_reports", "async_tokio"] }
 thiserror = "2"
 proptest = "1"
+libc = "0.2"
 
 [[bench]]
 name = "core_benchmarks"

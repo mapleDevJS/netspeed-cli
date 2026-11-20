@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH netspeed-cli 1  "netspeed-cli 0.10.4" 
+.TH netspeed-cli 1  "netspeed-cli 0.10.4"
 .SH NAME
 netspeed\-cli \- Test internet bandwidth via speedtest.net servers
 .SH SYNOPSIS
-\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-\-strict\-config\fR] [\fB\-\-ca\-cert\fR] [\fB\-\-tls\-version\fR] [\fB\-\-pin\-certs\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBnetspeed\-cli\fR [\fB\-\-no\-download\fR] [\fB\-\-no\-upload\fR] [\fB\-\-single\fR] [\fB\-\-bytes\fR] [\fB\-\-simple\fR] [\fB\-\-csv\fR] [\fB\-\-csv\-delimiter\fR] [\fB\-\-csv\-header\fR] [\fB\-\-json\fR] [\fB\-\-format\fR] [\fB\-\-list\fR] [\fB\-\-server\fR] [\fB\-\-exclude\fR] [\fB\-\-source\fR] [\fB\-\-timeout\fR] [\fB\-\-generate\-completion\fR] [\fB\-\-history\fR] [\fB\-\-quiet\fR] [\fB\-\-no\-live\-ui\fR] [\fB\-\-dry\-run\fR] [\fB\-\-no\-emoji\fR] [\fB\-\-minimal\fR] [\fB\-\-profile\fR] [\fB\-\-theme\fR] [\fB\-\-show\-config\-path\fR] [\fB\-\-strict\-config\fR] [\fB\-\-ca\-cert\fR] [\fB\-\-tls\-version\fR] [\fB\-\-restrict\-tls\-domains\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR]
 .SH DESCRIPTION
 Test internet bandwidth via speedtest.net servers.
 .PP
@@ -20,7 +20,7 @@ Results are saved to a local history file for trend tracking.
 .SH OPTIONS
 .TP
 \fB\-\-no\-download\fR [\fI<NO_DOWNLOAD>\fR]
-Do not perform download test
+Skip the download test. Use \-\-no\-download to enable skipping; \-\-no\-download=false keeps the download test enabled.
 .br
 
 .br
@@ -33,7 +33,7 @@ false
 .RE
 .TP
 \fB\-\-no\-upload\fR [\fI<NO_UPLOAD>\fR]
-Do not perform upload test
+Skip the upload test. Use \-\-no\-upload to enable skipping; \-\-no\-upload=false keeps the upload test enabled.
 .br
 
 .br
@@ -211,6 +211,9 @@ true
 false
 .RE
 .TP
+\fB\-\-no\-live\-ui\fR
+Disable live progress rendering in interactive terminals
+.TP
 \fB\-\-dry\-run\fR
 Validate configuration and exit without running tests.
 Prints the server that would be selected and confirms connectivity.
@@ -219,7 +222,7 @@ Prints the server that would be selected and confirms connectivity.
 Disable emoji output (for environments where emojis don\*(Aqt render well)
 .TP
 \fB\-\-minimal\fR [\fI<MINIMAL>\fR]
-Minimal ASCII\-only output (no Unicode box\-drawing characters)
+Use ASCII/plain output without Unicode box\-drawing characters. This is separate from \-\-format minimal, which selects a terse grade\-and\-speeds format. Use \-\-minimal=false to disable this setting.
 .br
 
 .br
@@ -247,7 +250,7 @@ Output color theme (dark, light, high\-contrast, monochrome)
 Show the configuration file path and exit
 .TP
 \fB\-\-strict\-config\fR [\fI<STRICT_CONFIG>\fR]
-Enable strict config mode \- show warnings for invalid config values
+Enable strict configuration validation. Validation errors cause failure; warnings are reported and remain nonfatal. Use \-\-strict\-config=false to disable strict validation.
 .br
 
 .br
@@ -269,10 +272,12 @@ Minimum TLS version to use (1.2 or 1.3).
 The default and minimum 1.2 allow both TLS 1.2 and 1.3.
 Minimum 1.3 disables TLS 1.2.
 .TP
-\fB\-\-pin\-certs\fR [\fI<PIN_CERTS>\fR]
+\fB\-\-restrict\-tls\-domains\fR [\fI<PIN_CERTS>\fR]
 Restrict TLS connections to speedtest.net and ookla.com domains.
-Normal rustls/webpki certificate\-chain and hostname validation still run;
-this option adds a domain allowlist on top. It does not bypass TLS verification.
+This is a domain allowlist, not certificate or public\-key pinning. It only
+applies to TLS connections; plain HTTP is not restricted. Normal rustls/webpki
+certificate\-chain and hostname validation still run. The legacy \-\-pin\-certs
+flag remains available as an alias.
 .br
 
 .br
@@ -292,16 +297,15 @@ Print version
 .SH EXTRA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Examples:
-  netspeed\-cli                          Run a full speed test
-  netspeed\-cli \-\-format compact         Key metrics with ratings
-  netspeed\-cli \-\-format dashboard       Rich dashboard with history
-  netspeed\-cli \-\-format json            Machine\-readable output
-  netspeed\-cli \-\-list                   List available servers
-  netspeed\-cli \-\-history                Show test history
-  netspeed\-cli \-\-profile gamer          Optimize output for gaming
-  netspeed\-cli \-\-theme light            Light terminal background
-  netspeed\-cli \-\-no\-emoji               Disable emoji output
-  netspeed\-cli \-\-quiet                  Suppress progress output
+  netspeed\-cli                           Full readable report (default)
+  netspeed\-cli \-\-format compact          Quick summary with ratings
+  netspeed\-cli \-\-format json             Machine\-readable output
+  netspeed\-cli \-\-profile gamer           Grade results for gaming priorities
+  netspeed\-cli \-\-list                    List available servers
+  netspeed\-cli \-\-history                 Show test history
+  netspeed\-cli \-\-minimal                 Use ASCII/plain output
+  netspeed\-cli \-\-no\-live\-ui              Suppress interactive progress rendering
+  netspeed\-cli \-\-quiet                   Suppress progress output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 .SH VERSION
 v0.10.4

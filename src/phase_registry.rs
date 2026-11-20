@@ -42,8 +42,12 @@ pub async fn run_all_registered(
         match phase(orch, &mut ctx).await {
             PhaseOutcome::PhaseCompleted => {}
             PhaseOutcome::PhaseEarlyExit => break,
-            PhaseOutcome::PhaseError(e) => return Err(e),
+            PhaseOutcome::PhaseError(e) => {
+                ctx.finish_live(crate::live::RunState::Failed);
+                return Err(e);
+            }
         }
     }
+    ctx.finish_live(crate::live::RunState::Completed);
     Ok(())
 }
