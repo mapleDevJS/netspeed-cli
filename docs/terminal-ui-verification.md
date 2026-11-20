@@ -132,6 +132,24 @@ retrospective comparison rather than the requested pre-implementation gate.
 
 ## Further contract and failure verification
 
+The first PR #86 CI run exposed two test-harness issues not covered by the earlier
+local environment: inherited `CI=true` correctly disabled live rendering inside
+the fixture, and Linux's const winsize pointer for `openpty` triggered strict
+Clippy on a mutable reference required by macOS's signature. The PTY launcher now
+removes inherited CI/reduced-motion settings before applying each explicit
+fallback-case override, and passes a raw winsize pointer compatible with both
+platforms. The full macOS suite and all seven PTY cases passed with both settings
+enabled on the parent process. Production CI fallback behavior is unchanged.
+The initial CI matrix cancelled Windows and macOS after the Linux failure; those
+cancelled jobs are not recorded as platform passes.
+
+The corrected instrumented suite, including the explicit socket suites, passed
+locally with 90.27% line coverage against the existing 83% gate. Reading profiles
+from Homebrew Rust 1.100 required matching Rust 1.100 LLVM utilities: the initially
+selected Rust 1.95 utilities rejected their raw-profile version. Matching tools
+resolved this verification-tool mismatch; the default toolchain and declared
+Rust 1.86 minimum were not changed.
+
 The interruption helper exposes a named Interrupted error. The supported
 result-returning embedding facade retains its existing interface. It is handled by the
 existing CLI interruption path and preserves exit status 130.

@@ -275,7 +275,7 @@ fn spawn_pty_command_with_environment(
             &mut slave_fd,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &mut size,
+            std::ptr::addr_of_mut!(size),
         )
     };
     assert_eq!(result, 0, "openpty should succeed");
@@ -285,6 +285,10 @@ fn spawn_pty_command_with_environment(
     let slave = unsafe { OwnedFd::from_raw_fd(slave_fd) };
     let slave_file = File::from(slave);
     command
+        // Exercise a live terminal even when the test harness runs in CI or
+        // reduced-motion mode. Individual fallback cases override this below.
+        .env_remove("CI")
+        .env_remove("PREFER_REDUCED_MOTION")
         .env("TERM", "xterm-256color")
         .env("NO_COLOR", "1")
         .stdin(Stdio::from(

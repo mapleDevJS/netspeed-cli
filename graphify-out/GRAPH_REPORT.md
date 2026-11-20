@@ -1,7 +1,7 @@
 # Graph Report - /Users/alexey.ivanov/Developer/netspeed-cli  (2026-11-20)
 
 ## Corpus Check
-- 76 files · ~370,590 words
+- 76 files · ~371,539 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -229,9 +229,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `no_color()` connect `Community 2` to `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 11`, `Community 12`, `Community 13`, `Community 22`?**
-  _High betweenness centrality (0.049) - this node is a cross-community bridge._
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
 - **Why does `grade_overall()` connect `Community 5` to `Community 2`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+- **Why does `run_server_discovery()` connect `Community 4` to `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 20`?**
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `Output` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
   _`Output` has 45 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 48 inferred relationships involving `Args` (e.g. with `test_ca_cert_in_help()` and `test_pin_certs_in_help()`) actually correct?**
@@ -240,5 +242,3 @@ _Questions this graph is uniquely positioned to answer:_
   _`no_color()` has 41 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `TestServer`, `TestServersWrapper`, `TestServerConfig` to the rest of the system?**
   _59 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.02 - nodes in this community are weakly interconnected._
