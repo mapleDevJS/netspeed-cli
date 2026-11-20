@@ -26,7 +26,7 @@ github_version="$(gh release view --repo "${REPO}" --json tagName --jq '.tagName
 crates_version="$(cargo search netspeed-cli --limit 1 | sed -n 's/^netspeed-cli = "\([^"]*\)".*/\1/p' | head -1)"
 local_formula_version="$(version_from_formula "${FORMULA_PATH}")"
 
-tap_formula_url="https://raw.githubusercontent.com/${TAP_REPO}/main/netspeed-cli.rb"
+tap_formula_url="https://raw.githubusercontent.com/${TAP_REPO}/main/Formula/netspeed-cli.rb"
 tap_formula_file="$(mktemp)"
 curl -fsSL "${tap_formula_url}" -o "${tap_formula_file}"
 tap_formula_version="$(version_from_formula "${tap_formula_file}")"

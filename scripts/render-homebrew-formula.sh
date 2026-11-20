@@ -51,47 +51,31 @@ if [[ -z "${SHA256}" ]]; then
 fi
 
 TMP_FILE="$(mktemp)"
-awk -v version="${VERSION}" '
-    /^[[:space:]]*version "/ {
-        if (!printed_version) {
-            print "  version \"" version "\""
-            printed_version = 1
-        }
-        next
-    }
-    {
-        print
-    }
-    /^[[:space:]]*url "/ && !printed_version {
-        print "  version \"" version "\""
-        printed_version = 1
-    }
-' "${FORMULA_SOURCE}" > "${TMP_FILE}"
+trap 'rm -f "${TMP_FILE}"' EXIT
+sed \
+    -e '/^[[:space:]]*version "/d' \
+    -e "s|^[[:space:]]*url \".*\"|  url \"${URL}\"|" \
+    -e "s|^[[:space:]]*sha256 \".*\"|  sha256 \"${SHA256}\"|" \
+    "${FORMULA_SOURCE}" > "${TMP_FILE}"
 
-sed "s|^[[:space:]]*url \".*\"|  url \"${URL}\"|" "${TMP_FILE}" > "${TMP_FILE}.url"
-sed "s|^[[:space:]]*sha256 \".*\"|  sha256 \"${SHA256}\"|" "${TMP_FILE}.url" > "${TMP_FILE}.final"
-
-if ! grep -q "version \"${VERSION}\"" "${TMP_FILE}.final"; then
-    echo "error: rendered formula is missing version ${VERSION}" >&2
+if grep -q '^[[:space:]]*version "' "${TMP_FILE}"; then
+    echo "error: rendered formula should infer its version from the source URL" >&2
     exit 1
 fi
 
-if ! grep -q "url \"${URL}\"" "${TMP_FILE}.final"; then
+if ! grep -q "url \"${URL}\"" "${TMP_FILE}"; then
     echo "error: rendered formula is missing URL ${URL}" >&2
     exit 1
 fi
 
-if ! grep -q "sha256 \"${SHA256}\"" "${TMP_FILE}.final"; then
+if ! grep -q "sha256 \"${SHA256}\"" "${TMP_FILE}"; then
     echo "error: rendered formula is missing SHA256 ${SHA256}" >&2
     exit 1
 fi
 
 if [[ "${OUTPUT_PATH}" == "-" ]]; then
-    cat "${TMP_FILE}.final"
-    rm -f "${TMP_FILE}.final"
+    cat "${TMP_FILE}"
 else
     mkdir -p "$(dirname "${OUTPUT_PATH}")"
-    mv "${TMP_FILE}.final" "${OUTPUT_PATH}"
+    mv "${TMP_FILE}" "${OUTPUT_PATH}"
 fi
-
-rm -f "${TMP_FILE}" "${TMP_FILE}.url"

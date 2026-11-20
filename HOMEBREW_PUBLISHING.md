@@ -14,7 +14,9 @@ For the tap PR, automation:
 
 1. Computes the SHA256 for the GitHub source tarball
    `https://github.com/mapleDevJS/netspeed-cli/archive/refs/tags/vX.Y.Z.tar.gz`.
-2. Renders `netspeed-cli.rb` with the new `url`, `version`, and `sha256`.
+2. Renders `netspeed-cli.rb` with the new `url` and `sha256`. Homebrew infers
+   the version from the tagged source archive URL; an explicit `version`
+   declaration is redundant and fails strict formula audit.
 3. Pushes branch `release/netspeed-cli-vX.Y.Z` to the tap repository.
 4. Opens a PR titled `netspeed-cli vX.Y.Z`.
 
@@ -80,10 +82,10 @@ If the tap PR was not created:
 VERSION=<version>
 scripts/render-homebrew-formula.sh "$VERSION" /tmp/netspeed-cli.rb
 git clone git@github.com:mapleDevJS/homebrew-netspeed-cli.git /tmp/homebrew-netspeed-cli
-cp /tmp/netspeed-cli.rb /tmp/homebrew-netspeed-cli/netspeed-cli.rb
+cp /tmp/netspeed-cli.rb /tmp/homebrew-netspeed-cli/Formula/netspeed-cli.rb
 cd /tmp/homebrew-netspeed-cli
 git checkout -b "release/netspeed-cli-v${VERSION}"
-git add netspeed-cli.rb
+git add Formula/netspeed-cli.rb
 git commit -m "netspeed-cli v${VERSION}"
 git push origin "release/netspeed-cli-v${VERSION}"
 gh pr create --base main --head "release/netspeed-cli-v${VERSION}" \
