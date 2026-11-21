@@ -2,6 +2,10 @@
 # Installed by `just install-hooks`. Validate the committed candidate before push.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+# Git exports repository paths to hooks. Fixtures must discover their own repos.
+while IFS= read -r git_variable; do
+  unset "$git_variable"
+done < <(git rev-parse --local-env-vars)
 candidate_sha="$(git rev-parse HEAD)"
 has_updates=false
 while read -r _local_ref local_sha _remote_ref _remote_sha; do

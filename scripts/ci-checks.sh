@@ -2,6 +2,10 @@
 # Shared checks for local execution and GitHub Actions. Never publishes.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# Also support direct invocation from hooks without leaking their Git context.
+while IFS= read -r git_variable; do
+  unset "$git_variable"
+done < <(git rev-parse --local-env-vars)
 package_args=(--locked)
 # Local gates include the working tree; CI packaging retains its clean-tree check.
 if [[ "${NETSPEED_ALLOW_DIRTY:-0}" == 1 ]]; then

@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -34,13 +35,18 @@ class LocalCiHookTests(unittest.TestCase):
         bin_dir = root / "bin"
         bin_dir.mkdir()
         self.log = root / "gate.log"
-        self.env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        git_variables = subprocess.check_output(
+            ["git", "rev-parse", "--local-env-vars"], text=True).splitlines()
+        fixture_env = {key: value for key, value in os.environ.items()
+                       if key not in git_variables}
+        self.env = dict(fixture_env, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                         GATE_LOG=str(self.log), GIT_AUTHOR_NAME="CI test",
                         GIT_AUTHOR_EMAIL="ci@example.invalid",
                         GIT_COMMITTER_NAME="CI test",
                         GIT_COMMITTER_EMAIL="ci@example.invalid")
         just = bin_dir / "just"
         just.write_text('#!/bin/sh\necho "$*" >> "$GATE_LOG"\n'
+                        'if [ -n "${GIT_DIR:-}${GIT_WORK_TREE:-}${GIT_INDEX_FILE:-}${GIT_CONFIG_COUNT:-}" ]; then exit 42; fi\n'
                         'if [ "${CHANGE_CANDIDATE:-0}" = 1 ]; then echo changed >> fixture; fi\n'
                         'exit "${GATE_EXIT:-0}"\n')
         just.chmod(0o755)
@@ -86,6 +92,26 @@ class LocalCiHookTests(unittest.TestCase):
     def test_candidate_changed_during_gate_is_rejected(self):
         self.env["CHANGE_CANDIDATE"] = "1"
         self.assertNotEqual(self.hook().returncode, 0)
+
+    def test_hook_clears_repository_environment(self):
+        self.env.update(GIT_DIR=str(self.repo / ".git"),
+                        GIT_WORK_TREE=str(self.repo),
+                        GIT_INDEX_FILE=str(self.repo / ".git" / "index"),
+                        GIT_CONFIG_COUNT="0")
+        result = self.hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text(), "ci-local\n")
+
+    def test_actual_push_keeps_fixture_git_context_out_of_gate(self):
+        remote = Path(self.temp.name) / "remote.git"
+        self.git("init", "--bare", "-q", str(remote))
+        hook_path = self.repo / ".git" / "hooks" / "pre-push"
+        shutil.copyfile(HOOK, hook_path)
+        hook_path.chmod(0o755)
+        self.git("push", "--quiet", str(remote), "HEAD:refs/heads/main")
+        self.assertEqual(self.log.read_text(), "ci-local\n")
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.sha)
+        self.assertEqual(self.git("status", "--porcelain"), "")
 
 
 if __name__ == "__main__":
