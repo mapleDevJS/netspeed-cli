@@ -24,7 +24,7 @@ test-socket:
 # Run linter checks (formatting + clippy) — mirrors CI exactly
 lint:
 	cargo fmt --all -- --check
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --locked --all-targets --all-features -- -D warnings
 
 # Auto-fix formatting and clippy suggestions
 fix:
@@ -38,27 +38,43 @@ build:
 # Full release verification
 release:
 	cargo fmt --all -- --check
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --locked --all-targets --all-features -- -D warnings
 	cargo test --verbose
 	cargo test --doc
 	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
 	cargo package --locked
 	cargo build --release
 
-# CI-quality gate used locally and in automation — mirrors all CI jobs
+# Native local gate; platform matrix and GitHub services still require CI.
 qa:
-	cargo fmt --all -- --check
-	cargo clippy --all-targets --all-features -- -D warnings
-	cargo test --verbose
-	cargo test --doc
-	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
-	cargo test --test mock_network_test -- --ignored --nocapture
-	cargo test --test integration_upload_fetch_test -- --ignored --nocapture
-	cargo test --test e2e_test -- --ignored --nocapture
-	cargo test --lib socket_regression -- --ignored
-	python3 -m unittest discover -s scripts -p 'test_*.py'
-	cargo package --locked
-	cargo deny check
+	NETSPEED_ALLOW_DIRTY=1 bash scripts/ci-checks.sh qa
+
+# Includes publication dry run and CI coverage threshold (no publishing).
+qa-full:
+	NETSPEED_ALLOW_DIRTY=1 bash scripts/ci-checks.sh full
+
+# Complete native and Linux checks; used by the installed pre-push hook.
+ci-local:
+	bash scripts/check-local-ci-tools.sh
+	just qa-full
+	just act-test
+	just act-quality
+
+# Compare main and the candidate on this machine without GitHub API calls.
+bench-compare reference="main":
+	bash scripts/bench-compare.sh {{quote(reference)}}
+
+# Validate Actions expressions and embedded shell (install ShellCheck too).
+workflow-lint:
+	bash scripts/ci-checks.sh workflows
+
+# Execute only the Ubuntu test job. No release workflows or credentials.
+act-test:
+	bash scripts/act-local.sh workflow_dispatch -W .github/workflows/ci.yml -j test --matrix os:ubuntu-latest -P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Execute the Ubuntu quality job (requires Docker and network).
+act-quality:
+	bash scripts/act-local.sh workflow_dispatch -W .github/workflows/ci.yml -j quality --env NETSPEED_ALLOW_DIRTY=1 -P ubuntu-latest=catthehacker/ubuntu:act-latest
 
 # Run security audit
 audit:
@@ -80,7 +96,7 @@ outdated:
 
 # Run security-focused clippy checks
 security-check:
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --locked --all-targets --all-features -- -D warnings
 
 # Check for unsafe code usage
 unsafe-check:
@@ -123,7 +139,7 @@ coverage:
 
 # Run tests and generate LCOV coverage file
 coverage-lcov:
-	cargo llvm-cov --lcov --output-path lcov.info
+	bash scripts/ci-checks.sh coverage
 
 # Generate shell completions and man page
 generate-docs:
@@ -144,7 +160,7 @@ release-sync:
 
 # Check MSRV (Minimum Supported Rust Version)
 msrv:
-	cargo check
+	bash scripts/ci-checks.sh msrv
 
 # Clean build artifacts
 clean:
@@ -181,7 +197,7 @@ bench-baseline:
 # Fail on significant regressions against a local named baseline
 bench-regression:
 	cargo bench --locked --bench core_benchmarks -- --noplot
-	python3 scripts/check-benchmarks.py target/criterion target/criterion --baseline-name main
+	python3 scripts/check-benchmarks.py target/criterion target/criterion --baseline-name main --ignore-prefix url_ --minimum-absolute-delta-ns 25
 
 # Generate changelog from conventional commits (requires git-cliff)
 changelog:
@@ -198,11 +214,10 @@ changelog-tag tag:
 	@if ! command -v git-cliff &>/dev/null; then echo \"git-cliff not found. Install: cargo install git-cliff\"; exit 1; fi
 	git-cliff --config .cliff.toml --tag {{tag}}
 
-# Install git pre-push hook that runs QA gate before every push
+# Install the full local replacement for routine hosted CI.
 install-hooks:
 	mkdir -p .githooks
-	printf '#!/usr/bin/env bash\nset -e\necho ""\necho "  Running pre-push QA gate..."\necho "  =========================="\njust qa\necho "  =========================="\necho "  All checks passed. Pushing..."\necho ""\n' > .githooks/pre-push
+	cp scripts/pre-push.sh .githooks/pre-push
 	chmod +x .githooks/pre-push
 	git config core.hooksPath .githooks
-	@echo "Pre-push hook installed. Every 'git push' will run 'just qa' first."
-	@echo "To remove: rm -rf .githooks && git config --unset core.hooksPath"
+	@echo "Pre-push hook installed: checks a clean candidate with just ci-local."

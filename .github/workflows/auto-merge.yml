@@ -1,8 +1,12 @@
 name: Auto-merge Dependabot
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: PR URL to explicitly enable auto-merge for after local review
+        required: true
+        type: string
 
 # Allow only one auto-merge run at a time
 concurrency:
@@ -20,21 +24,20 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    # Only run for Dependabot PRs
-    if: github.actor == 'dependabot[bot]'
+    env:
+      PR_URL: ${{ inputs.pr_url }}
     steps:
       - name: Auto-merge
         # NOTE: "Allow auto-merge" must be enabled in repo Settings → General → Pull Requests
         # for this automation to work. See: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-auto-merge-for-pull-requests-in-your-repository
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge "$PR_URL" --auto --squash
 
       - name: Report status
         if: always()
         run: |
           echo "=== Dependabot Auto-merge Status ==="
-          echo "PR: ${{ github.event.pull_request.html_url }}"
+          echo "PR: $PR_URL"
           echo "Actor: ${{ github.actor }}"
           echo "Workflow status: ${{ job.status }}"
