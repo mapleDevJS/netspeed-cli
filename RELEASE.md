@@ -114,9 +114,9 @@ and the tap formula all report the same version.
 ## Release Readiness
 
 The `Release Readiness` workflow runs the complete gate on manual dispatch.
-Its weekly schedule performs only the release-channel drift check and opens an
-issue if the published channels disagree. Pull requests to `main` use the
-regular CI workflow. Manual readiness checks include:
+There are no scheduled or PR-triggered repository workflows. Run `just ci-local`
+before pushing and `just release-sync` to check published channel drift. Hosted
+default CodeQL is configured separately. Manual readiness checks include:
 
 - Rust formatting, clippy, unit/doc/socket tests, docs, package, and cargo-deny.
 - Generated completions and man page are committed.

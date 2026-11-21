@@ -53,27 +53,88 @@ cargo install git-cliff
 just changelog     # Updates CHANGELOG.md
 ```
 
-The pull request workflow runs the required checks before a PR can be merged:
-- `cargo test` on Ubuntu, macOS, and Windows
-- socket-binding integration tests on Linux
-- `cargo fmt -- --check`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- documentation, package, and generated-doc checks
-- `cargo deny check` (security + license audit)
-- MSRV verification with Rust 1.86
+Local checks and CI use `scripts/ci-checks.sh` to avoid command drift. Install
+Python 3.11+, `just`, `actionlint`, `shellcheck`, and `cargo-deny`, plus Rust 1.86:
 
-Benchmarks and coverage run for PRs to `main` or by manual dispatch. To reset
-the benchmark comparison point, manually dispatch `ci.yml` against `main`; the
-next `main` PR measures that commit and compares it on the same runner. Full CI
-is not repeated on ordinary branch pushes; install the pre-push hook and run
-`just qa` locally before pushing.
+```bash
+brew install python just actionlint shellcheck
+cargo install cargo-deny cargo-llvm-cov --locked
+rustup toolchain install 1.86 --profile minimal
+rustup component add llvm-tools-preview --toolchain stable
+# Install and start a Docker engine, plus act, for Ubuntu checks.
+brew install act colima docker
+colima start
+just install-hooks
+just ci-local
+```
+
+`just qa` runs workflow lint, formatting, clippy, documentation, package and
+generated-doc verification, release-script tests, dependency/license checks,
+regular and socket tests, a release build, and MSRV verification. It checks the
+native host; it does not establish Windows or Linux compatibility on macOS.
+Local packaging includes uncommitted changes for review; CI packaging requires a
+clean checkout. Hooks are local and bypassable.
+
+`just qa-full` adds a publication **dry run**, coverage with CI's 83% line
+threshold, and a benchmark comparison against the local `main` commit. Install
+`cargo-llvm-cov` and `llvm-tools-preview` first. `just bench-compare <ref>` measures
+an immutable reference and the candidate serially on the same machine; no GitHub
+API is needed. Keep local `main` current. Regressions fail the gate.
+
+`just ci-local` runs `qa-full` followed by the Ubuntu test and quality jobs through
+Docker. The installed pre-push hook runs this entire gate, requires a clean
+candidate, rejects pushes of a different checked-out commit, and checks that the
+candidate did not change during validation. This is the local replacement for
+routine hosted CI. Install it in every clone with `just install-hooks`.
+
+For workflow debugging with Docker running:
+
+```bash
+just workflow-lint
+just act-test
+just act-quality
+```
+
+The `act` commands select only Ubuntu jobs in `ci.yml`; they do not run publishing,
+issue creation, or Codecov upload. Initial execution downloads runner images and
+actions. The wrapper respects `DOCKER_HOST` or the selected Docker context.
+Linked worktrees expose their shared Git metadata read-only inside the runner;
+local runner jobs trust the copied checkout for Git's ownership checks.
+The newer action cache handles pinned commits, and local quality
+packaging includes uncommitted changes. The daemon socket inside the runner is `/var/run/docker.sock`, which
+also works with Colima's VM socket layout. They use the container's native architecture; add
+`--container-architecture linux/amd64` to the underlying `act` command when
+checking x86 Linux on Apple Silicon. Containers approximate GitHub runners;
+local success does not replace exact-commit GitHub release validation.
+
+Routine pushes and PRs trigger **zero workflows from repository YAML files**. All
+non-release workflows are manual-only; there are no Actions schedules. Dependabot
+updates still arrive, but automatic merge enablement is now manual so it cannot
+assume hosted checks ran. Run `just release-sync` locally when checking released
+channel drift; there is no background drift monitor.
+
+Release publishing retains its manual preparation and tag-triggered publication,
+including successful exact-commit validation. `ci.yml` is available for explicit
+manual platform checks and `act`; it never runs automatically. The local gate
+covers the native host plus Linux; Windows requires a Windows machine or an
+explicit manual matrix run. Local success does not establish Windows acceptance.
+
+Hooks remain bypassable and require the developer machine to be available.
+Default-setup CodeQL is still enabled in GitHub settings and can trigger
+automatic security runs separately. Disabling that security control requires
+explicit owner authorization. The prepared `Manual CodeQL` workflow requires
+default setup to be disabled first. Local clippy, workflow lint, and dependency
+checks do not provide equivalent CodeQL analysis.
+Repository rules are also separate. Remove required CI contexts from rules for branches
+that now use local validation; do not leave merges waiting for manual checks.
+Full local checks need network access for tools, dependencies, and advisories.
 
 ## Development Workflow
 
 1. **Fork** the repository
 2. **Create a branch** from `develop` (or `main` for hotfixes)
 3. **Make your changes** with tests
-4. **Run verification**: `just qa`
+4. **Run verification**: `just ci-local`
 5. **Submit a PR** against `develop` (or `main` for hotfixes)
 
 ### Branch Strategy
@@ -100,16 +161,14 @@ for the complete release workflow.
 2. Open PR `develop` → `main`
 3. Merge PR to `main`
 4. Run `gh workflow run release.yml --ref main -f version=<version>`
-5. Review and merge the version PR after its pull request checks pass
+5. Run `just ci-local`, then review and merge the version PR
 6. Run the same workflow command again; it validates the exact `main` commit,
    tags it, and starts publication
 7. Review and merge the generated formula PRs
 
 `./scripts/release.sh <version>` is a non-mutating compatibility wrapper that
-prints the canonical workflow command. Release and security QA are manual or
-PR-triggered rather than scheduled; release-channel drift is checked weekly,
-stale issue maintenance remains daily, and dependency updates are managed by
-Dependabot.
+prints the canonical workflow command. Hosted validation and maintenance are
+manual-only outside tag publication. Dependency updates are managed by Dependabot.
 
 ## What to Contribute
 
@@ -213,7 +272,7 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 Use `just bench-baseline` to save a local Criterion baseline, then `just bench-regression` after making changes. The comparison fails when the current mean's lower confidence bound exceeds the baseline's upper bound by more than 10%; missing benchmarks also fail.
 
-CI restores the latest retained baseline from a successful push to `main` and saves Criterion JSON as a 90-day artifact on main pushes. If no baseline exists or all artifacts have expired, CI explicitly reports a bootstrap run. Benchmark comparisons use the same script locally and in CI.
+CI selects the latest successful manual CI run on `main` and measures that commit on the current runner. If no reference exists, CI reports a bootstrap run. Benchmark comparisons use the same script locally and in CI.
 
 The release workflow renders the formula for the released tag and runs Homebrew installation and audit after the GitHub release exists. The tap PR depends on that audit passing.
 

@@ -28,14 +28,15 @@ cargo test           # Run tests
 cargo clippy --all-targets --all-features -- -D warnings  # Lint (mirrors CI)
 cargo fmt --check    # Format check
 just lint            # Format + clippy (mirrors CI exactly)
-just qa              # Full CI gate: fmt + clippy + tests + doc + deny
-just install-hooks   # Install pre-push hook (runs `just qa` before every push)
+just qa              # Native QA: fmt + clippy + tests + docs + package + deny
+just ci-local        # Native full QA + local Ubuntu workflow jobs
+just install-hooks   # Install pre-push hook (runs `just ci-local` before every push)
 netspeed-cli         # Run speed test
 ```
 
 ## Pre-Push Hook
 
-A git pre-push hook is available that runs `just qa` before every push. Install once with `just install-hooks`. The hook prevents pushes that would fail CI.
+The pre-push hook runs `just ci-local` for the clean checked-out candidate before every push. Install once per clone with `just install-hooks`. Repository workflow files are manual-only outside tag publishing. Hosted default CodeQL is a separate setting. Local Linux and native checks do not establish Windows acceptance.
 
 ## Architecture
 
