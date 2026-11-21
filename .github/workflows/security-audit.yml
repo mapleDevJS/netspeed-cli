@@ -9,12 +9,6 @@ on:
         default: full
         type: choice
         options: [full, dependencies, code]
-  pull_request:
-    paths:
-      - Cargo.toml
-      - Cargo.lock
-      - deny.toml
-      - .github/workflows/security-audit.yml
 
 permissions:
   contents: read
@@ -22,7 +16,7 @@ permissions:
 jobs:
   dependency-audit:
     name: Dependency and License Audit
-    if: github.event_name == 'pull_request' || github.event.inputs.audit_type == 'full' || github.event.inputs.audit_type == 'dependencies'
+    if: github.event.inputs.audit_type == 'full' || github.event.inputs.audit_type == 'dependencies'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6

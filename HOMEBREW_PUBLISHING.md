@@ -70,9 +70,9 @@ This compares:
 - Local `netspeed-cli.rb`.
 - Tap `netspeed-cli.rb`.
 
-The weekly `Release Readiness` schedule checks channel sync and opens an issue
-if those channels drift. The workflow's full QA gate runs only on manual
-dispatch; pull requests use the regular CI workflow.
+Run `just release-sync` locally to check channel drift. `Release Readiness` is
+manual-only; repository workflows have no scheduled or PR triggers. Run
+`just ci-local` before pushing; tag publishing retains its release validation.
 
 ## Recovery
 

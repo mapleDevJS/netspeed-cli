@@ -2,8 +2,6 @@ name: CI
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main, develop]
 
 permissions:
   contents: read
@@ -27,15 +25,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cache dependencies
         uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
+        if: ${{ !env.ACT }}
       - name: Run tests
-        run: cargo test --locked --verbose
+        run: bash scripts/ci-checks.sh test
       - name: Run socket integration tests
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          cargo test --locked --lib socket_regression -- --ignored
-          cargo test --locked --test mock_network_test --test integration_upload_fetch_test --test e2e_test -- --ignored --nocapture
+        run: bash scripts/ci-checks.sh socket
       - name: Build release
-        run: cargo build --locked --release
+        run: bash scripts/ci-checks.sh build
 
   quality:
     name: Ubuntu Quality Gate
@@ -46,35 +43,40 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
-      - name: Check formatting and lint
+        if: ${{ !env.ACT }}
+      - name: Install quality tools
+        uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6
+        with:
+          tool: cargo-deny,shellcheck
+      - name: Install workflow linter
         run: |
-          cargo fmt --all -- --check
-          cargo clippy --locked --all-targets --all-features -- -D warnings
-      - name: Check documentation and package
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: |
-          cargo doc --locked --no-deps --workspace
-          cargo package --locked
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=amd64 ;;
+            aarch64) arch=arm64 ;;
+            *) echo 'Unsupported Linux architecture' >&2; exit 1 ;;
+          esac
+          install_dir="$(mktemp -d)"
+          asset="actionlint_1.7.12_linux_${arch}.tar.gz"
+          release_url=https://github.com/rhysd/actionlint/releases/download/v1.7.12
+          curl -fsSL --retry 3 "$release_url/$asset" -o "$install_dir/$asset"
+          curl -fsSL --retry 3 "$release_url/actionlint_1.7.12_checksums.txt" -o "$install_dir/checksums.txt"
+          (cd "$install_dir" && sha256sum --ignore-missing -c checksums.txt)
+          tar -xzf "$install_dir/$asset" -C "$install_dir" actionlint
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Validate workflows
+        run: bash scripts/ci-checks.sh workflows
+      - name: Run shared quality checks
+        run: bash scripts/ci-checks.sh quality
       - name: Check crates.io publication package
-        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'main'
-        run: cargo publish --dry-run --locked
-      - name: Check generated docs and release scripts
-        run: |
-          scripts/check-generated-docs.sh
-          python3 -m unittest discover -s scripts -p 'test_*.py'
-      - name: Check dependencies and licenses
-        uses: taiki-e/install-action@bad5eddc21a2ff90971c4477b7ff723d0d0b0db6 # cargo-deny
-      - name: Run cargo-deny
-        run: cargo deny check
+        run: bash scripts/ci-checks.sh publish
       - name: Check minimum supported Rust version
         run: |
           rustup toolchain install 1.86 --profile minimal
-          cargo +1.86 check --locked
+          bash scripts/ci-checks.sh msrv
 
   benchmarks:
     name: Benchmark Regression Check
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,6 +87,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
+        if: ${{ !env.ACT }}
       - name: Select latest successful main baseline commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,7 +113,6 @@ jobs:
         run: python3 scripts/check-benchmarks.py target/benchmark-reference/criterion target/criterion --ignore-prefix url_ --minimum-absolute-delta-ns 25
   coverage:
     name: Code Coverage
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,15 +122,11 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
+        if: ${{ !env.ACT }}
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
-      - name: Collect coverage
-        run: |
-          cargo llvm-cov --all-features --no-report
-          cargo llvm-cov --all-features --no-report --lib -- socket_regression --ignored
-          cargo llvm-cov --all-features --no-report --test mock_network_test --test integration_upload_fetch_test --test e2e_test -- --ignored
-      - name: Enforce coverage threshold
-        run: cargo llvm-cov report --lcov --output-path lcov.info --fail-under-lines=83
+      - name: Collect and enforce coverage
+        run: bash scripts/ci-checks.sh coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v6
         with:

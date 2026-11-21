@@ -2,8 +2,6 @@ name: Release Readiness
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 7 * * 1"
 
 env:
   CARGO_TERM_COLOR: always
@@ -46,34 +44,15 @@ jobs:
           grep -Fq "refs/tags/v${VERSION}.tar.gz" /tmp/netspeed-cli.rb
           grep -q '^[[:space:]]*sha256 "[0-9a-f]\{64\}"$' /tmp/netspeed-cli.rb
 
-  scheduled-sync:
-    name: Weekly Release Channel Drift Check
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  channel-sync:
+    name: Manual Release Channel Drift Check
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
       - name: Check release channel sync
         id: sync
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/check-release-sync.sh
-      - name: Open drift issue if none is already open
-        if: steps.sync.outcome == 'failure' && github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          issue_number=$(gh issue list --state open --search 'in:title "Release channel drift detected"' \
-            --json number,title \
-            --jq 'first(.[] | select(.title == "Release channel drift detected") | .number) // empty')
-          if [ -n "$issue_number" ]; then
-            echo "::notice::Release drift is already tracked by issue #$issue_number."
-          else
-            gh issue create \
-              --title "Release channel drift detected" \
-              --body "The scheduled release sync check failed. Run \`scripts/check-release-sync.sh\` locally and update the out-of-sync channel."
-          fi
