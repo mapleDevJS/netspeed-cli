@@ -98,6 +98,8 @@ just act-quality
 The `act` commands select only Ubuntu jobs in `ci.yml`; they do not run publishing,
 issue creation, or Codecov upload. Initial execution downloads runner images and
 actions. The wrapper respects `DOCKER_HOST` or the selected Docker context.
+Linked worktrees expose their shared Git metadata read-only inside the runner;
+local runner jobs trust the copied checkout for Git's ownership checks.
 The newer action cache handles pinned commits, and local quality
 packaging includes uncommitted changes. The daemon socket inside the runner is `/var/run/docker.sock`, which
 also works with Colima's VM socket layout. They use the container's native architecture; add

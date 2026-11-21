@@ -113,6 +113,33 @@ class LocalCiHookTests(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), self.sha)
         self.assertEqual(self.git("status", "--porcelain"), "")
 
+    def run_act_wrapper(self, checkout):
+        script = checkout / "scripts" / "act-local.sh"
+        script.parent.mkdir()
+        shutil.copyfile(HOOK.with_name("act-local.sh"), script)
+        args_file = Path(self.temp.name) / "act-args"
+        act = Path(self.env["PATH"].split(os.pathsep)[0]) / "act"
+        act.write_text('#!/bin/sh\nprintf "%s\\n" "$DOCKER_HOST" "$@" > "$ACT_ARGS"\n')
+        act.chmod(0o755)
+        env = dict(self.env, DOCKER_HOST="unix:///selected-context.sock",
+                   ACT_ARGS=str(args_file))
+        subprocess.run(["bash", str(script), "workflow_dispatch"],
+                       env=env, check=True, capture_output=True)
+        return args_file.read_text().splitlines()
+
+    def test_normal_clone_uses_selected_host_without_extra_metadata_mount(self):
+        args = self.run_act_wrapper(self.repo)
+        self.assertEqual(args[0], "unix:///selected-context.sock")
+        self.assertNotIn("--container-options", args)
+
+    def test_linked_worktree_mounts_common_metadata_read_only(self):
+        checkout = Path(self.temp.name) / "linked"
+        self.git("worktree", "add", "--quiet", "--detach", str(checkout), "HEAD")
+        args = self.run_act_wrapper(checkout)
+        common_dir = (self.repo / ".git").resolve()
+        mount = args[args.index("--container-options") + 1]
+        self.assertEqual(mount, f'--volume "{common_dir}:{common_dir}:ro"')
+
 
 if __name__ == "__main__":
     unittest.main()
